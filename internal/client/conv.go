@@ -614,7 +614,7 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 	if m.Topic, err = a.outgoingTopic(conv, m.Topic, m.ReplyTo); err != nil {
 		return ConvSent{}, err
 	}
-	if err := a.prepareTopicOrganization(ctx, conv, &m); err != nil {
+	if err := a.prepareTopicOrganization(conv, &m); err != nil {
 		return ConvSent{}, err
 	}
 	if m.Topic != "" && m.ReplyTo == "" && m.TopicEvent == nil && m.sub == "" && (m.Kind == "" || m.Kind == envelope.KindMessage || m.Kind == envelope.KindQuestion || m.Kind == envelope.KindTask) && !envelope.AgentOrigin(m.Origin) {

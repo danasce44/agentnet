@@ -614,4 +614,65 @@ for (const ending of ['original', 'self']) {
  check((await a.store.all('outbox')).length===before&&JSON.stringify((await a.historyBook())[phone.address].pos)===position,'restart/reconnect preserves completed cursor and exact corrected copy');
  check((await a.overview()).history.find(j=>j.device===phone.address).blocked===0,'old quarantined transport tuple no longer falsely reports blocked history');
 }
+// Latest-only, CG-4: a topic-scoped invitation asks tps1 of the invited host
+// only. A member device without it, suspended until it updates or merely
+// older, stops nobody: its sealed copies of the scoped records wait at
+// handover (never handed over) and reach it once it reads tps1. The host is
+// asked, suspended or not.
+{
+ const w=await world(), {alice:a,bob:b,carol:c,conv}=w;
+ const base=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapHumanParticipation];
+ a.suspendedDevices=[b.address,c.address];
+ await refuses(()=>a.inviteHuman({conv,host:c.address,topic:wire.newID()}),/topic-only/);
+ check(!(await a.store.all('outbox')).some(r=>r.sub==='event'),'an older host gets no scoped invitation, suspended or not');
+ await w.caps(c,[...base,wire.CapTopicParticipation]);
+ const invited=[];
+ for(const [suspended,why] of [[[b.address],'suspended'],[[],'older']]){
+  a.suspendedDevices=suspended;
+  const topic=wire.newID(),p=await a.inviteHuman({conv,host:c.address,topic});
+  const held=(await a.store.all('outbox')).filter(r=>r.pid===p.pid&&r.to===b.address);
+  check(held.length===2&&held.every(r=>r.state==='waiting'&&r.detail.startsWith('peer_update: ')),why+' member device keeps its scoped records waiting, saying why');
+  check(!w.posts.some(raw=>held.some(r=>wire.parseEnvelope(raw).id===r.id)),why+' member device is handed nothing it cannot enforce');
+  await w.drain(c);
+  check((await c.agentConv(p.pid)).info.topic===topic,why+': the invited host has the scoped invitation');
+  invited.push([p.pid,topic]);
+ }
+ a.suspendedDevices=[];await w.caps(b,[...base,wire.CapTopicParticipation]);await w.drain(b);
+ for(const [pid,topic] of invited){
+  check((await a.store.all('outbox')).filter(r=>r.pid===pid&&r.to===b.address).every(r=>r.state==='custody'),'once updated, the same sealed records go');
+  check((await b.agentConv(pid)).info.topic===topic,'and the updated member enforces the topic');
+ }
+}
+
+// Latest-only, CG-3: a group guest invitation does not ask a member device
+// the relay suspended until it updates AgentNet; its copies wait for hgg1.
+// Any other member device without hgg1 still refuses it, and the invited
+// host is always asked.
+{
+ const w=await world(), {alice:a,bob:b,carol:g}=w;
+ const names=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapHumanParticipation,wire.CapGroupInvitationControl,wire.CapGroup,wire.CapRoom],all=[...names,wire.CapGroupHumanParticipation];
+ for(const e of w.users){e.realm='f'.repeat(32);await w.caps(e,all);}
+ const conv=await a.createGroup('Suspended member');
+ const invitation=await a.inviteGroup({conv,person:b.me.person});
+ await w.drain(b);await b.decideGroup({id:invitation.id,accept:true});await w.drain(a);
+ if(a.recoveringGroups)await a.recoveringGroups;
+ await a.recoverGroupIntents();await w.drain(b);await b.retryHeld();
+ await w.caps(a,names); // alice's device is older
+ check(!(await b.checkHuman({conv,host:g.address})).ready,'an older member device listed current still decides readiness');
+ await refuses(()=>b.changeHuman('invite',{conv,host:g.address}),/update/i);
+ await w.caps(g,names);b.suspendedDevices=[a.address,g.address];
+ await refuses(()=>b.changeHuman('invite',{conv,host:g.address}),/update/i);
+ check(!(await b.store.all('outbox')).some(r=>r.sub==='event'),'refused invitations keep nothing');
+ await w.caps(g,all);b.suspendedDevices=[a.address];
+ check((await b.checkHuman({conv,host:g.address})).ready,'a suspended member device does not decide readiness');
+ const p=await b.changeHuman('invite',{conv,host:g.address});
+ const held=(await b.store.all('outbox')).filter(r=>r.pid===p.pid&&r.to===a.address);
+ check(held.length>0&&held.every(r=>r.state==='waiting'),'the suspended member device keeps its guest records waiting');
+ check(!w.posts.some(raw=>held.some(r=>wire.parseEnvelope(raw).id===r.id)),'and is handed nothing without hgg1');
+ await w.drain(g);
+ check((await g.groupThread(conv)).guests.some(x=>x.pid===p.pid&&x.can_decide),'the guest is offered exact consent');
+ b.suspendedDevices=[];await w.caps(a,all);await w.drain(a);
+ check(held.every(r=>w.posts.some(raw=>wire.parseEnvelope(raw).id===r.id)),'once updated, the same sealed guest records go');
+ check((await a.groupThread(conv)).guests.some(x=>x.pid===p.pid),'and the updated member holds the guest participation');
+}
 console.log('human engine isolated lifecycle checks passed: ' + checks);

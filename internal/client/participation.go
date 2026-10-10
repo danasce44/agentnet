@@ -647,8 +647,17 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 		if err := a.requireParticipationCaps(ctx, key, protocol.CapHumanParticipation); err != nil && !errors.Is(err, errAgentIdentityUnsupported) {
 			return ParticipationInfo{}, err
 		}
+		// A member device the relay suspended until it updates AgentNet is
+		// not asked (latest-only): the relay serves it nothing, so it holds
+		// nothing up, and its copies of the guest's records and turns wait
+		// per device (hgg1/hgp1 at handover) until it updates. Every other
+		// member device still must read guests; the host is checked above.
+		suspended := a.store.suspendedDevices()
 		for _, person := range m.persons {
 			for _, device := range person.roster.Devices {
+				if suspended[device.Address] {
+					continue
+				}
 				if m.group != nil {
 					if err := a.requireParticipationCaps(ctx, device, protocol.CapGroupHumanParticipation); err != nil {
 						return ParticipationInfo{}, err
@@ -677,7 +686,7 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 		}
 	}
 	if topic != nil {
-		if err := a.requireTopicParticipants(ctx, m, *host); err != nil {
+		if err := a.requireTopicHost(ctx, m, *host); err != nil {
 			return ParticipationInfo{}, err
 		}
 	}

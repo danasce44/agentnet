@@ -46,6 +46,10 @@ func (a *Agent) HumanInviteSupport(ctx context.Context, conv, host string) ([]Hu
 		persons[id] = p
 	}
 	persons[p.info.Person] = p
+	// A member's device the relay suspended until it updates AgentNet does
+	// not decide readiness, as the invitation does not ask it (latest-only):
+	// its copies wait for it. The invited host always does.
+	suspended := a.store.suspendedDevices()
 	var out []HumanSupport
 	for _, person := range persons {
 		v := HumanSupport{Label: person.info.Label, Me: person.info.State == personSelf, State: "ok"}
@@ -57,7 +61,7 @@ func (a *Agent) HumanInviteSupport(ctx context.Context, conv, host string) ([]Hu
 		}
 		offline := false
 		for _, d := range person.roster.Devices {
-			if v.Role == "guest" && d.Address != host {
+			if v.Role == "guest" && d.Address != host || v.Role != "guest" && suspended[d.Address] {
 				continue
 			}
 			label, device, _ := protocol.SplitAddress(d.Address)

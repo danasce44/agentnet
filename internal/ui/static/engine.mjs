@@ -312,6 +312,10 @@ export class HubError extends Error {
 // A server that requires a newer AgentNet (426 update_required) takes the
 // same request from the updated page: it waits, never fails.
 const retryable = (e) => e instanceof HubError && (e.status === 0 || e.status >= 500 || e.status === 429 || e.status === 426);
+// readerWait: a conversation gate's code saying the reader's device cannot
+// hold group guests yet (Engine.groupHumanReaderGate). Its sealed copy waits
+// for that device to update, never handed over.
+const readerWait = (code) => code === "human_unsupported" || code === "group_unsupported";
 class ReceiveDeferred extends HubError {
   constructor() { super(0, "receive_deferred", "Received ciphertext waits for verified network evidence."); }
 }
@@ -2932,7 +2936,7 @@ export class Engine {
     const turn = sub === "";
     for (const dev of devices) {
       const pin = await this.store.get("pins", dev.address);
-      if(wire.topicOrganization(topic_event))await this.requireTopicOrganizationSupport(dev.address,pin);
+      if(wire.topicOrganization(topic_event)&&(!pin||pin.pending))throw Error("Topic organization recipient key changed.");
       if (turn && pin && (pin.pending || pin.fingerprint !== dev.fingerprint)) throw new Error(dev.address + "'s key changed: nothing is sent until the new key is trusted in AgentNet on a computer.");
       if (!pin || pin.fingerprint !== dev.fingerprint || pin.pending) continue; // a changed key is never used
       let ok = false, why = "", notify = false;
@@ -2945,6 +2949,13 @@ export class Engine {
       } catch (e) {
         if (this.revoked) throw new Error("This device was removed from its server: nothing more is sent or received here.");
         why = "server_unavailable: cannot reach your server";
+      }
+      // A move or merge asks only its author (CG-5): a device without org1
+      // keeps its sealed copy waiting (the handover gate re-checks it) and
+      // shows the old layout until it updates; the others get it now.
+      if (ok && wire.topicOrganization(topic_event)) {
+        try { await this.requireTopicOrganizationSupport(dev.address, pin); }
+        catch (e) { if (e.code !== "topic_organization_unsupported") throw e; ok = false; why = "peer_update: " + e.message; }
       }
       if (prepared) await this.receiverSupport(dev.address, pin);
       const recipient = await this.pubOf(pin);
@@ -3129,7 +3140,8 @@ export class Engine {
       // profile read, a message received) stops the handover here, and the
       // message stays queued, saying why.
       if (rec.conv) {
-        const { why } = await this.gate((await this.store.get("convs", rec.conv)) || await this.groupRecord(rec.conv), rec);
+        const { why, code } = await this.gate((await this.store.get("convs", rec.conv)) || await this.groupRecord(rec.conv), rec);
+        if (why && readerWait(code)) throw Object.assign(new Error(why), { code }); // its reader cannot hold group guests yet: it waits, sealed
         if (why) {
           rec.detail = why;
           if (!await this.receiverOutboxProgress(rec)) return;
@@ -3153,7 +3165,7 @@ export class Engine {
       if (rec.files) rec.files = rec.files.map((f) => ({ ...f, ct: null }));
     } catch (e) {
       if (e.code === "receiver_redacted") return; // keep the newer exact-scope retention transaction
-      if (e.code === "followup_unsupported" || e.code === "proposal_unsupported" || e.code === "receiver_unsupported" || e.code === "topic_organization_unsupported" || e.code === "model_sync_unsupported" || e.code === "read_sync_unsupported" || e.code === "invitation_sync_unsupported" || e.code === "topic_sync_unsupported" || e.code === "control_unsupported" || rec.conv && ["group_invitation_unsupported", "root_sync_unsupported", "agent_identity_unsupported", "human_unsupported", "group_unsupported", "clear_unsupported", "room_unsupported"].includes(e.code)) {
+      if (e.code === "followup_unsupported" || e.code === "proposal_unsupported" || e.code === "receiver_unsupported" || e.code === "topic_organization_unsupported" || e.code === "model_sync_unsupported" || e.code === "read_sync_unsupported" || e.code === "invitation_sync_unsupported" || e.code === "topic_sync_unsupported" || e.code === "control_unsupported" || rec.conv && ["group_invitation_unsupported", "root_sync_unsupported", "agent_identity_unsupported", "human_unsupported", "group_unsupported", "clear_unsupported", "room_unsupported", "topic_unsupported"].includes(e.code)) {
         rec.state = "waiting"; rec.detail = "peer_update: " + e.message;
       } else if(e.code==="device_history_authority") {
         rec.state="not_delivered";rec.detail=e.message;
@@ -3320,8 +3332,12 @@ export class Engine {
         g = await this.gate(c, rec);
       }
       if (g.why) {
-        if (rec.detail !== g.why) {
-          await this.receiverOutboxProgress({ ...rec, detail: g.why });
+        // A reader that cannot hold group guests yet keeps its sealed copy
+        // waiting, as postStored parks it (client.groupGuestDeliveryGate):
+        // a suspended device's then is not looked at on every ping.
+        const next = readerWait(g.code) ? { state: "waiting", detail: "peer_update: " + g.why } : { detail: g.why };
+        if (rec.detail !== next.detail || next.state && rec.state !== next.state) {
+          await this.receiverOutboxProgress({ ...rec, ...next });
           this.changed();
         }
         blocked.add(key); continue;
@@ -3949,7 +3965,9 @@ export class Engine {
     if(kept)return kept;
     let current;try{current=await this.topicOrganizationPreview(review);}catch{throw Error("The selected messages, topic or audience changed; review the move again.");}
     if(current.review.token!==review.token||JSON.stringify(current.review.moves)!==JSON.stringify(review.moves)||(current.review.parent||"")!==(review.parent||""))throw Error("The selected messages, topic or audience changed; review the move again.");
-    for(const p of current.people)for(const d of p.devices||[])if(d.address!==this.address)await this.requireTopicOrganizationSupport(d.address,await this.pinned(d.address));
+    // Only the author decides (CG-5): no audience-wide org1 check. Each
+    // device without org1 keeps its sealed copy waiting (sendConv,
+    // sendGroupTurn, the handover gate); nobody else waits for it.
     const outgoing={id:review.operation,queued:true,kind:"message",body:"Moved selected messages to this topic.",topic:review.topic,topic_event:event,reply_to:review.parent||"",origin:"ui",organization_review:review};
     try{const sent=current.c.kind==="group"?await this.sendGroupTurn(current.c,outgoing):await this.sendConv(current.c,outgoing);if(review.new&&review.title)this.syncTopicTitles().catch(()=>{});return sent;}
     catch(e){const saved=await this.keptTopicOrganization(review,event);if(saved)return saved;throw e;}
@@ -8633,9 +8651,14 @@ export class Engine {
     if(!before || before.pending || before.fingerprint!==pin.fingerprint || !after || after.pending || after.fingerprint!==pin.fingerprint)throw Error("Topic participant key changed.");
     if(!await wire.profileSupports(profile||{},address,pub.sign_key,wire.CapTopicParticipation))throw Object.assign(Error(address+" needs an update for topic-only participation."),{code:"topic_unsupported"});
   }
-  async requireTopicParticipants(members,host) {
-    const addresses=new Set([...members.values()].flatMap(p=>p.devices.map(d=>d.address)).concat(host));
-    for(const address of addresses)if(address!==this.address)await this.requireTopicSupport(address,await this.sendKey(address));
+  // requireTopicHost: the invited host must enforce topic-only participation
+  // (tps1), suspended or not (client.requireTopicHost). Members' devices are
+  // not asked: one older or suspended device must not stop a scoped
+  // invitation for everyone (CG-4). Each copy carrying the scope waits per
+  // device for tps1 at handover (postStored: topicCopy), so such a device
+  // holds no record of the participation until it updates.
+  async requireTopicHost(host) {
+    if(host!==this.address)await this.requireTopicSupport(host,await this.sendKey(host));
   }
   // Accepted originals only, exact ID before an unambiguous logical author.
   // Unknown parents and competing aliases wait; they never become Main.
@@ -9127,7 +9150,7 @@ export class Engine {
       const role = p.person === this.me.person ? "me" : p.person === person.person ? "guest" : "member";
       let state = "ok", offline = false;
       for (const d of p.devices) {
-        if (role === "guest" && d.address !== body.host) continue;
+        if (role === "guest" && d.address !== body.host || role !== "guest" && this.peerSuspended(d.address)) continue; // a suspended device decides nothing, as the invitation does not ask it
         const pin = await this.sendKey(d.address), before = pin;
         if (!pin || pin.pending || pin.fingerprint !== d.fingerprint) throw Error("Human participant key is not currently pinned.");
         const profile = await this.profile(d.address), pub = await this.pubOf(pin), after = await this.store.get("pins", d.address);
@@ -9159,7 +9182,10 @@ export class Engine {
     if(!members.has(this.me?.person))throw Error("Only a current member invites a human participant.");
     const pin = await this.sendKey(host), person = await this.personOf(host, pin);
     if (members.has(person.person)) throw new Error("That person already belongs to this DM.");
-    for (const d of [...members.values()].flatMap(p => p.devices).concat([{ address: host }])) { if(members.group)await this.requireGroupHumanSupport(d.address,await this.sendKey(d.address));try{await this.requireHumanSupport(d.address,await this.sendKey(d.address));}catch(e){if(e.code!=="human_unsupported")throw e;} }
+    // A member's device the relay suspended until it updates AgentNet is not
+    // asked (latest-only): its copies wait for it at handover. Every other
+    // member device must still read guests; the host always is asked.
+    for (const d of [...members.values()].flatMap(p => p.devices).concat([{ address: host }])) { if(d.address!==host&&this.peerSuspended(d.address))continue;if(members.group)await this.requireGroupHumanSupport(d.address,await this.sendKey(d.address));try{await this.requireHumanSupport(d.address,await this.sendKey(d.address));}catch(e){if(e.code!=="human_unsupported")throw e;} }
     const guests = (await this.participationsOf(c)).filter(p => p.role === "human" && ["active", "invited"].includes(p.state));
     if (guests.length >= wire.MaxHumanAudience || guests.some(p => p.host.address === host && sameParticipationTopic(p.topic,topic))) throw new Error("Human already invited/active, or audience limit reached; end it before inviting again.");
     const msgs = (await this.convMessages(conv, await this.store.all("inbox"), await this.store.all("outbox"))), grant = [];
@@ -9169,7 +9195,7 @@ export class Engine {
       if(members.group)await this.groupAgentSelection(conv,m,members);
       grant.push({ lid: m.lid, fingerprint: m.fp || this.fp });
     }
-    if(topic!=null){await this.requireTopicParticipants(members,host);await this.checkTopicGrants(conv,topic,grant);}
+    if(topic!=null){await this.requireTopicHost(host);await this.checkTopicGrants(conv,topic,grant);}
     const group=members.group?{seq:members.group.state.seq,hash:await wire.groupStateHash(members.group.state),host_role:"visitor"}:null;
     const e = await wire.signEvent(this.keys, { conv, pid: wire.newID(), type: "invite", role: "human", ...(topic!=null?{topic}:{}), ts: Math.floor(this.now() / 1000), author: {...this.author(),...(group?{group_admission:members.epochs.get(this.fp)}:{})}, host: { person: person.person, address: host, fingerprint: pin.fingerprint }, grant: grant.length ? grant : null, audience: group?"room":"conversation", note: String(note).trim(),...(group?{group}:{}) });
     await this.sendConv(c, { kind: "message", sub: "event", body: wire.eventJSON(e), pid: e.pid });
@@ -10039,7 +10065,7 @@ export class Engine {
       grant.push({ lid: x.lid, fingerprint: x.fp || this.fp });
     }
     for (const fp of tasks) if (![...m.values()].some((p) => p.devices.some((d) => d.fingerprint === fp))) throw new Error(fp + " is not the key of a member of that conversation.");
-    if(topic!=null){await this.requireTopicParticipants(m,host);await this.checkTopicGrants(conv,topic,grant);}
+    if(topic!=null){await this.requireTopicHost(host);await this.checkTopicGrants(conv,topic,grant);}
     const group=m.group?{seq:m.group.state.seq,hash:await wire.groupStateHash(m.group.state),host_role:external?"visitor":"member",...(external?{}:{host_admission:m.epochs.get(hp.fingerprint)}),...(tasks.length?{task_admissions:tasks.map(fp=>m.epochs.get(fp))}:{})}:null;
     const existing = m.group && (await this.agentsOf(c)).find(p=>["invited","active"].includes(p.state)&&p.host?.address===hp.address&&p.host.fingerprint===hp.fingerprint&&(p.agent_id||"")===agent_id && sameParticipationTopic(p.topic,topic));
     const e = await wire.signEvent(this.keys, { conv, pid: existing ? existing.pid : wire.newID(), type: existing ? "share" : "invite",...(topic!=null?{topic}:{}),...(existing?{prev:existing.invite}:{}), ts: Math.floor(this.now() / 1000), author: {...this.author(),...(m.group?{group_admission:m.epochs.get(this.fp)}:{})},

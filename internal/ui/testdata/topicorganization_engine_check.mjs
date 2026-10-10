@@ -77,10 +77,20 @@ await a.changeChatTopic('reopen',{conv,id:to});
 stale=await a.previewTopicOrganization({conv,ids:[child.id],topic:to});
 const pin=await a.store.get('pins',b.address);await a.store.write([{s:'pins',k:b.address,v:{...pin,pending:pin.json}}]);
 await refuses(()=>a.applyTopicOrganization(stale),/changed|key/);await a.store.write([{s:'pins',k:b.address,v:pin}]);
+// One older reader (no org1) stops nobody (CG-5): the author's move stands
+// and is sent; that reader's sealed copy waits, never handed over, and
+// reaches it once it reads org1.
 stale=await a.previewTopicOrganization({conv,ids:[child.id],topic:to});b.caps=[];
-const countBefore=(await a.store.all('outbox')).length;
-await refuses(()=>a.applyTopicOrganization(stale),/org1|required|update/);
-same((await a.store.all('outbox')).length,countBefore,'incompatible audience produces no partial local assignment');b.caps=[wire.CapTopicOrganization];
+const older=await a.applyTopicOrganization(stale);
+const olderCopies=(await a.store.all('outbox')).filter(r=>r.lid===older.lid&&r.to===b.address);
+check(olderCopies.length===1&&olderCopies[0].state==='waiting'&&olderCopies[0].detail.startsWith('peer_update: '),'older reader copy waits sealed, saying why');
+same(chatTopicAssignments(await rows(a)).get(child.lid),to,'the author move stands with one older reader');
+await a.post({...olderCopies[0]});
+same((await a.store.get('outbox',olderCopies[0].id)).state,'waiting','the handover gate keeps it from the older reader');
+same(chatTopicAssignments(await rows(b)).get(child.lid),from,'the older reader keeps the old layout');
+b.caps=[wire.CapTopicOrganization];await deliver(older);
+same(chatTopicAssignments(await rows(b)).get(child.lid),to,'once it reads org1 the same sealed move applies');
+await deliver(await a.applyTopicOrganization(await a.previewTopicOrganization({conv,ids:[child.id],topic:from})));
 
 // A competing reassignment invalidates a reviewed prior topic. Even a change
 // arriving after the final preview is caught by the atomic storage guard.

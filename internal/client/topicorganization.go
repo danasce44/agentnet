@@ -1,13 +1,11 @@
 package client
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
-	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 // Organization is a full member's human action, never a guest/agent scope
@@ -39,29 +37,19 @@ func topicOrganizationAuthor(q dbq, conv, address, fp string) error {
 	return errors.New("only a current human device of a full member may organize topics")
 }
 
-func (a *Agent) prepareTopicOrganization(ctx context.Context, conv string, m *ConvOutgoing) error {
+func (a *Agent) prepareTopicOrganization(conv string, m *ConvOutgoing) error {
 	if !envelope.TopicOrganization(m.TopicEvent) {
 		return nil
 	}
 	if err := envelope.CheckTopic(envelope.Inner{V: envelope.Version2, Kind: envelope.KindMessage, Topic: m.Topic, TopicEvent: m.TopicEvent, TopicDone: m.TopicDone, PID: m.PID, Human: m.human, Target: m.Target, Origin: m.Origin, AgentID: m.AgentID, Followup: m.Followup}); err != nil {
 		return err
 	}
+	// Only the author decides (CG-5): one older or suspended device must not
+	// stop a move or merge for everyone. Each device's copy waits for org1
+	// at handover and release (copyNeeds.organizationCap); until it
+	// updates, that device shows the old layout, a view that grants nothing.
 	if err := topicOrganizationAuthor(a.store.db, conv, a.Address, a.Self().Fingerprint()); err != nil {
 		return err
-	}
-	members, err := a.dmMembers(conv)
-	if err != nil {
-		return err
-	}
-	// Reject an incompatible audience before a local assignment is stored.
-	for _, person := range members.persons {
-		for _, dev := range person.roster.Devices {
-			if dev.Address != a.Address {
-				if err := a.requireParticipationCaps(ctx, dev, protocol.CapTopicOrganization); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	prior := m.claim
 	m.claim = func(tx *sql.Tx, id string) error {
