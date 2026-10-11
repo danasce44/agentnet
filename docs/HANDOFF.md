@@ -14,6 +14,9 @@ was taken over by Claude and shipped as v0.8.17 below.
 Sergey requires the Android APK to ship through normal tag CI and GitHub release
 assets, with SHA256SUMS and a working Update action. Implementation is in
 `feat/native-android`, based on the published v0.8.18 core; not yet released.
+Final source `c50bb371` is qualified, including the MEL-594 follow-up direction
+fix and existing-row read correction. The last exact client race selection
+passed in 536.773s; tag packaging and artifact verification remain.
 See [V0_8_19.md](plans/V0_8_19.md) for scope, ownership and remaining gates.
 The original preview signing key and package must be preserved for updates.
 

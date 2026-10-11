@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+## [0.8.19] — 2026-10-11
+
 - Include the native Android preview in tagged releases as a signed APK with
   SHA256SUMS, using the same Comic interface and Go messaging core. Updates keep
   the preview's existing identity and local data.
