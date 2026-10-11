@@ -196,18 +196,19 @@ export function DevicesSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingE
                   <Tile color={d.this ? "#B5E3C4" : "#A8D8FF"} size={44}><DeviceGlyph name={d.name} size={24} /></Tile>
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 font-semibold">{niceDevice(d.name)} {d.this && <Tag tone="ok">This one</Tag>}</p>
-                    <p className="text-[13px] text-muted">{d.this ? "You’re using it now" : copy ? copyWords(copy) : "One of your devices"}</p>
+                    <p className="text-[13px] text-muted">{d.this ? "You’re using it now" : "One of your devices"}</p>
                   </div>
                 </div>
-                {copy && copy.state !== "done" && copy.state !== "ended" && copy.total > 0 && (
-                  <div className="mt-3" role="progressbar" aria-label={"Copying your chats to " + niceDevice(d.name)} aria-valuemin={0} aria-valuemax={copy.total} aria-valuenow={copy.done}>
-                    <div className="h-2.5 overflow-hidden rounded-full stroke bg-sunken"><div className="h-full bg-agent-fill transition-[width] duration-300" style={{ width: Math.round((copy.done / copy.total) * 100) + "%" }} /></div>
-                  </div>
-                )}
                 <div className="mt-1 flex flex-wrap items-start justify-between gap-x-3">
-                  <Details>
+                  <Details className="min-w-0 flex-1">
                     <Fact name="Address">{d.address}</Fact>
                     <Fact name="Key">{d.fingerprint || "not available"}</Fact>
+                    {copy && <Fact name="History"><span className="font-sans break-normal">{copyWords(copy)}</span></Fact>}
+                    {copy && copy.state !== "done" && copy.state !== "ended" && copy.total > 0 && (
+                      <div className="mt-3" role="progressbar" aria-label={"Copying your chats to " + niceDevice(d.name)} aria-valuemin={0} aria-valuemax={copy.total} aria-valuenow={copy.done}>
+                        <div className="h-2.5 overflow-hidden rounded-full stroke bg-sunken"><div className="h-full bg-agent-fill transition-[width] duration-300" style={{ width: Math.round((copy.done / copy.total) * 100) + "%" }} /></div>
+                      </div>
+                    )}
                   </Details>
                   {canRemove && (
                     <button type="button" onClick={() => setRemoving(d)} aria-label={"Remove " + niceDevice(d.name)}
@@ -230,9 +231,9 @@ export function DevicesSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingE
 function copyWords(h: T.HistoryCopy): string {
   if (h.state === "ended") return "Copying your chats stopped: it’s no longer your device";
   const parts: string[] = [];
-  if (h.deferred) parts.push(h.deferred + " history items waiting for context");
+  if (h.deferred) parts.push(h.deferred + " pending history items");
   else if (h.state !== "done") parts.push(h.total ? "Preparing history · " + h.done + " of " + h.total + " chats" : "Preparing history on this device");
-  if (h.blocked) parts.push(h.blocked + " history copies need attention");
+  if (h.blocked) parts.push(h.blocked + " blocked history copies");
   if (h.queued) parts.push(h.queued + " waiting to send");
   if (h.custody) parts.push(h.custody + " on the server, waiting for the device");
   if (h.retained) parts.push(h.retained + " history records stored on the device");

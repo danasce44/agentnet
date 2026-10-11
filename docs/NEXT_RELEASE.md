@@ -1,4 +1,46 @@
-# AgentNet v0.8.19 — published; physical-phone verification remains
+# Next bug fix — MEL-595 remote Needs you card
+
+After v0.8.19, the owner reported a default-agent question to Bezos whose
+Needs you card named Zenbook and hid the explanation already present in the
+authenticated owner report. Fix branch: `fix/mel-595-remote-needs-human`.
+Reuse the provider's execution/continuation host and the newest matching
+report item (request ID, requester key, attempt, kind and state). No new
+transport, permissions, job retry or live-data change is involved. This fixes
+the card; it does not repair the native agent's reported memory-access denial.
+The model regression fails before the fix (Bezos becomes Zenbook). The updated
+Comic build/typecheck and focused model/rendered race tests pass (3.950 s), with
+actual Chromium at 390 and 1280 px and unchanged exact Reply/Resolve bindings.
+Independent read-only review is clear. This change is not yet released.
+
+**Owner follow-up, MEL-558:** verify and repair the remaining source-side
+deferred/blocked history records; do not purge messages or relax validation.
+A private read-only snapshot is being used for diagnosis. The current app is
+v0.8.19; Android phone 3, Bezos and Linux laptop are connected, while the old
+Android phone 2 browser identity is offline. Its 212 custody copies are not
+evidence that the current APK is disconnected. Deferred counts also include
+backpressure and in-transit originals, so “waiting for context” overstates the
+known cause. Move internal history counts/progress under device Details; show
+no invented approval or user action. Do not revoke the old browser identity
+without the owner's specific instruction.
+
+Device presentation is implemented and reviewed: Comic build/typecheck, combined
+card/device rendered race tests (7.359 s), final device-only rendered race
+(4.721 s), and all fourteen Comic asset checksums pass. Actual Chromium checks
+390/1280 px, collapsed/expanded diagnostics, progress, address/key, Remove and
+no overflow. This is not a claim that pending history has been repaired.
+
+The private audit found 101 conversation-history deferred references: 3 already
+original on their target, 28 blocked directly by eight distinct historical
+group-dismissal forwarding checks, 45 blocked through those dependencies, and
+25 source-valid but still uncovered. The old browser phone's background window
+is full; the other windows are empty. All originals remain present. The 23
+quarantined phone-browser copies and six laptop copies have exact equivalent
+source/hash copies delivered to the current APK, which does not prove recovery
+on the original targets. No queues, receipts, grants or devices were changed.
+Repair the source policy only with preserved signed event, historical membership
+and admission proof, then test recovery through the normal bounded queue.
+
+## AgentNet v0.8.19 — published; physical-phone verification remains
 
 [v0.8.19](https://github.com/misunders2d/agentnet/releases/tag/v0.8.19) published
 October 11 at **08:33:39 UTC**; existing relay verified **08:37:03 UTC**.

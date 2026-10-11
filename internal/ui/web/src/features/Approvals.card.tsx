@@ -14,7 +14,7 @@ import { Button } from "../ui/Button";
 import { Sheet } from "../ui/Sheet";
 import {
   askerOf, capital, deviceWords, headlineOf, inSentence, isMine, isThreadMsg, kindWord, longer, myAgent, myAgentSeed, nameOf,
-  participationOf, phaseOf, placeOf, requestText, waitsElsewhere, type Asker, type Phase, type Req,
+  participationOf, phaseOf, placeOf, remoteNeedsHumanDetail, requestText, waitsElsewhere, type Asker, type Phase, type Req,
 } from "./Approvals.words";
 import { sendID } from "../optimistic.mjs";
 import { AnswerSheet, ConfirmSheet, DeclineSheet } from "./Approvals.sheets";
@@ -123,7 +123,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
   const named = mine.named;
   const notice = isThreadMsg(m) && m.kind === "message" && m.status === "review_notice";
   const conv = dm?.id || thread?.id || "";
-	const said = (isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "";
+	const said = (isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? remoteNeedsHumanDetail(m, o) : "") || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "";
 	const proposal = m.proposal;
 
   const permissionPerson = thread?.permission_person;
@@ -199,7 +199,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
         {phase === "needs_human" || (phase === "stopped" && said) ? (
           <div data-agent-needs-you={phase === "needs_human" || undefined} role="region" aria-label="Your agent says" tabIndex={-1} className="mx-4 mt-3 rounded-xl bg-agent px-3.5 py-2.5 text-agent-ink">
             <p className="text-[13px] font-bold">{phase === "needs_human" ? "Your agent couldn’t finish — it needs your attention" : capital(agent) + " says"}</p>
-            <p className="pt-0.5 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">{said || "It needs a person to decide. It didn't say more."}</p>
+            <p className="pt-0.5 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">{said || "It needs a person to decide. The reason is not available on this device yet."}</p>
           </div>
         ) : null}
 

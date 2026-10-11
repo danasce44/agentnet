@@ -6,6 +6,13 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Show the executing device and its recorded explanation on a remote **Needs
+  you** card. Linked-device questions no longer name the viewing computer or
+  claim the agent gave no reason when its exact owner report includes one.
+- Keep background history counts and progress inside device **Details**. Pending
+  transfers no longer claim they need missing context or ask for attention
+  without an action the person can take.
+
 ## [0.8.19] — 2026-10-11
 
 - Include the native Android preview in tagged releases as a signed APK with

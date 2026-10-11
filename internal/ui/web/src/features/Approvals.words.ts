@@ -37,7 +37,7 @@ export function myAgent(m: Req, names: Record<string, string>, o: T.Overview | n
   const named = !!id && !!names[id];
   const me = o?.person;
   const name = me ? agentName(id, names, me, me) : (id && names[id]) || "Your agent";
-  const address = a?.host.address || m.target?.address || o?.me.address || "";
+  const address = a?.host.address || m.target?.address || m.continuation?.host || m.exec?.host || o?.me.address || "";
   return { name, named, address, where: me ? agentWhere(me, address, me) : niceDevice(address) };
 }
 
@@ -48,7 +48,21 @@ export const myAgentName = (m: Req, names: Record<string, string>, o: T.Overview
 /** The seed for an agent's face: its id when named, else the device it runs on. */
 export function myAgentSeed(m: Req, o: T.Overview | null, dm?: T.DMThread | null) {
   const a = participationOf(m, dm);
-  return a?.agent_id || m.target?.agent_id || a?.host.address || m.target?.address || o?.me.address || "agent";
+  return a?.agent_id || m.target?.agent_id || a?.host.address || m.target?.address || m.continuation?.host || m.exec?.host || o?.me.address || "agent";
+}
+
+/** Rich detail is shared only in the host's authenticated owner report. Use
+ * its newest snapshot before matching the exact continuation; never revive an
+ * older reason after a settled or changed snapshot. This grants no actions. */
+export function remoteNeedsHumanDetail(m: Req, o: T.Overview | null): string {
+  const c = m.continuation;
+  if (!c?.host || !m.exec || m.exec.host !== c.host || m.exec.state !== "needs_human" || m.exec.attempt !== c.attempt) return "";
+  const reports = (o?.review || []).filter(r => r.notice && r.peer === c.host && r.report?.host === c.host);
+  const settled = (r: T.ReviewItem) => !(r.report?.items || []).length && !r.report?.count;
+  const reportTime = (at: number | string) => typeof at === "number" ? at * 1000 : Date.parse(at);
+  reports.sort((a, b) => (reportTime(b.report!.at) - reportTime(a.report!.at)) || Number(settled(b)) - Number(settled(a)) || Date.parse(b.at) - Date.parse(a.at));
+  const item = reports[0]?.report?.items?.find(x => x.id === c.id && x.key === c.key && x.attempt === c.attempt && x.kind === m.kind && x.state === "needs_human" && !x.conv);
+  return item?.excerpt || "";
 }
 
 /** Who asked. name reads in a sentence ("Vitalii", "Vitalii’s desk"); title
