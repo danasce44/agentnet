@@ -121,7 +121,7 @@ func TestRecipientLifecyclePermanentRemovalPreservesEvidence(t *testing.T) {
 	}
 	// A still-enrolled former own phone may receive a new independently granted
 	// selected share. A same-target own carrier is identified by its existing ledger.
-	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('former-selected','person/standalone',?,'history','selected','exact','queued',1),('own-carrier','person/standalone',?,'history','own history','exact','queued',1)`, fp, fp); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('former-selected','person/standalone',?,'history','selected','exact','queued',1),('own-carrier','person/standalone',?,'history','own history','exact','queued',1),('own-prepack','person/standalone',?,'history','kept history','exact-prepack','archive_staged',1)`, fp, fp, fp); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`INSERT INTO history_copies(recipient_fp,conv,author,lid,hash,carrier,source_dir,source_id) VALUES(?,'conv','author','lid','hash','own-carrier','in','original')`, fp); err != nil {
@@ -141,6 +141,13 @@ func TestRecipientLifecyclePermanentRemovalPreservesEvidence(t *testing.T) {
 	}
 	if err = s.db.QueryRow(`SELECT state FROM outbox WHERE id='own-carrier'`).Scan(&ownState); err != nil {
 		t.Fatal(err)
+	}
+	var prepackState, prepackBody, prepackCipher string
+	if err = s.db.QueryRow(`SELECT state,body,envelope FROM outbox WHERE id='own-prepack'`).Scan(&prepackState, &prepackBody, &prepackCipher); err != nil {
+		t.Fatal(err)
+	}
+	if prepackState != stateNotDelivered || prepackBody != "kept history" || prepackCipher != "exact-prepack" {
+		t.Fatal("legacy own prepack did not end with its bytes retained")
 	}
 	if selectedState != stateQueued || ownState != stateNotDelivered {
 		t.Fatalf("former-own selected=%s own carrier=%s", selectedState, ownState)

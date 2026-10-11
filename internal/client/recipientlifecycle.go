@@ -321,4 +321,6 @@ func pastOwnRecipientIn(q dbq, address, fp string) (bool, error) {
 // Selected group grants also use SubHistory, including grants to an independently
 // enrolled former own phone. Only own producer ledgers/live-forward metadata
 // identify history transport that should stop when that phone detaches.
-const ownHistoryTransport = `(sub IN ` + syncSubs + ` AND (sub!='history' OR replication_live=1 OR EXISTS(SELECT 1 FROM history_copies h WHERE h.carrier=outbox.id AND h.recipient_fp=outbox.recipient_fp))) OR id IN (SELECT child FROM history_archive_entries)`
+// Pre-pack archive_staged rows are also own-only producer output, including
+// legacy snapshots before a carrier ledger existed; selected shares stay queued.
+const ownHistoryTransport = `(sub IN ` + syncSubs + ` AND (sub!='history' OR state='archive_staged' OR replication_live=1 OR EXISTS(SELECT 1 FROM history_copies h WHERE h.carrier=outbox.id AND h.recipient_fp=outbox.recipient_fp))) OR id IN (SELECT child FROM history_archive_entries)`
