@@ -49,6 +49,9 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 	persons(t, w.alice, w.bob)
 	phone := linked(t, w.alice)
 	stop()
+	// Run shutdown joins stream/archive work; the detached sender can still
+	// finish a setup flush and signal Changed. Join it before measuring quiet.
+	w.alice.stopBackgroundPosts()
 	r := Responder{Harness: "codex", Dir: t.TempDir(), Timeout: time.Minute}
 	if err := w.alice.SetResponder(&r); err != nil {
 		t.Fatal(err)
@@ -70,8 +73,11 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 		}
 		next := modelAt(t, w.alice, fp, id)
 		after, _ := w.alice.Changed()
-		if previous != next || after != seq {
-			t.Fatal("identical model churned snapshot/time/revision or change stream")
+		if previous != next {
+			t.Fatal("identical model churned snapshot/time/revision")
+		}
+		if after != seq {
+			t.Fatalf("identical model changed quiet stream: before=%d after=%d", seq, after)
 		}
 		mismatch := r
 		mismatch.Dir = t.TempDir()

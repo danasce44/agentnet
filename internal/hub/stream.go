@@ -188,8 +188,12 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 	// A revoke between authentication and subscription cannot leave a live
 	// stream behind the transaction's disconnect notification.
 	a, err = h.store.agent(caller)
-	if err != nil || a.Revoked {
+	if err != nil {
 		writeError(w, http.StatusForbidden, protocol.CodeRevoked, "agent revoked")
+		return
+	}
+	if a.Revoked {
+		writeRevokedAgent(w, a)
 		return
 	}
 	// What this device runs, as its stream says (update.go). A pending

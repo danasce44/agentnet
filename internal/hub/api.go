@@ -132,16 +132,11 @@ func (h *Hub) authenticateBody(w http.ResponseWriter, r *http.Request) (string, 
 		writeError(w, http.StatusUnauthorized, "", err.Error())
 		return "", nil, false
 	}
+	if a.Revoked {
+		writeRevokedAgent(w, a)
+		return "", nil, false
+	}
 	switch {
-	case a.Revoked && a.RevokedReason == "refused":
-		writeError(w, http.StatusForbidden, protocol.CodeLinkRefused, "the device link was refused")
-		return "", nil, false
-	case a.Revoked && a.RevokedReason == "expired":
-		writeError(w, http.StatusForbidden, protocol.CodeLinkExpired, "nobody approved the device link in time")
-		return "", nil, false
-	case a.Revoked:
-		writeError(w, http.StatusForbidden, protocol.CodeRevoked, "agent revoked")
-		return "", nil, false
 	case a.Pending && a.PendingUntil <= time.Now().Unix():
 		// Nobody approved it in time: it is revoked on its next request.
 		if _, err := h.store.endPending(`address = ?`, "expired", a.Public.Address); err != nil {
@@ -452,4 +447,16 @@ func (h *Hub) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, h.presence.list(address))
+}
+
+// Preserve the enrollment outcome at every revocation fence.
+func writeRevokedAgent(w http.ResponseWriter, a agent) {
+	switch a.RevokedReason {
+	case "refused":
+		writeError(w, http.StatusForbidden, protocol.CodeLinkRefused, "the device link was refused")
+	case "expired":
+		writeError(w, http.StatusForbidden, protocol.CodeLinkExpired, "nobody approved the device link in time")
+	default:
+		writeError(w, http.StatusForbidden, protocol.CodeRevoked, "agent revoked")
+	}
 }
