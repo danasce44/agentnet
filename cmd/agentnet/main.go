@@ -785,8 +785,20 @@ func runAdmin(ctx context.Context, a *client.Agent, args []string) error {
 		fmt.Print(packet)
 		return nil
 	case "revoke":
+		if len(args) == 3 && args[1] == "--person" {
+			addresses, err := a.RevokePerson(ctx, args[2])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("removed workspace access for person %s: %d devices revoked\n", args[2], len(addresses))
+			for _, address := range addresses {
+				fmt.Printf("  %s\n", address)
+			}
+			fmt.Println("Standalone devices not linked to this person are not included; revoke those by address.")
+			return nil
+		}
 		if len(args) != 2 {
-			return errors.New("usage: admin revoke ADDRESS")
+			return errors.New("usage: admin revoke ADDRESS | admin revoke --person PERSON_ID")
 		}
 		if err := a.Revoke(ctx, args[1]); err != nil {
 			return err

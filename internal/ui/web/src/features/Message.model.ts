@@ -171,6 +171,7 @@ export function requestState(m: AnyMsg, all: AnyMsg[], ctx?: Pick<Ctx, "overview
   if (answer) return { text: m.kind === "task" ? "Done" : "Answered", tone: "ok" };
   const e = m.exec;
   if (e && e.state) {
+    if (e.state === "unavailable") return { text: "Host removed", tone: "muted" };
     const w = word(e.state);
     if (w) return { text: w + (e.stale ? " · last known" : ""), tone: tone(e.state) };
   }

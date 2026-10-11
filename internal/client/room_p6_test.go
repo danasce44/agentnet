@@ -1,6 +1,7 @@
 package client
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -337,6 +338,20 @@ func TestP6OriginAndTargetFences(t *testing.T) {
 	if _, e = w.bob.store.db.Exec(`DELETE FROM inbox WHERE id=?`, duplicate); e != nil {
 		t.Fatal(e)
 	}
+	// The source PID appears as both asking author and upstream target. Resolve it
+	// once, reuse the already-resolved target, and reuse captured cause rows for grants.
+	eventually(t, "upstream source request evidence", func() bool {
+		_, err := roomCauseIn(w.bob.store.db, conv, root.LID, w.bob.Address, w.bob.Self().Fingerprint())
+		return err == nil
+	})
+	request.ID = childIDForP6(t, w.bob, ask.LID) // refresh after removing the deliberately ambiguous copy
+	count := &roomChainReadCounter{dbq: w.bob.store.db, parts: map[string]int{}}
+	if v, why, err := roomChain(count, request, members, stateAt(t, w.bob, to.PID), w.bob.Address, w.bob.Self().Fingerprint(), false); err != nil || v != verdictRun {
+		t.Fatalf("valid captured chain: verdict=%d why=%s err=%v", v, why, err)
+	}
+	if count.parts[from.PID] != 1 || count.parts[to.PID] != 0 || count.causes != 2 {
+		t.Fatalf("repeated chain projection: parts=%v causes=%d", count.parts, count.causes)
+	}
 	for _, change := range []string{"key", "cause", "epoch", "target"} {
 		t.Run(change, func(t *testing.T) {
 			r := agentReq{ID: childIDForP6(t, w.bob, ask.LID), Sender: original.from, Key: original.key, Conv: conv, PID: to.PID, Kind: original.kind, Target: original.target, State: stateAccepted}
@@ -450,4 +465,21 @@ func TestP6InviterLeavesWithoutRemovingAgent(t *testing.T) {
 		t.Fatal(e)
 	}
 	eventually(t, "explicit removal still counts", func() bool { return stateAt(t, host, p.PID).State == PartDismissed })
+}
+
+// Count actual SQL projections, not helper invocations; delegation still reads the real store.
+type roomChainReadCounter struct {
+	dbq
+	parts  map[string]int
+	causes int
+}
+
+func (q *roomChainReadCounter) Query(query string, args ...any) (*sql.Rows, error) {
+	if query == `SELECT event FROM participation_events WHERE conv = ? AND pid = ? ORDER BY hash` {
+		q.parts[args[1].(string)]++
+	}
+	if strings.HasPrefix(query, `SELECT lid,sender,coalesce(verified_by,'')`) {
+		q.causes++
+	}
+	return q.dbq.Query(query, args...)
 }

@@ -356,81 +356,32 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	watchDone := make(chan struct{})
 	go func() {
 		defer close(watchDone)
-		timer := time.NewTimer(runStallNotice)
-		defer timer.Stop()
-		stallC := timer.C
-		quiet := false
-		_, changed := a.Changed()
-		_, kicked := a.workerWakeFeed.current()
-		for first := true; ; first = false {
-			if first {
-				a.reviewAttention(ctx)
-			}
-			if !first {
-				select {
-				case <-runCtx.Done():
-					return
-				case <-kicked:
-					_, kicked = a.workerWakeFeed.current()
-					a.noteBusyQueue()
-					a.reviewAttention(ctx) // new items may arrive while a job runs
-					a.notifyRelease()
-				case <-changed:
-					_, changed = a.Changed()
-					if at := a.store.latestRunProgress(j.ID); !at.IsZero() && at.UnixNano() > activity.last.Load() {
-						activity.touch(at)
-					}
-				case <-activity.wake:
-					if !activity.warned {
-						timer.Reset(runStallNotice)
-					}
-					if quiet {
-						quiet = false
-						a.store.markRunVisibility(j.ID, false)
-						a.reviewAttention(ctx)
-					}
-				case <-stallC:
-					remaining, due := activity.stallDue(time.Now())
-					if remaining > 0 {
-						timer.Reset(remaining)
-						continue
-					}
-					stallC = nil
-					if !due {
-						continue
-					}
-					quiet = true
-					if fresh, err := a.store.markRunVisibility(j.ID, true); err != nil {
-						a.Logf("stall notice: %v", err)
-					} else if fresh {
-						a.reviewAttention(ctx)
-					}
-				}
-				if s, _ := a.store.jobState(j.ID); s == stateCancelReq {
-					cancelled.Store(true)
-					cancel()
-					return
-				}
+		a.watchRunActivity(runCtx, ctx, j, activity, func() bool {
+			if s, _ := a.store.jobState(j.ID); s == stateCancelReq {
+				cancelled.Store(true)
+				cancel()
+				return false
 			}
 			if why := a.personGrantStop(j); why != "" {
 				stopWhy = why
 				cancel()
-				return
+				return false
 			}
 			if j.Receiver != nil {
 				if why := a.receiverStop(j); why != "" {
 					stopWhy = why
 					cancel()
-					return
+					return false
 				}
 			} else if j.PID != "" {
 				if why := a.agentStop(j); why != "" {
 					stopWhy = why
 					cancel()
-					return
+					return false
 				}
 			}
-		}
+			return true
+		})
 	}()
 
 	var stdout, stderr limitedBuffer
@@ -792,9 +743,11 @@ const outFilePrefix = "answer-"
 // desktop notification and, if configured, a review notice to their agent.
 // Each has its own bookkeeping, so neither suppresses the other.
 func (a *Agent) reviewAttention(ctx context.Context) {
-	a.notifyDeviceAdminNotices()
-	a.notifyReview()
-	a.sendReviewNotice(ctx)
+	a.withReviewPass(func() {
+		a.notifyDeviceAdminNotices()
+		a.notifyReview()
+		a.sendReviewNoticeInPass(ctx)
+	})
 }
 
 // notifyReview aggregates local decisions and authenticated remote report
@@ -1112,4 +1065,67 @@ func (a *Agent) PauseForAppUpdate() (func(), error) {
 		return nil, errors.New("A job is running. Wait for it to finish, then update again.")
 	}
 	return func() { a.appUpdateMu.Unlock(); a.wakeWorker() }, nil
+}
+
+// watchRunActivity keeps output/stall bookkeeping separate from stored authority changes.
+// check runs initially and on local change/worker wakes, including cross-process cancellation.
+func (a *Agent) watchRunActivity(runCtx, ctx context.Context, j job, activity *runActivity, check func() bool) {
+	timer := time.NewTimer(runStallNotice)
+	defer timer.Stop()
+	stallC := timer.C
+	quiet := false
+	_, changed := a.Changed()
+	_, kicked := a.workerWakeFeed.current()
+	for first := true; ; first = false {
+		if first {
+			a.reviewAttention(ctx)
+		}
+		if !first {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-kicked:
+				_, kicked = a.workerWakeFeed.current()
+				a.noteBusyQueue()
+				a.reviewAttention(ctx) // new items may arrive while a job runs
+				a.notifyRelease()
+			case <-changed:
+				_, changed = a.Changed()
+				if at := a.store.latestRunProgress(j.ID); !at.IsZero() && at.UnixNano() > activity.last.Load() {
+					activity.touch(at)
+				}
+			case <-activity.wake:
+				if !activity.warned {
+					timer.Reset(runStallNotice)
+				}
+				if quiet {
+					quiet = false
+					a.store.markRunVisibility(j.ID, false)
+					a.reviewAttention(ctx)
+				}
+				continue // output alone cannot change authority
+			case <-stallC:
+				remaining, due := activity.stallDue(time.Now())
+				if remaining > 0 {
+					timer.Reset(remaining)
+					continue
+				}
+				stallC = nil
+				if !due {
+					continue
+				}
+				quiet = true
+				if fresh, err := a.store.markRunVisibility(j.ID, true); err != nil {
+					a.Logf("stall notice: %v", err)
+				} else if fresh {
+					a.reviewAttention(ctx)
+				}
+				continue // visibility writes issue their own stored-change wake
+			}
+		}
+
+		if !check() {
+			return
+		}
+	}
 }

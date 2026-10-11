@@ -144,7 +144,7 @@ CREATE TABLE realm(
   CHECK ((initialized = 0 AND realm_id IS NULL) OR
          (initialized = 1 AND realm_id IS NOT NULL)));
 INSERT INTO realm(id, initialized) VALUES(1, 0);
-`, TeamSchema, driveStorageSchema, GroupHubSchema, agentCatalogSchema, receiptSchema, workspaceSchema, deviceAdminSchema, inviteHintsSchema, googleSchema, deviceAdminNoticeSchema, updateSchema, messageLaneSchema}
+`, TeamSchema, driveStorageSchema, GroupHubSchema, agentCatalogSchema, receiptSchema, workspaceSchema, deviceAdminSchema, inviteHintsSchema, googleSchema, deviceAdminNoticeSchema, updateSchema, messageLaneSchema, revokedCustodyRepairSchema}
 
 const messageLaneSchema = `
 ALTER TABLE messages ADD COLUMN lane TEXT NOT NULL DEFAULT 'live' CHECK (lane IN ('live','sync'));
@@ -210,14 +210,16 @@ func freeName(name string, taken map[string]bool) string {
 }
 
 var (
-	errInviteInvalid = errors.New("invite invalid, expired, or already used")
-	errAddressTaken  = errors.New("address already enrolled")
-	errNotFound      = errors.New("not found")
-	errIDConflict    = errors.New("message id already used for different content")
-	errBlobNotReady  = errors.New("attachment is not a completed upload for this recipient")
-	errQuota         = errors.New("Hub storage quota exceeded")
-	errBlobConflict  = errors.New("blob id already used for a different upload")
-	errBlobBusy      = errors.New("upload is being reclaimed; retry later")
+	errInviteInvalid    = errors.New("invite invalid, expired, or already used")
+	errAddressTaken     = errors.New("address already enrolled")
+	errRevoked          = errors.New("agent revoked")
+	errRecipientRevoked = errors.New("recipient revoked")
+	errNotFound         = errors.New("not found")
+	errIDConflict       = errors.New("message id already used for different content")
+	errBlobNotReady     = errors.New("attachment is not a completed upload for this recipient")
+	errQuota            = errors.New("Hub storage quota exceeded")
+	errBlobConflict     = errors.New("blob id already used for a different upload")
+	errBlobBusy         = errors.New("upload is being reclaimed; retry later")
 )
 
 type store struct{ db *sql.DB }
@@ -512,7 +514,7 @@ func (s *store) revoke(address string, from ...string) error {
 	if err := revokeDeviceAdminGrants(tx, address, by); err != nil {
 		return err
 	}
-	if err := dropNotify(tx, address); err != nil { // its notification state goes with it
+	if err := settleRevokedDevice(tx, address); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -566,6 +568,20 @@ func (s *store) putMessage(env envelope.Envelope, canonical []byte, senderFP str
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
+	}
+	// Authentication may have completed before a concurrent revocation.
+	// Recheck within the same transaction that would admit the new copy.
+	for _, target := range []struct {
+		address string
+		refused error
+	}{{env.From, errRevoked}, {env.To, errRecipientRevoked}} {
+		var revoked sql.NullInt64
+		if err := tx.QueryRow(`SELECT revoked_at FROM agents WHERE address=?`, target.address).Scan(&revoked); err != nil {
+			return "", err
+		}
+		if revoked.Valid {
+			return "", target.refused
+		}
 	}
 	for _, b := range env.Blobs {
 		res, err := tx.Exec(`UPDATE blobs SET message_id = ? WHERE id = ? AND owner = ? AND recipient = ?
@@ -665,6 +681,15 @@ func (s *store) setDisposition(id, recipient, state string) (current, sender str
 		return
 	}
 	defer tx.Rollback()
+	var revoked sql.NullInt64
+	if err = tx.QueryRow(`SELECT revoked_at FROM agents WHERE address=?`, recipient).Scan(&revoked); err != nil {
+		return
+	}
+	if revoked.Valid {
+		err = errRevoked
+		return
+	}
+
 	res, err := tx.Exec(`UPDATE messages SET state = ?, delivered_at = coalesce(delivered_at, ?) WHERE id = ? AND recipient = ? AND (state = ? OR (state = ? AND ? = ?))`, state, time.Now().Unix(), id, recipient, protocol.StateCustody, protocol.StateQuarantined, state, protocol.StateDelivered)
 	if err != nil {
 		return
@@ -818,7 +843,19 @@ func (s *store) expireSession(recipient, session string) ([]string, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT DISTINCT sender FROM messages WHERE recipient=? AND session=? AND fallback=0 AND state=?`, recipient, session, protocol.StateCustody)
+	senders, err := expireCustody(tx, "recipient=? AND session=? AND fallback=0", recipient, session)
+	if err != nil {
+		return nil, err
+	}
+	return senders, tx.Commit()
+}
+
+// expireCustody settles only unacknowledged copies selected by an internal
+// lifecycle predicate. Ciphertext and prior delivered/quarantined receipts
+// remain intact. The receipt log and disposition change commit together.
+func expireCustody(tx *sql.Tx, where string, args ...any) ([]string, error) {
+	selected := append(append([]any{}, args...), protocol.StateCustody)
+	rows, err := tx.Query("SELECT DISTINCT sender FROM messages WHERE "+where+" AND state=?", selected...)
 	if err != nil {
 		return nil, err
 	}
@@ -836,16 +873,30 @@ func (s *store) expireSession(recipient, session string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(`INSERT INTO receipts(sender,id,state,seq) SELECT m.sender,m.id,?,coalesce((SELECT max(r.seq) FROM receipts r WHERE r.sender=m.sender),0)+row_number() OVER (PARTITION BY m.sender ORDER BY m.seq) FROM messages m WHERE m.recipient=? AND m.session=? AND m.fallback=0 AND m.state=?`, protocol.StateExpired, recipient, session, protocol.StateCustody)
+	update := append([]any{protocol.StateExpired}, selected...)
+	_, err = tx.Exec(`INSERT INTO receipts(sender,id,state,seq) SELECT m.sender,m.id,?,coalesce((SELECT max(r.seq) FROM receipts r WHERE r.sender=m.sender),0)+row_number() OVER (PARTITION BY m.sender ORDER BY m.seq) FROM messages m WHERE `+where+` AND m.state=?`, update...)
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(`UPDATE messages SET state=? WHERE recipient=? AND session=? AND fallback=0 AND state=?`, protocol.StateExpired, recipient, session, protocol.StateCustody)
-	if err != nil {
-		return nil, err
-	}
-	return senders, tx.Commit()
+	_, err = tx.Exec("UPDATE messages SET state=? WHERE "+where+" AND state=?", update...)
+	return senders, err
 }
+
+// Data-only migration: repair pre-release revocations exactly once, with the
+// existing schema transaction/version marker and pre-upgrade backup. No rows
+// or ciphertext are removed, and temporary suspension never matches.
+const revokedCustodyRepairSchema = `
+INSERT INTO receipts(sender,id,state,seq)
+SELECT m.sender,m.id,'expired',
+ coalesce((SELECT max(r.seq) FROM receipts r WHERE r.sender=m.sender),0)
+ + row_number() OVER (PARTITION BY m.sender ORDER BY m.seq)
+FROM messages m WHERE m.state='custody' AND
+ (m.recipient IN (SELECT address FROM agents WHERE revoked_at IS NOT NULL)
+ OR (m.sender IN (SELECT address FROM agents WHERE revoked_at IS NOT NULL) AND ` + revokedSenderWorkSQL + `));
+UPDATE messages SET state='expired' WHERE state='custody' AND
+ (recipient IN (SELECT address FROM agents WHERE revoked_at IS NOT NULL)
+ OR (sender IN (SELECT address FROM agents WHERE revoked_at IS NOT NULL) AND ` + revokedSenderWorkSQL + `));
+`
 
 const receiptSchema = `CREATE TABLE receipts(seq INTEGER NOT NULL, sender TEXT NOT NULL, id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(sender,seq));`
 

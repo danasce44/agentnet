@@ -284,7 +284,8 @@ type ReviewPage struct {
 func (a *Agent) PageReview() (ReviewPage, error) {
 	var p ReviewPage
 	var err error
-	if p.Device, err = a.store.messages(` WHERE conv IS NULL AND `+inReview, reviewStates...); err != nil {
+	args := append(append([]any{}, reviewStates...), envelope.KindMessage, envelope.StatusReviewNotice)
+	if p.Device, err = a.store.messages(` WHERE conv IS NULL AND `+inReview+` AND NOT ((`+receivedNotice+`) AND `+revokedInboxSender+`)`, args...); err != nil {
 		return p, err
 	}
 	// A request to this device's agent, as Accept and Resolve take it. One

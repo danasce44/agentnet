@@ -68,6 +68,7 @@ func (h *Hub) routes() http.Handler {
 	mux.HandleFunc("GET /v1/admin/invites", h.handleInvites) // hub/invites.go: any member; the list for admins only
 	mux.HandleFunc("POST /v1/admin/invites/revoke", h.handleInviteRevoke)
 	mux.HandleFunc("POST /v1/admin/revoke", h.handleRevoke)
+	mux.HandleFunc("POST /v1/admin/person/revoke", h.handlePersonRevoke)
 	mux.HandleFunc("POST /v1/admin/release", h.handleRelease)
 	mux.HandleFunc("GET /v1/release", h.handleReleaseGet)
 	mux.HandleFunc("PUT /v1/admin/workspace", h.handleWorkspacePut) // hub/workspace.go; the name rides the member list
@@ -205,7 +206,7 @@ func (h *Hub) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	bootstrap, inviter, err := h.store.enroll(req.Secret, req.Public, label, req.Link)
 	switch {
-	case errors.Is(err, errInviteInvalid):
+	case errors.Is(err, errInviteInvalid), errors.Is(err, errLinkGone):
 		writeError(w, http.StatusForbidden, "", err.Error())
 		return
 	case errors.Is(err, errRosterStale):
@@ -299,6 +300,14 @@ func (h *Hub) handlePostMessage(w http.ResponseWriter, r *http.Request) {
 	// Store a canonical re-encoding so identical retries compare equal.
 	canonical, _ := json.Marshal(env)
 	state, err := h.store.putMessage(env, canonical, sender.Public.Fingerprint(), time.Now(), lane)
+	if errors.Is(err, errRecipientRevoked) {
+		writeError(w, http.StatusForbidden, protocol.CodeRecipientRevoked, err.Error())
+		return
+	}
+	if errors.Is(err, errRevoked) {
+		writeError(w, http.StatusForbidden, protocol.CodeRevoked, err.Error())
+		return
+	}
 	if errors.Is(err, errIDConflict) || errors.Is(err, errBlobNotReady) {
 		writeError(w, http.StatusConflict, "", err.Error())
 		return
@@ -339,6 +348,10 @@ func (h *Hub) handleAck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state, sender, changed, err := h.store.setDisposition(r.PathValue("id"), caller, req.State)
+	if errors.Is(err, errRevoked) {
+		writeError(w, http.StatusForbidden, protocol.CodeRevoked, err.Error())
+		return
+	}
 	if errors.Is(err, errNotFound) {
 		writeError(w, http.StatusNotFound, "", "unknown message")
 		return
@@ -423,8 +436,8 @@ func (h *Hub) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 	h.streams.disconnect(req.Address)
 	h.presence.drop(req.Address)
-	h.membersChanged()
-	h.waiters.notifyAll() // a revoked agent's receipt waits end without a state
+	h.lookAgain()
+	h.waiters.notifyAll() // settled custody copies now have terminal receipts
 	h.cfg.Logf("revoked %s by %s", req.Address, caller)
 	writeJSON(w, http.StatusOK, map[string]string{"revoked": req.Address})
 }

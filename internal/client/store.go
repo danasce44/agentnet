@@ -324,7 +324,9 @@ CREATE TABLE reported(
   PRIMARY KEY(item, recipient));
 `, TeamSchema, GroupClientSchema, GroupProofSchema, agentIdentitySchema, agentCapabilitySchema, groupTurnRecipientSchema, replyReceiverSchema, GroupLifecycleSchema, replySessionSchema, GroupHistorySchema, receiverRouteSchema, humanScopeSchema, convClearSchema, statusDueSchema, runGroupSchema, topicStateSchema, messagingSchema, deliveryPersonSchema, personGrantSchema, operatorPersonsSchema, deviceAdminNoticeSchema, roomSchema, roomReaderSchema, chatTopicSchema, groupInvitationCancellationSchema, readSyncSchema, chatAlertDefaultsSchema, queuedRetractionSchema, heldNoticeSchema, sendGroupSchema, continuationSchema, ownInvitationSchema, historyCatchupSchema, groupHistoryWitnessSchema, topicSyncSchema, `
 CREATE INDEX outbox_conv_lid ON outbox(conv, lid);
-`, historyReceiptSchema, deviceHistorySchema, proposalChoiceSchema, receiptGenerationSchema, requestFollowupSchema, answeredConversationStatusSchema, modelReportSchema, heldCopySchema, retainedConversationStatusSchema, heldLogicalSchema, waitingConversationStatusSchema, topicMarkSyncSchema, skippedCopySchema, historyArchiveSchema}
+`, historyReceiptSchema, deviceHistorySchema, proposalChoiceSchema, receiptGenerationSchema, requestFollowupSchema, answeredConversationStatusSchema, modelReportSchema, heldCopySchema, retainedConversationStatusSchema, heldLogicalSchema, waitingConversationStatusSchema, topicMarkSyncSchema, skippedCopySchema, historyArchiveSchema, `
+ALTER TABLE quarantine ADD COLUMN relay_ingress INTEGER NOT NULL DEFAULT 0;
+`}
 
 // Outbox states. Hub states (custody, delivered) are stored as reported.
 const (
@@ -882,9 +884,10 @@ func (s *store) quarantine(id, sender, reason string, raw []byte) error {
 }
 
 // logical: the record the copy carries (heldLogicalKey), "" before it opened.
-func (s *store) quarantineDiagnostic(id, sender, reason string, raw []byte, why, logical string) error {
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO quarantine(id, sender, reason, envelope, received_at, detail_code, logical) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-		id, sender, reason, string(raw), time.Now().Unix(), heldFailureCode(reason, why), logical)
+func (s *store) quarantineDiagnostic(id, sender, reason string, raw []byte, why, logical string, relay ...bool) error {
+	marked := len(relay) > 0 && relay[0]
+	_, err := s.db.Exec(`INSERT INTO quarantine(id, sender, reason, envelope, received_at, detail_code, logical,relay_ingress) VALUES(?, ?, ?, ?, ?, ?, ?,?) ON CONFLICT(id) DO UPDATE SET relay_ingress=max(quarantine.relay_ingress,excluded.relay_ingress) WHERE quarantine.envelope=excluded.envelope AND quarantine.relay_ingress<excluded.relay_ingress`,
+		id, sender, reason, string(raw), time.Now().Unix(), heldFailureCode(reason, why), logical, marked)
 	return s.done(err)
 }
 
@@ -1190,6 +1193,10 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 		return job{}, false, err
 	}
 	defer tx.Rollback()
+	revokedChanged, err := endRevokedRequests(tx)
+	if err != nil {
+		return job{}, false, err
+	}
 	// Idle wakes need no approval/grant query unless a non-replica direct
 	// candidate exists. Keep this probe and the exact claim in one snapshot.
 	var candidate bool
@@ -1197,9 +1204,13 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 		return job{}, false, err
 	}
 	if !candidate {
-		return job{}, false, tx.Commit()
+		err = tx.Commit()
+		if err == nil && revokedChanged > 0 {
+			s.changed()
+		}
+		return job{}, false, err
 	}
-	changed := false
+	changed := revokedChanged > 0
 	var afterID string
 	var afterAt int64
 	for {

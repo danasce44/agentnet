@@ -199,6 +199,19 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 	if err != nil {
 		return roomCauseFailure(err)
 	}
+	// Only this current decision shares resolved participation; the next check rereads it.
+	parts := map[string]ParticipationInfo{info.PID: info}
+	part := func(pid string) (ParticipationInfo, error) {
+		if p, ok := parts[pid]; ok {
+			return p, nil
+		}
+		p, err := participationIn(q, r.Conv, pid, m, self)
+		if err == nil {
+			parts[pid] = p
+		}
+		return p, err
+	}
+	var causes []roomCause
 	seen := map[string]bool{}
 	allowed := true
 	for {
@@ -206,7 +219,8 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 			return verdictStop, "agent request origin contains a loop", nil
 		}
 		seen[c.id] = true
-		target, e := participationIn(q, r.Conv, c.pid, m, self)
+		causes = append(causes, c)
+		target, e := part(c.pid)
 		if e != nil {
 			return verdictWait, "origin target evidence is pending", nil
 		}
@@ -224,7 +238,7 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 		}
 		agent := c.human != nil && c.human.AgentAuthor()
 		if agent {
-			p, e := participationIn(q, r.Conv, c.human.AuthorPID, m, self)
+			p, e := part(c.human.AuthorPID)
 			if e != nil {
 				return verdictWait, "asking agent's membership evidence is pending", nil
 			}
@@ -251,11 +265,7 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 	}
 	// Both immediate agent and every upstream human/agent key must hold their
 	// own grant. Traverse again without accepting absent proof.
-	c, err = roomCauseIn(q, r.Conv, r.ID, self, fp)
-	if err != nil {
-		return roomCauseFailure(err)
-	}
-	for {
+	for _, c := range causes {
 		own := false
 		for _, p := range m.persons {
 			own = own || p.info.Person == info.Host.Person && p.has(c.from, c.key)
@@ -280,13 +290,7 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 				allowed = allowed && (ok || slices.Contains(info.TaskKeys, c.key))
 			}
 		}
-		if c.human == nil || !c.human.AgentAuthor() {
-			break
-		}
-		c, err = roomCauseIn(q, r.Conv, c.reply, self, fp)
-		if err != nil {
-			return roomCauseFailure(err)
-		}
+
 	}
 	if output || r.State == stateAccepted || allowed {
 		return verdictRun, "", nil
@@ -395,25 +399,58 @@ func (a *Agent) SendRoomAsk(ctx context.Context, cause, pid, kind, body string) 
 // RoomReply is an explicit read of the permitted group's correlated reply.
 // CLI waiting reads local storage only; the daemon keeps its one push stream.
 func (a *Agent) RoomReply(cause, request string) (*ConvMessage, error) {
+	// Resolve both current scopes against one read snapshot. Ordinary change
+	// wakes with no answer must not rebuild the same group membership twice.
+	tx, err := a.store.db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	q, closeReads := prepareMembershipReads(tx)
+	defer closeReads()
 	var conv, pid, state string
-	if err := a.store.db.QueryRow(`SELECT conv,pid,state FROM inbox WHERE id=?`, cause).Scan(&conv, &pid, &state); err != nil {
+	if err := q.QueryRow(`SELECT conv,pid,state FROM inbox WHERE id=?`, cause).Scan(&conv, &pid, &state); err != nil {
 		return nil, err
 	}
 	if state != stateRunning {
 		return nil, errors.New("originating run stopped")
 	}
-	p, err := a.Participation(pid)
+	members, err := membersIn(q, conv)
+	if err != nil {
+		return nil, err
+	}
+	p, err := participationIn(q, conv, pid, members, a.Address)
 	if err != nil {
 		return nil, err
 	}
 	if !p.Member || !p.HostHere || !p.Claimable() {
 		return nil, errors.New("agent is no longer a member here")
 	}
-	req, err := roomCauseIn(a.store.db, conv, request, a.Address, a.Self().Fingerprint())
+	req, err := roomCauseIn(q, conv, request, a.Address, a.Self().Fingerprint())
 	if err != nil {
 		return nil, err
 	}
-	msgs, err := a.roomReplyMessages(conv, req.id)
+	candidate, err := roomReplyCandidateIn(q, conv, req.id)
+	if err != nil {
+		return nil, err
+	}
+	if !candidate {
+		target, err := participationIn(q, conv, req.pid, members, a.Address)
+		if err != nil {
+			return nil, err
+		}
+		if target.Held == 0 && !target.Claimable() {
+			return nil, errors.New("requested agent membership ended")
+		}
+		return nil, nil
+	}
+	// Full signed attribution uses its existing current-state projection after
+	// releasing the connection; the store permits only one open connection.
+	closeReads()
+	if err := tx.Rollback(); err != nil {
+		return nil, err
+	}
+	msgs, err := a.conversationMessages(conv, req.id)
 	if err != nil {
 		return nil, err
 	}
@@ -469,9 +506,9 @@ func (a *Agent) RoomReply(cause, request string) (*ConvMessage, error) {
 // Waiting for one exact reply must not repeatedly decorate every unrelated
 // turn in the room. This is only a negative lookup: candidates still go through
 // ConversationMessages and RoomReply's complete attribution/scope checks.
-func (a *Agent) roomReplyMessages(conv, request string) ([]ConvMessage, error) {
+func roomReplyCandidateIn(q dbq, conv, request string) (bool, error) {
 	var candidate bool
-	err := a.store.db.QueryRow(`SELECT EXISTS(
+	err := q.QueryRow(`SELECT EXISTS(
  SELECT 1 FROM inbox WHERE conv=? AND reply_to=? AND kind IN ('answer','result')
  UNION ALL SELECT 1 FROM outbox WHERE conv=? AND reply_to=? AND kind IN ('answer','result')
  UNION ALL SELECT 1 FROM inbox WHERE conv=? AND ref_id=? AND sub='status'
@@ -479,10 +516,7 @@ func (a *Agent) roomReplyMessages(conv, request string) ([]ConvMessage, error) {
  UNION ALL SELECT 1 FROM outbox WHERE conv=? AND ref_id=? AND sub='status'
   AND CASE WHEN json_valid(body) THEN json_extract(body,'$.state') END IN ('declined','cancelled','failed','interrupted','not_run','needs_human','stopped')
 )`, conv, request, conv, request, conv, request, conv, request).Scan(&candidate)
-	if err != nil || !candidate {
-		return nil, err
-	}
-	return a.ConversationMessages(conv)
+	return candidate, err
 }
 
 func roomPromptName(relation string, p PersonInfo) string {

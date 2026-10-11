@@ -77,26 +77,11 @@ func (a *Agent) AwaitReply(ctx context.Context, id string, wait time.Duration, o
 	if err != nil {
 		return ReplyWait{}, err
 	}
-	conn, err := net.DialTimeout("unix", changesSockPath(a.home), time.Second)
+	conn, woke, gone, err := a.subscribeLocalChanges()
 	if err != nil {
-		return ReplyWait{}, ErrDaemonNotRunning
+		return ReplyWait{}, err
 	}
 	defer conn.Close()
-	woke := make(chan struct{}, 1)
-	gone := make(chan struct{})
-	go func() {
-		defer close(gone)
-		buf := make([]byte, 64)
-		for {
-			if _, err := conn.Read(buf); err != nil {
-				return
-			}
-			select {
-			case woke <- struct{}{}:
-			default:
-			}
-		}
-	}()
 	told := map[string]bool{}
 	check := func() (ReplyWait, bool, error) {
 		var answer *AwaitedAnswer
@@ -243,4 +228,60 @@ func (a *Agent) convReply(conv, lid string) (*AwaitedAnswer, *ExecView, error) {
 		}
 	}
 	return nil, nil, nil
+}
+
+// subscribeLocalChanges connects before a reader's first storage check. The
+// existing daemon socket coalesces wakes; closing the connection stops its
+// reader without adding a poller or a second Hub stream.
+func (a *Agent) subscribeLocalChanges() (net.Conn, <-chan struct{}, <-chan struct{}, error) {
+	conn, err := net.DialTimeout("unix", changesSockPath(a.home), time.Second)
+	if err != nil {
+		return nil, nil, nil, ErrDaemonNotRunning
+	}
+	woke := make(chan struct{}, 1)
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		buf := make([]byte, 64)
+		for {
+			if _, err := conn.Read(buf); err != nil {
+				return
+			}
+			select {
+			case woke <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	return conn, woke, gone, nil
+}
+
+// AwaitRoomReply keeps RoomReply's complete current scope and attribution
+// checks, running them only after existing local daemon wakes.
+func (a *Agent) AwaitRoomReply(ctx context.Context, cause, request string) (*ConvMessage, error) {
+	return a.awaitRoomReply(ctx, func() (*ConvMessage, error) { return a.RoomReply(cause, request) })
+}
+
+func (a *Agent) awaitRoomReply(ctx context.Context, check func() (*ConvMessage, error)) (*ConvMessage, error) {
+	conn, woke, gone, err := a.subscribeLocalChanges()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	for {
+		reply, err := check()
+		if err != nil || reply != nil {
+			return reply, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-woke:
+		case <-gone:
+			if reply, err := check(); err != nil || reply != nil {
+				return reply, err
+			}
+			return nil, ErrDaemonNotRunning
+		}
+	}
 }

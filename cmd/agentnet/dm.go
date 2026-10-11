@@ -19,7 +19,7 @@ import (
 // runPerson shows or sets up this installation's person and its devices
 // (agentnet help person).
 func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Writer) error {
-	usage := errors.New("usage: person | person create NAME | person rename NAME | person service [--steward ADDRESS] | person link | person links | person approve [--native|--agent-host] ID | person refuse ID | person untrust ADDRESS | person remove ADDRESS (see agentnet help person)")
+	usage := errors.New("usage: person | person list | person create NAME | person rename NAME | person service [--steward ADDRESS] | person link | person links | person approve [--native|--agent-host] ID | person refuse ID | person untrust ADDRESS | person remove ADDRESS (see agentnet help person)")
 	if len(args) == 0 {
 		p, ok, err := a.Person()
 		if err != nil {
@@ -57,6 +57,18 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 		return nil
 	}
 	switch {
+	case args[0] == "list" && len(args) == 1:
+		people, err := a.KnownPersons()
+		if err != nil {
+			return err
+		}
+		for _, p := range people {
+			fmt.Fprintf(stdout, "%s  %q  %s\n", p.Person, p.Label, p.State)
+			for _, d := range p.Devices {
+				fmt.Fprintf(stdout, "  %s  %s\n", d.Address, d.Fingerprint)
+			}
+		}
+		return nil
 	case args[0] == "rename":
 		return runPersonLabel(ctx, a, args[1:], stdout)
 	case args[0] == "create" && len(args) == 2:

@@ -118,3 +118,5 @@ if(process.env.AGENTNET_COMPLETION_PROJECTION){
 }
 for(const d of devices)await d.close();
 console.log('Signed exact reply completion and native DTO parity PASS');
+
+assert.deepEqual(JSON.parse(JSON.stringify(presentation.requestState({...first,exec:{state:'unavailable',stale:true,detail:'The host was permanently removed from this workspace.'}},[first]))),{text:'Host removed',tone:'muted'},'definitive removed-host projection never falls back to delivery or last-known waiting');

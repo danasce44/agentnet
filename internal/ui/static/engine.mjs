@@ -114,7 +114,7 @@ const historyIndexed = (row,arrival) => {
 export async function openIDB(name = "agentnet") {
   let onBlocked, refused = false;
   const blocked = new Promise((_, rej) => { onBlocked = () => { refused = true; rej(new Error("storage is blocked by another tab")); }; });
-  const opening = openDB(name, 7, { // 5: continuous direct-thread source journal; 6: rows by conversation; 7: pending outbox state indexes
+  const opening = openDB(name, 8, { // 5: continuous direct-thread source journal; 6: rows by conversation; 7: pending outbox state indexes; 8: unstarted inbox state and active report status indexes
     async upgrade(d,oldVersion,newVersion,tx) {
       for (const s of stores) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
       if(oldVersion<4) {
@@ -132,6 +132,7 @@ export async function openIDB(name = "agentnet") {
       // whole store. IndexedDB fills it from the existing rows here.
       if(oldVersion<6)for(const s of ["inbox","outbox"])tx.objectStore(s).createIndex("conv","conv");
       if(oldVersion<7){const outbox=tx.objectStore("outbox");outbox.createIndex("sub","sub");outbox.createIndex("state","state");outbox.createIndex("recipient_state",["to","state"]);outbox.createIndex("lane_demote","lane_demote");}
+      if(oldVersion<8){const inbox=tx.objectStore("inbox");inbox.createIndex("state","state");inbox.createIndex("status","status");}
     },
     blocked: onBlocked,
   });
@@ -154,6 +155,12 @@ export async function openIDB(name = "agentnet") {
       for(const state of states)rows.push(...await tx.store.index(to?"recipient_state":"state").getAll(to?[to,state]:state));
       await tx.done;return rows;
     },
+    async inboxStates(states) {
+      const tx=db.transaction("inbox"),rows=[];
+      for(const state of states)rows.push(...await tx.store.index("state").getAll(state));
+      await tx.done;return rows;
+    },
+    inboxStatus:status=>db.getAllFromIndex("inbox","status",status),
     outboxSub:sub=>db.getAllFromIndex("outbox","sub",sub),
     demotionRows:()=>db.getAllFromIndex("outbox","lane_demote","sync"),
     // byConv returns the inbox or outbox rows of one conversation, in key order.
@@ -232,6 +239,8 @@ export function memoryStore() {
     keysAfter: async (s,k,n) => [...data[s].keys()].filter(x=>x>k).sort().slice(0,n),
     prefix: async (s, p) => [...data[s].keys()].filter((x) => x.startsWith(p)).sort().map((x) => structuredClone(data[s].get(x))),
     outboxStates:async(states,to="")=>[...data.outbox.values()].filter(r=>states.includes(r.state)&&(!to||r.to===to)).map(r=>structuredClone(r)),
+    inboxStates:async states=>[...data.inbox.values()].filter(r=>states.includes(r.state)).map(r=>structuredClone(r)),
+    inboxStatus:async status=>[...data.inbox.values()].filter(r=>r.status===status).map(r=>structuredClone(r)),
     outboxSub:async sub=>[...data.outbox.values()].filter(r=>r.sub===sub).map(r=>structuredClone(r)),
     demotionRows:async()=>[...data.outbox.values()].filter(r=>r.lane_demote==="sync").map(r=>structuredClone(r)),
     byConv: async (s, conv) => [...data[s].keys()].filter((x) => data[s].get(x).conv === conv).sort().map((x) => structuredClone(data[s].get(x))),
@@ -264,6 +273,7 @@ export function memoryStore() {
   };
 }
 
+const relayIngress = Symbol("verified relay ingress");
 class StoreConflict extends Error { constructor() { super("storage changed during verification"); } }
 // follows is client ParticipationInfo.follows: of a room's captured audience
 // (a human guest or a room participant), whatever its state; roomAgentScope
@@ -482,7 +492,7 @@ export function outText(state, peer, detail = "") {
   case "queued": return "Waiting to send; retries automatically";
   case "custody": return "On the server; delivery to " + peer + " not confirmed yet";
   case "delivered": return "Delivered to " + peer;
-  case "expired": return "Not delivered: that session ended first";
+  case "expired": return "Not delivered";
   case "failed": return "Not sent" + (detail ? ": " + detail : "");
   case "not_delivered": return "Not sent to " + peer; // nothing was sealed for it, or it was kept here (ui.StateText)
   case "quarantined": return peer + " could not verify it";
@@ -613,8 +623,8 @@ export const TOPICS = Object.freeze({
 // internal/ui topics_browser_test.go).
 export const EXEC_RUNNING_MAX_AGE = 3600;
 const topicOpenIn = new Set(["held", "awaiting", "needs_human", "pending", "accepted", "running", "cancel_requested", "part_waiting"]);
-const topicUndelivered = new Set(["failed", "expired", "quarantined"]);
-const topicExecutionClosed = new Set(["done", "answered", "failed", "timeout", "cancelled", "stopped", "declined", "resolved", "not_run", "proposal"]);
+const topicUndelivered = new Set(["failed", "expired", "quarantined", "not_delivered"]);
+const topicExecutionClosed = new Set(["done", "answered", "failed", "timeout", "cancelled", "stopped", "declined", "resolved", "not_run", "proposal", "unavailable"]);
 const topicRequest = (k) => k === "question" || k === "task";
 // topicOpen: one message keeps its topic pending (client topicOpen).
 const topicOpen = (r, replied) => r.notice ? r.state === "needs_human"
@@ -885,7 +895,11 @@ export class Engine {
     this.suspendedDevices = Array.isArray(suspended) ? suspended.filter(wire.validAddress) : [];
     await this.loadErased();
     if (this.erased.size) this.scheduleErase(); // after a restart: what a crash left untold or unerased
-    if (id) await this.settleLeftoverNotices();
+    if (id) {
+      await this.reconcileDepartedRecipients();
+      for (const dev of await this.store.prefix("kv","revoked-device/")) await this.endRecipient(dev.address,dev.fingerprint,true);
+      await this.settleLeftoverNotices();
+    }
     return !!id;
   }
 
@@ -903,7 +917,10 @@ export class Engine {
   // after each one (MEL-546). Anything else is told at once.
   changed(arrival = false) {
     this.seq++;
-    if (arrival) this.arrived();
+    if (arrival) {
+      this.arrived();
+      this.reconcileRevokedRecipients().catch(() => {});
+    }
     else this.tell();
     if (this.erased.size) this.scheduleErase(); // a change may end work an erased turn's text was kept for
   }
@@ -1637,6 +1654,7 @@ export class Engine {
     this.me = { ...(await this.personRecord([prev, next], "self", this.me)), published: true };
     await put(this.store, "kv", "person", this.me);
     this.changed();
+    await this.reconcileDepartedRecipients();
     return { note: address + " is no longer one of your devices." };
   }
 
@@ -1664,12 +1682,163 @@ export class Engine {
     return true;
   }
 
+  async recipientAvailable(dev, checks = []) {
+    const key = "revoked-device/" + dev.address + "/" + dev.fingerprint;
+    return !(await this.groupRead(checks,"kv",key));
+  }
+
+  // Only exact relay revocation ends ordinary transport. A signed roster
+  // departure ends own-device replication, not standalone messaging.
+  async endRecipient(address, fingerprint, revoked = false) {
+    return this.withHistoryProduction(async () => {
+      const own = await this.store.get("kv", "person");
+      if (!revoked && (own?.state !== "self" || own.devices.some(d => d.address === address && d.fingerprint === fingerprint))) return;
+      const checks = [{s:"kv",k:"person",v:own}], ops = [];
+      const book = await this.store.get("kv", "history"), next = structuredClone(book || {});
+      const jobs = await this.store.prefix("kv", "history-archive/out/");
+      const children = new Set(), retained = new Set();
+      for (const job of jobs) {
+        if (job.to !== address || job.recipient_fp !== fingerprint) continue;
+        const descriptor = await this.store.get("outbox", job.id);
+        checks.push({s:"outbox",k:job.id,v:descriptor});
+        for (const id of job.children || []) {
+          children.add(id);
+          if (job.state === "accepted" || descriptor?.state === "delivered") retained.add(id);
+        }
+      }
+      const sync = new Set(["history", wire.SubHistoryArchive, wire.SubDeviceHistory, wire.SubReadSync, wire.SubRootSync, wire.SubTopicSync, wire.SubTopicStateSync, wire.SubModelSync, wire.SubInvitationSync]);
+      const detail = revoked ? "That device was removed from the server." : "That exact device is no longer one of your devices.";
+      for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"], address)) {
+        if (retained.has(row.id) || row.recipient_fp !== fingerprint || !revoked && !sync.has(row.sub) && !children.has(row.id)) continue;
+        checks.push({s:"outbox",k:row.id,v:row});
+        ops.push({s:"outbox",k:row.id,v:{...row,state:"not_delivered",detail}});
+      }
+      const job = next[address];
+      if (job && job.fingerprint === fingerprint && job.state !== "ended") {
+        next[address] = {...job,state:"ended"};
+        checks.push({s:"kv",k:"history",v:book}); ops.push({s:"kv",k:"history",v:next});
+      }
+      for (const job of jobs) {
+        if (job.to !== address || job.recipient_fp !== fingerprint || !["prepared","published"].includes(job.state)) continue;
+        if ((await this.store.get("outbox", job.id))?.state === "delivered") continue;
+        const key = "history-archive/out/" + job.id;
+        checks.push({s:"kv",k:key,v:job}); ops.push({s:"kv",k:key,v:{...job,state:"ended",error:detail,ct:null}});
+      }
+      if (revoked) {
+        const key = "revoked-device/" + address + "/" + fingerprint, previous = await this.store.get("kv",key);
+        if (previous?.fingerprint !== fingerprint) {
+          checks.push({s:"kv",k:key,v:previous}); ops.push({s:"kv",k:key,v:{address,fingerprint}});
+        }
+      }
+      if (ops.length) await this.store.write(ops,checks);
+      if (revoked) (this.revokedRecipientKeys ||= new Set()).add(address + "/" + fingerprint);
+      if (ops.length) this.changed();
+    });
+  }
+
+  async reconcileDepartedRecipients() {
+    const own = await this.store.get("kv", "person");
+    if (own?.state !== "self") return;
+    const book = await this.historyBook(), targets = new Map();
+    const sync = new Set(["history", wire.SubHistoryArchive, wire.SubDeviceHistory, wire.SubReadSync, wire.SubRootSync, wire.SubTopicSync, wire.SubTopicStateSync, wire.SubModelSync, wire.SubInvitationSync]);
+    for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"])) if (sync.has(row.sub) && row.to && row.recipient_fp) targets.set(row.to + "/" + row.recipient_fp, {address:row.to,fingerprint:row.recipient_fp});
+    for (const job of Object.values(book)) targets.set(job.device + "/" + job.fingerprint, {address:job.device,fingerprint:job.fingerprint});
+    for (const job of await this.store.prefix("kv", "history-archive/out/")) targets.set(job.to + "/" + job.recipient_fp, {address:job.to,fingerprint:job.recipient_fp});
+    for (const dev of targets.values()) if (!own.devices.some(d => d.address === dev.address && d.fingerprint === dev.fingerprint)) await this.endRecipient(dev.address,dev.fingerprint);
+  }
+
+  reconcileRevokedRecipients() {
+    // Member-list processing never waits for directory requests. Coalesce
+    // existing member wakes; a truncated or stale list proves nothing.
+    this.recipientLifecycleAgain = true;
+    if (this.recipientLifecycleRun) return this.recipientLifecycleRun;
+    this.recipientLifecycleRun = (async () => {
+      while (this.recipientLifecycleAgain && !this.closing) {
+        this.recipientLifecycleAgain = false;
+        await this.reconcileRevokedRecipientsOnce();
+      }
+    })().finally(() => { this.recipientLifecycleRun = null; });
+    return this.recipientLifecycleRun;
+  }
+
+  async reconcileRevokedRecipientsOnce() {
+    const view = this.members;
+    if (!view.current || view.listed !== "listed") return;
+    // Presence is deliberately absent: it cannot invalidate directory evidence.
+    const semantic = JSON.stringify([view.discovery_generation ?? 0, !!view.truncated,
+      view.list.map(({presence,...member}) => member).sort((a,b) => a.address.localeCompare(b.address))]);
+    const failed = this.recipientDiscoveryFailed ||= new Set();
+    let scan = this.recipientDiscovery;
+    if (!scan || (!scan.targets.length && scan.semantic !== semantic))
+      scan = {semantic, checked:new Set(), targets:[], pos:0};
+    if (!scan.targets.length) {
+      const targets = new Map();
+      const add = (address,fingerprint) => {
+        if (address && fingerprint && address !== this.address)
+          targets.set(address + "/" + fingerprint,{address,fingerprint});
+      };
+      for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"])) add(row.to,row.recipient_fp);
+      for (const job of Object.values(await this.historyBook())) if (job.state !== "ended") add(job.device,job.fingerprint);
+      for (const row of await this.store.inboxStates(["pending","accepted","held","awaiting","conv_held","part_waiting"]))
+        if (!row.replica && ["question","task"].includes(row.kind)) add(row.from,row.fp);
+      // Unresolved remote reports are open work too. Their historical rows
+      // remain stored, but a confirmed removed host must not stay actionable.
+      for (const row of await this.store.inboxStatus("review_notice"))
+        if (isNotice(row) && !row.resolved && await this.recipientAvailable({address:row.from,fingerprint:row.fp})) add(row.from,row.fp);
+      const present = new Set(this.members.list.map(m => m.address));
+      for (const key of failed) if (!targets.has(key) || present.has(targets.get(key).address)) failed.delete(key);
+      for (const [key,dev] of targets) if (!present.has(dev.address) && !scan.checked.has(key)) {
+        scan.checked.add(key);scan.targets.push(dev);
+      }
+    }
+    this.recipientDiscovery = scan;
+    const end = Math.min(scan.pos + 50,scan.targets.length);
+    for (;scan.pos < end;scan.pos++) {
+      const dev = scan.targets[scan.pos];
+      // Adopt newly present evidence without restarting or starving this round.
+      if (this.members.list.some(m => m.address === dev.address)) { failed.delete(dev.address + "/" + dev.fingerprint); continue; }
+      const known = await this.store.get("kv", "revoked-device/" + dev.address + "/" + dev.fingerprint);
+      if (known?.fingerprint === dev.fingerprint) {
+        scan.checked.delete(dev.address + "/" + dev.fingerprint);
+        failed.delete(dev.address + "/" + dev.fingerprint);
+        await this.endRecipient(dev.address,dev.fingerprint,true);
+        continue;
+      }
+      try {
+        const entry = await this.directory(dev.address);
+        failed.delete(dev.address + "/" + dev.fingerprint);
+        if (entry.revoked && entry.fingerprint === dev.fingerprint) {
+          scan.checked.delete(dev.address + "/" + dev.fingerprint);
+          await this.endRecipient(dev.address,dev.fingerprint,true);
+        }
+      } catch (e) {
+        // Definitive unknown/pending or invalid directory responses stay
+        // memoized for this generation. Only transient transport failures
+        // (or a local CAS conflict) need another existing maintenance wake.
+        const key = dev.address + "/" + dev.fingerprint;
+        if (retryable(e) || e instanceof StoreConflict) {
+          scan.checked.delete(key);
+          failed.add(key);
+        } else failed.delete(key);
+      }
+    }
+    if (scan.pos === scan.targets.length) {
+      scan.targets=[];scan.pos=0;
+      if (scan.semantic !== semantic) this.recipientDiscovery = null;
+    }
+    if (scan.targets.length || this.recipientDiscovery === null) {
+      this.recipientLifecycleAgain=true;
+      await new Promise(resolve => setTimeout(resolve,0));
+    }
+  }
+
   // Only missing snapshots: the approver may not hold this device's history.
   // Existing jobs (including ended/done) and their positions remain intact.
   async reconcileHistory() {
+    await this.reconcileDepartedRecipients();
     const checks=[],own=await this.groupRead(checks,"kv","person"),saved=await this.groupRead(checks,"kv","history"),book=structuredClone(saved||{}),added=[];
     for(const dev of own?.devices||[]) {
-      if(dev.address===this.address || book[dev.address] || !await this.ownHistoryAuthority(dev,checks))continue;
+      if(dev.address===this.address || book[dev.address] || !await this.recipientAvailable(dev,checks) || !await this.ownHistoryAuthority(dev,checks))continue;
       book[dev.address]={device:dev.address,fingerprint:dev.fingerprint,pos:null,done:0,total:(await this.store.all("convs")).length,state:"running",own_human:this.fp};
       added.push(dev);
     }
@@ -1769,6 +1938,7 @@ export class Engine {
       // Quarantine retains the same ciphertext for recovery, not another batch.
       const present=new Set();for(const o of saved)if(o.sub===wire.SubReadSync&&o.read_owner===own.person&&["queued","waiting","custody","delivered","quarantined"].includes(o.state))for(const key of o.read_refs||[])present.add(o.recipient_fp+"|"+key);
       for(const dev of own.devices) {
+        if (!await this.recipientAvailable(dev,checks)) continue;
         if(!await historyWindow(this.store,dev))continue;
         if(dev.address===this.address || !(own.human_keys||[]).includes(dev.fingerprint))continue;
         const refs=marks.filter(m=>!present.has(dev.fingerprint+"|"+this.readMarkKey(own.person,m.ref))).slice(0,64).map(m=>m.ref);if(!refs.length)continue;
@@ -1890,6 +2060,7 @@ export class Engine {
       const checks=[],current=await this.groupRead(checks,"kv","person"),ops=[];
       if(!current||current.person!==own.person||current.state!=="self"||!current.human_keys?.includes(this.fp)||!current.devices.some(d=>d.address===this.address&&d.fingerprint===this.fp))return;
       for(const dev of current.devices){
+        if (!await this.recipientAvailable(dev,checks)) continue;
         if(!await historyWindow(this.store,dev))continue;
         if(dev.address===this.address||!current.human_keys.includes(dev.fingerprint))continue;
         const titles=[];
@@ -1976,6 +2147,7 @@ export class Engine {
       const checks=[],current=await this.groupRead(checks,"kv","person"),ops=[];
       if(!this.ownTopicWriter(current)||current.person!==own.person)return;
       for(const dev of current.devices){
+        if (!await this.recipientAvailable(dev,checks)) continue;
         if(!await historyWindow(this.store,dev))continue;
         if(dev.address===this.address||!current.human_keys.includes(dev.fingerprint))continue;
         // A device that cannot read marks yet keeps one waiting carrier; later
@@ -2051,6 +2223,7 @@ export class Engine {
       const saved=await this.store.outboxSub(wire.SubInvitationSync),present=new Set(saved.filter(o=>o.sub===wire.SubInvitationSync&&["queued","waiting","custody","delivered","quarantined"].includes(o.state)).map(o=>o.recipient_fp+"/"+o.invitation_id+"/"+o.invitation_revision));
       let count=0;
       outer:for(const dev of own.devices) {
+        if (!await this.recipientAvailable(dev,checks)) continue;
         if(!await historyWindow(this.store,dev))continue;
         if(dev.address===this.address||!(own.human_keys||[]).includes(dev.fingerprint))continue;
         for(const r of views) {
@@ -2108,6 +2281,7 @@ export class Engine {
         if(c.kind==="group" || this.erasedConv(c.id))continue;
         const root=wire.parseRoot(c.root);if(!wire.rootMember(root,own.person))continue;
         for(const dev of own.devices) {
+        if (!await this.recipientAvailable(dev,checks)) continue;
         if(!await historyWindow(this.store,dev))continue;
           if(dev.address===this.address || !(own.human_keys||[]).includes(dev.fingerprint))continue;
           try { await this.rootSyncAuthority(root,this.address,this.fp,dev.address,dev.fingerprint,checks); } catch(e) { continue; }
@@ -2122,7 +2296,12 @@ export class Engine {
       }
       if(!ops.length)return;
       const ownCopies=ops.filter(o=>o.s==="outbox").map(o=>o.v);
-      let prepared=[];for(const dev of own.devices){const copies=ownCopies.filter(r=>r.to===dev.address&&r.recipient_fp===dev.fingerprint);if(copies.length)prepared.push(...await this.archives().prepare(copies,[],checks,dev));}
+      const prepared=[];
+      for(const dev of own.devices) {
+        if (!await this.recipientAvailable(dev,checks)) continue;
+        const copies=ownCopies.filter(r=>r.to===dev.address&&r.recipient_fp===dev.fingerprint);
+        if(copies.length)prepared.push(...await this.archives().prepare(copies,[],checks,dev));
+      }
       await this.store.write(prepared,checks);this.archives().wake().catch(()=>{});this.changed();
       if(this.connected)this.queueOutbox();
       if(ops.length<historyPage)return;
@@ -2182,6 +2361,7 @@ export class Engine {
     if(j.own_human || j.catchup || await this.ownHistoryAuthority(dev))return this.historyCatchupStep(dev,j);
     const checks=[],book=structuredClone(await this.groupRead(checks,"kv","history"));
     if(!book?.[dev.address] || JSON.stringify(book[dev.address])!==JSON.stringify(j))return false;
+    if (!await this.recipientAvailable(dev,checks)) return false;
     if(j.own_human && (j.own_human!==this.fp || !await this.ownHistoryAuthority(dev,checks)))return false;
     const contextOnly=j.state==="done";
     const convs = new Map((await this.store.all("convs")).filter((c) => wire.rootMember(wire.parseRoot(c.root), this.me.person)).map((c) => [c.id, c])); // an outside host never lends ambient room history to its siblings
@@ -2233,6 +2413,7 @@ export class Engine {
     const available=await historyWindow(this.store,dev);
     const checks=[],book=structuredClone(await this.groupRead(checks,"kv","history"));
     if(!book?.[dev.address] || JSON.stringify(book[dev.address])!==JSON.stringify(j))return false;
+    if (!await this.recipientAvailable(dev,checks)) return false;
     if(j.own_human&&j.own_human!==this.fp || j.catchup?.source&&j.catchup.source!==this.fp || !await this.ownHistoryAuthority(dev,checks))return false;
     // Arrivals after this boundary belong to the next tail page; they need
     // not invalidate unrelated source authority or starve this transaction.
@@ -2861,6 +3042,7 @@ export class Engine {
       this.me = { ...next, published: true };
       await put(this.store, "kv", "person", this.me);
       await this.pinDevices(this.me);
+      await this.reconcileDepartedRecipients();
       this.changed();
       this.retryHeld().catch(() => {});
       this.syncRoots().catch(()=>{});this.syncReadMarks().catch(()=>{});this.syncTopicTitles().catch(()=>{});this.syncInvitations().catch(()=>{});
@@ -3197,6 +3379,8 @@ export class Engine {
   async postStored(rec) {
     if (rec.state === "receiver_waiting") return;
     try {
+      const removed = await this.store.get("kv", "revoked-device/" + rec.to + "/" + rec.recipient_fp);
+      if (removed && rec.recipient_fp && removed.fingerprint === rec.recipient_fp) throw Object.assign(Error("That device was removed from the server."), {code:"recipient_revoked"});
       if(rec.sub===wire.SubHistoryArchive)await this.archives().gate(rec);
       await this.discoveredHistoryDelivery(rec);
       await this.receiverDeliveryGate(rec);
@@ -3305,6 +3489,9 @@ export class Engine {
       if (e.code === "receiver_redacted") return; // keep the newer exact-scope retention transaction
       if (e.code === "history_archive_unsupported" || e.code === "followup_unsupported" || e.code === "proposal_unsupported" || e.code === "receiver_unsupported" || e.code === "topic_organization_unsupported" || e.code === "model_sync_unsupported" || e.code === "read_sync_unsupported" || e.code === "invitation_sync_unsupported" || e.code === "topic_sync_unsupported" || e.code === "control_unsupported" || rec.conv && ["group_invitation_unsupported", "root_sync_unsupported", "agent_identity_unsupported", "human_unsupported", "group_unsupported", "clear_unsupported", "room_unsupported", "topic_unsupported"].includes(e.code)) {
         rec.state = "waiting"; rec.detail = "peer_update: " + e.message;
+      } else if(e.code==="recipient_revoked" && rec.recipient_fp) {
+        await this.endRecipient(rec.to,rec.recipient_fp,true);
+        return;
       } else if(e.code==="device_history_authority") {
         rec.state="not_delivered";rec.detail=e.message;
       } else if (retryable(e)) {
@@ -3447,7 +3634,7 @@ export class Engine {
     }catch{ /* retained for the next existing connection/queue wake */ }
   }
 
-  queueOutbox() { if (!this.closing) this.flushOutbox().catch(() => {}); }
+  queueOutbox() { if (!this.closing) { this.reconcileRevokedRecipients().catch(() => {}); this.flushOutbox().catch(() => {}); } }
 
   async flushOutbox() {
     return Promise.all([this.flushOutboxLane(false),this.flushOutboxLane(true)]);
@@ -3575,7 +3762,7 @@ export class Engine {
     // Old unmarked history lacks the plaintext used to determine its receiver
     // requirement. Keep its ciphertext and refuse only this row, without
     // inventing a capability or stopping unrelated queued deliveries.
-    const protectedState = ["delivered","expired"].includes(current.state) || current.state === "quarantined" && rec.state !== "delivered" || current.state === "custody" && !["custody","delivered","quarantined","expired"].includes(rec.state);
+    const protectedState = ["delivered","expired","not_delivered"].includes(current.state) || current.state === "quarantined" && rec.state !== "delivered" || current.state === "custody" && !["custody","delivered","quarantined","expired"].includes(rec.state);
     let next = missingHistoryProof ? { ...current, state: "failed", detail: "History copy lacks its durable capability proof; encrypted copy kept, not sent." }
       : current.receiver_redacted || current.delivery_cancelled ? { ...current, state: rec.state, detail: custody ? "" : current.detail } : {...rec,...(current.handover_started ? {handover_started:true} : {})};
     if (protectedState) next = {...next,state:current.state,detail:current.detail};
@@ -5648,7 +5835,7 @@ export class Engine {
         return;
       }
       try {
-        await this.onMessage(data, !mayDefer ? null : {localOnly:!retry,checks:[],state:{deferred:false}});
+        await this.onMessage(data, {[relayIngress]:env.id,localOnly:mayDefer&&!retry,checks:[],state:{deferred:false}});
       } catch (e) {
         if (!mayDefer) throw e;
         const record = {id:env.id,address:this.address,fingerprint:this.fp,envelope:data,at:this.now()};
@@ -5815,11 +6002,11 @@ export class Engine {
 
   // logical: the record the copy carries (heldLogicalKey), "" when it was
   // held before it opened; a hold that does not know it keeps the earlier one.
-  async hold(env, data, reason, why = "", logical = "") {
+  async hold(env, data, reason, why = "", logical = "", admission = null) {
     const previous = await this.store.get("held", env.id);
     const detail_code=heldFailureCode(reason,why);
     logical ||= previous?.logical || "";
-    const ops=[{ s: "held", k: env.id, v: { id: env.id, from: env.from, reason, envelope: data, at: previous?.at || this.now(), detail_code, notice_archived:canArchiveHeld(reason) && previous?.reason===reason && (reason==="proof_pending" || (previous?.detail_code||"")===detail_code) && !!previous?.notice_archived, ...(logical ? {logical} : {}) } },
+    const ops=[{ s: "held", k: env.id, v: { id: env.id, from: env.from, reason, envelope: data, ...(admission?.[relayIngress] === env.id ? {relay_ingress:true} : {}), at: previous?.at || this.now(), detail_code, notice_archived:canArchiveHeld(reason) && previous?.reason===reason && (reason==="proof_pending" || (previous?.detail_code||"")===detail_code) && !!previous?.notice_archived, ...(logical ? {logical} : {}) } },
       { s: "receipts", k: env.id, v: { id: env.id, state: "quarantined" } }],checks=[];
     if(await this.store.get("kv","archive-child/"+env.id))ops.splice(1,1);
     await this.removeReceivePending(data,env,ops,checks);
@@ -5881,7 +6068,7 @@ export class Engine {
       if (admission?.state.deferred || admission?.localOnly && e instanceof Hold && e.reason === "proof_pending") throw new ReceiveDeferred();
       if (e instanceof StoreConflict) return this.admit(data, env, fromHeld, historyRecovery, admission); // reverify; nothing committed or acknowledged
       if (e instanceof Hold) {
-        if (!fromHeld) await this.hold(env, data, e.reason, e.message, e.logical);
+        if (!fromHeld) await this.hold(env, data, e.reason, e.message, e.logical, admission);
         else {
           // A recheck records a precise cause, and the logical record for
           // copies held before it was kept; an unchanged row is not written.
@@ -5955,7 +6142,12 @@ export class Engine {
     if (admission) admission.checks.push({s:"pins",k:env.from,v:pin});
     if (!pin) {
       try {
-        pin = await this.pinned(env.from, admission);
+        const d = await this.directory(env.from, admission);
+        pin = {address:env.from,json:d.json,fingerprint:d.fingerprint,pending:null};
+        const ops = [{s:"pins",k:env.from,v:pin}];
+        if (d.revoked) ops.push({s:"kv",k:"revoked-device/"+env.from+"/"+pin.fingerprint,v:{address:env.from,fingerprint:pin.fingerprint}});
+        await this.store.write(ops,[{s:"pins",k:env.from,v:undefined}]);
+        if (d.revoked) (this.revokedRecipientKeys ||= new Set()).add(env.from + "/" + pin.fingerprint);
       } catch (e) {
         if (retryable(e)) throw e;
         throw new Hold("invalid", "sender key unavailable");
@@ -5979,10 +6171,22 @@ export class Engine {
       }
       throw new Hold("invalid", "envelope verification failed");
     }
+    const revokedKey = "revoked-device/" + env.from + "/" + pin.fingerprint;
+    const removed = await this.store.get("kv", revokedKey);
+    if (admission) admission.checks.push({s:"kv",k:revokedKey,v:removed});
+    const retainedRelayContent = admission?.[relayIngress] === env.id &&
+      ["message","answer","result"].includes(n.kind) && (n.kind === "message" ? !n.status : !n.status || ["done","failed","timeout","cancelled","declined","interrupted"].includes(n.status)) && !n.sub && !n.replica &&
+      !n.receiver_route && !n.target && !n.ref && !n.followup && !n.topic_event && !n.topic_done &&
+      (n.v === 1 || n.v === wire.Version2);
+    if (removed?.fingerprint === pin.fingerprint && !retainedRelayContent)
+      throw new Hold("invalid", "That device was removed from the server.");
     // Held from here on, the copy opened under its sender's key: the hold
     // names the logical record it carries (heldLogicalKey).
     try {
-      return await this.admitOpened(n, env, pin, admission);
+      const ops = await this.admitOpened(n, env, pin, admission);
+      if (removed?.fingerprint === pin.fingerprint) for (const op of ops)
+        if (op.s === "inbox" && op.v) op.v.detail = "That device was removed from the server after this message was accepted.";
+      return ops;
     } catch (e) {
       if (e instanceof Hold) e.logical = await heldLogicalKey(n, pin.fingerprint);
       throw e;
@@ -6517,7 +6721,7 @@ export class Engine {
           try {
             let env;
             try { env = wire.parseEnvelope(h.envelope); } catch (e) { if (historyRecovery) continue; throw e; }
-            await this.admit(h.envelope, env, true, historyRecovery);
+            await this.admit(h.envelope, env, true, historyRecovery, h.relay_ingress ? {[relayIngress]:env.id,checks:[],state:{deferred:false}} : null);
           } catch (e) {
             if (retryable(e)) { this.heldCursor = before; return; }
             this.noteHeldFailure(h.id, e); // stays held, in place; later rows are still looked at
@@ -7050,6 +7254,7 @@ export class Engine {
   }
 
   async onConnect() {
+    this.recipientDiscovery = null;
     try {
       const f = await this.features();
       const teams = this.teamsService();
@@ -7100,7 +7305,7 @@ export class Engine {
       if(!r||Object.keys(r).some(k=>!["id","state","seq"].includes(k))||!wire.validID(r.id)||!Number.isSafeInteger(r.seq)||r.seq<=0||!["delivered","quarantined","expired"].includes(r.state))return;
       const row=await this.store.get("outbox",r.id),cursor=await this.store.get("kv","receipt-cursor");
       const cancelledUnknown = row?.delivery_cancelled && row.handover_started!==false && !["delivered","expired","quarantined"].includes(row.state);
-      const ops=[{s:"kv",k:"receipt-cursor",v:r.seq}];if(row&&(["queued","custody"].includes(row.state)||cancelledUnknown||row.state==="quarantined"&&r.state==="delivered"))ops.push({s:"outbox",k:r.id,v:{...row,state:r.state,detail:""}});
+      const ops=[{s:"kv",k:"receipt-cursor",v:r.seq}];if(row&&(["queued","custody","not_delivered"].includes(row.state)||cancelledUnknown||row.state==="quarantined"&&r.state==="delivered"))ops.push({s:"outbox",k:r.id,v:{...row,state:r.state,detail:""}});
       try { await this.store.write(ops,[{s:"outbox",k:r.id,v:row},{s:"kv",k:"receipt-cursor",v:cursor}]); } catch(e) { if(e instanceof StoreConflict)return this.dispatch(event,data);throw e; }this.changed(true);
       if(row?.sub===wire.SubHistoryArchive&&ops.length>1){this.archiveReceiptRun=this.archives().receipt({...row,state:r.state});this.archiveReceiptRun.catch(()=>{});}
       if(row&&backgroundCopy(row)&&ops.length>1){
@@ -7133,8 +7338,9 @@ export class Engine {
       // evidence also arrives through local admissions that announce
       // nothing, and the Hub no longer re-sends an unchanged list.
       const evidence = true;
-      this.members = { listed: "listed", current: true, at: this.now(), list: Array.isArray(m.members) ? m.members : [], truncated: !!m.truncated };
+      this.members = { listed: "listed", current: true, at: this.now(), list: Array.isArray(m.members) ? m.members : [], truncated: !!m.truncated, discovery_generation: Number.isSafeInteger(m.discovery_generation) && m.discovery_generation >= 0 ? m.discovery_generation : 0 };
       await this.keepMemberFacts(m);
+      this.reconcileRevokedRecipients().catch(() => {});
       // A member's person reference that is ahead of the step pinned here is
       // followed (verified step by step); others' claimed names are read
       // once per step for the people list, never trusted.
@@ -7156,6 +7362,7 @@ export class Engine {
       this.flushOutbox().catch(() => {});
     } else if (event === "ping") {
       if (!acked) this.ackPing(data);
+      if (this.recipientDiscoveryFailed?.size) this.reconcileRevokedRecipients().catch(() => {});
       this.flushOutbox().catch(() => {});
       this.flushReceipts().catch(() => {});
       this.retryPendingReceives().catch(() => {});
@@ -7900,6 +8107,12 @@ export class Engine {
   // and nothing here can make one up. Each item carries the host's answer
   // to this device's decision on it, from this report at this attempt
   // (client.decisionResults).
+  async activeReportItems(inbox, outbox = [], words = (a) => a) {
+    const current = [];
+    for (const row of inbox) if (isNotice(row) && await this.recipientAvailable({address:row.from,fingerprint:row.fp})) current.push(row);
+    return this.reportItems(current,outbox,words);
+  }
+
   reportItems(inbox, outbox = [], words = (a) => a) {
     const out = [];
     for (const m of inbox) {
@@ -7947,6 +8160,7 @@ export class Engine {
     for (const m of inbox) {
       if (m.v !== 1 || m.control || m.kind !== "message" || m.status !== "review_notice" || m.reply_to || m.resolved) continue;
       if (!this.me?.devices.some(d => d.address === m.from && d.fingerprint === m.fp)) continue;
+      if (!await this.recipientAvailable({address:m.from,fingerprint:m.fp})) continue;
       const pin = await this.store.get("pins", m.from);
       if (!pin || pin.pending || pin.fingerprint !== m.fp) continue;
       const r = this.reportItems([m], outbox)[0]?.report;
@@ -8059,6 +8273,7 @@ export class Engine {
     if (!exec || exec.state !== "needs_human" || !Number.isSafeInteger(exec.attempt) || exec.attempt < 1 || !["question","task"].includes(m.kind) || !wire.validFingerprint(key)) return null;
     const own=this.me, host=own?.devices?.find(d=>d.address===exec.host);
     if(!own || own.state!=="self" || !(own.human_keys||[]).includes(this.fp) || !own.devices.some(d=>d.address===this.address&&d.fingerprint===this.fp) || !host || (m.target && (m.target.address!==exec.host || m.target.fingerprint!==host.fingerprint)))return null;
+    if (this.revokedRecipientKeys?.has(host.address + "/" + host.fingerprint)) return null;
     return {id:m.lid||m.id,key,host:exec.host,attempt:exec.attempt};
   }
 
@@ -8077,9 +8292,10 @@ export class Engine {
       try { pay = wire.parseControl(c.sub, c.body); } catch (e) { continue; }
       if (pay.decision) continue; // an answer to an operator's decision: it belongs to that report's item, never to exec
       const id = c.lid || c.id; // as controlsOn: the same on every device
-      if (!best || pay.n > best.n || (pay.n === best.n && id > best.id)) best = { ...pay, id };
+      if (!best || pay.n > best.n || (pay.n === best.n && id > best.id)) best = { ...pay, id, authorFp:c.fp };
     }
     if (!best) return null;
+    if (this.revokedRecipientKeys?.has(host + "/" + best.authorFp) && !["done","answered","failed","timeout","cancelled","stopped","declined","resolved","not_run"].includes(best.state)) return {state:"unavailable",at:iso(best.at * 1000),detail:"The host was permanently removed from this workspace.",host,stale:true,attempt:best.attempt || 0};
     const m = this.members.current ? this.members.list.find((x) => x.address === host) : null;
     const stale = !m || m.presence !== "connected" || m.suspended === true || this.peerSuspended(host) || best.state === "running" && Math.floor(this.now() / 1000) - best.at > EXEC_RUNNING_MAX_AGE; // a suspended host reports nothing new (client hostConnected)
     return { state: best.state, at: iso(best.at * 1000), detail: best.detail, host, stale, attempt: best.attempt || 0, ...(best.refused ? { refused: best.refused } : {}) };
@@ -8761,7 +8977,7 @@ export class Engine {
       me: { address: this.address, fingerprint: this.fp, responder: "", responder_dir: "", browser: true, agent: false }, // a browser runs no agent
       workspace: { name: this.workspaceName, server: this.relayHost() }, agent_devices: [...this.agentDevices], model_reports: await this.modelReports(),
       device: { online: this.connected, revoked: this.revoked, persisted: this.storage ? this.storage.persisted : null }, receive_status: await this.receiveStatus(),
-      threads, topics, topic_list: true, review: [...this.reportItems(inbox, outbox, words), ...await this.deviceAdminReview()], needs_you: needsYou, held: heldTurns, quarantine: held.map(h => ({ ...quarantineItem(h), reason: holdText(h.reason, words(h.from)) })),
+      threads, topics, topic_list: true, review: [...await this.activeReportItems(inbox, outbox, words), ...await this.deviceAdminReview()], needs_you: needsYou, held: heldTurns, quarantine: held.map(h => ({ ...quarantineItem(h), reason: holdText(h.reason, words(h.from)) })),
       directory: { status: this.members.listed, current: this.members.current, at: this.members.at ? iso(this.members.at) : undefined,
         truncated: this.members.truncated, members: this.members.list.filter((m) => m.address !== this.address)
           .map((m) => ({ address: m.address, presence: this.members.current ? m.presence : "", joined: iso((m.joined || 0) * 1000) })) },
@@ -10158,6 +10374,7 @@ export class Engine {
   needsYouOf(conv, infos, msgs, ctls, needsYou, held, words = (a) => a, reports = []) {
     const mine = (h) => !!h && !!this.me && h.person === this.me.person && h.address !== this.address;
     for (const info of infos) {
+      if (info.host && this.revokedRecipientKeys?.has(info.host.address + "/" + info.host.fingerprint)) continue;
       if(info.role==="human") {
         if(info.state!=="invited"||info.held||!info.host||info.host.person!==this.me?.person)continue;
         const here=info.host.address===this.address&&info.host.fingerprint===this.fp;
@@ -10178,7 +10395,7 @@ export class Engine {
         continue;
       }
       const info = m.pid && m.target && ["question", "task"].includes(m.kind) ? infos.find((p) => p.pid === m.pid) : null;
-      if (!info || !mine(info.host) || m.target.address !== info.host.address) continue;
+      if (!info || !mine(info.host) || m.target.address !== info.host.address || this.revokedRecipientKeys?.has(m.target.address + "/" + m.target.fingerprint)) continue;
       const here = !m.fp && !m.excerpt_pid, fp = here ? this.fp : m.fp;
       const answered = msgs.some((r) => r.fp && r.reply_to === m.id && (r.kind === "answer" || r.kind === "result"));
       const e = this.execOn(ctls.filter((x) => x.sub === wire.SubStatus && x.ref && x.ref.id === m.lid && x.ref.fingerprint === fp && x.from === m.target.address), m.target.address, answered);
@@ -10365,6 +10582,7 @@ export class Engine {
     if (await this.groupRead(checks,"erased", erasedKey(p.conv || "", p.fp, ref))) throw Error("This proposal was deleted here.");
     const pin = await this.groupRead(checks,"pins", p.from);
     if (pin && (pin.pending || pin.fingerprint !== p.fp)) throw Error("The proposal's host key changed.");
+    if (!await this.recipientAvailable({address:p.from,fingerprint:p.fp},checks)) throw Error("The proposal’s host was permanently removed from this workspace.");
     const rows = [...await this.store.all("inbox"), ...await this.store.all("outbox")];
     if (rows.some(r => r.control && (r.conv || "") === (p.conv || "") && r.ref?.id === ref && r.ref.fingerprint === p.fp && [wire.SubRevision, wire.SubRetraction].includes(r.sub))) throw Error("The proposal was edited or deleted after it was made.");
     let q = (await this.store.all("outbox")).find(r => !r.control && !r.aside && r.kind === "question" && (r.id === p.reply_to || p.conv && r.lid===p.reply_to) && (r.conv || "") === (p.conv || "")), shared=false;

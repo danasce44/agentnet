@@ -185,6 +185,13 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	sub := h.streams.add(caller, cancel)
 	defer h.streams.remove(caller, sub)
+	// A revoke between authentication and subscription cannot leave a live
+	// stream behind the transaction's disconnect notification.
+	a, err = h.store.agent(caller)
+	if err != nil || a.Revoked {
+		writeError(w, http.StatusForbidden, protocol.CodeRevoked, "agent revoked")
+		return
+	}
 	// What this device runs, as its stream says (update.go). A pending
 	// device is no member: no version, session or presence.
 	version := reportedVersion(r)
@@ -249,6 +256,8 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 	// it in stream order like any other.
 	between := func() bool {
 		select {
+		case <-ctx.Done():
+			return false
 		case <-ping.C:
 			return pinged()
 		default:

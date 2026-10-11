@@ -1,6 +1,7 @@
 package client
 
 import (
+	"database/sql"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,56 @@ printf '%s' "$AGENTNET_ROOM_REQUEST" > "$CALLBACK_DIR/c0"
 			t.Fatal(err)
 		}
 	}
+	root, err := w.alice.AskAgent(tctx(t), a.PID, envelope.KindQuestion, "A0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readID := func(name string) string { data, _ := os.ReadFile(filepath.Join(dir, name)); return string(data) }
+	activeDB := map[*Agent]sql.DBStats{}
+	endedDB := map[*Agent]sql.DBStats{}
+	t.Cleanup(func() {
+		for _, host := range []*Agent{w.alice, w.bob} {
+			stats, ended := endedDB[host]
+			if !ended {
+				stats = host.store.db.Stats()
+			}
+			before, ok := activeDB[host]
+			if ok {
+				t.Logf("callback active DB %s: waits=%d wait_duration=%s", host.Address, stats.WaitCount-before.WaitCount, stats.WaitDuration-before.WaitDuration)
+			}
+		}
+		if !t.Failed() {
+			return
+		}
+		var state, detail string
+		var started int64
+		err := w.alice.store.db.QueryRow(`SELECT state,coalesce(detail,''),coalesce(last_attempt_at,0) FROM inbox WHERE id=?`, root.ID).Scan(&state, &detail, &started)
+		t.Logf("callback failure root: state=%s detail=%q last_attempt_at=%d err=%v", state, detail, started, err)
+		var b0 string
+		err = w.bob.store.db.QueryRow(`SELECT lid FROM inbox WHERE id=?`, readID("b0")).Scan(&b0)
+		if err != nil {
+			t.Logf("callback failure B0 reference: %v", err)
+			return
+		}
+		var received int64
+		err = w.alice.store.db.QueryRow(`SELECT coalesce(received_ms,received_at*1000) FROM inbox WHERE conv=? AND reply_to=? AND kind='answer' ORDER BY received_ms LIMIT 1`, conv, b0).Scan(&received)
+		t.Logf("callback failure B0 answer: received_ms=%d err=%v", received, err)
+	})
+	touch := func(name string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Queue both real signed roots before starting a harness deadline. The
+	// unrelated request still must remain waiting throughout the callback.
+	unrelated, err := w.alice.AskAgent(tctx(t), a.PID, envelope.KindQuestion, "independent root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []*Agent{w.alice, w.bob} {
+		activeDB[host] = host.store.db.Stats()
+	}
 	for _, pair := range []struct {
 		host    *Agent
 		harness string
@@ -113,22 +164,7 @@ printf '%s' "$AGENTNET_ROOM_REQUEST" > "$CALLBACK_DIR/c0"
 			t.Fatal(err)
 		}
 	}
-	root, err := w.alice.AskAgent(tctx(t), a.PID, envelope.KindQuestion, "A0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	readID := func(name string) string { data, _ := os.ReadFile(filepath.Join(dir, name)); return string(data) }
-	touch := func(name string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
 	eventually(t, "root harness running", func() bool { return readID("a0") == root.ID })
-	unrelated, err := w.alice.AskAgent(tctx(t), a.PID, envelope.KindQuestion, "independent root")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if mode == "simple" {
 		// Already-running work must be able to finish during an idle update wait.
 		w.alice.update.Lock()
@@ -243,12 +279,18 @@ printf '%s' "$AGENTNET_ROOM_REQUEST" > "$CALLBACK_DIR/c0"
 				}
 				return stored
 			})
+		}
+		waitState(t, w.alice, unrelated.ID, stateAnswered)
+		for _, host := range []*Agent{w.alice, w.bob} {
+			endedDB[host] = host.store.db.Stats()
+		}
+		// Full signed projections are observers after the real chain unwinds.
+		for _, edge := range edges {
 			reply, n := convMsg(t, edge.host, conv, func(m ConvMessage) bool { return m.Kind == envelope.KindAnswer && m.ReplyTo == edge.id })
 			if n != 1 || !reply.VerifiedAgent || reply.PID != edge.pid || reply.Key != edge.key || !strings.Contains(reply.Body, "CALLBACK_COMPLETE") {
 				t.Fatalf("wrong correlated reply: %+v", reply)
 			}
 		}
-		waitState(t, w.alice, unrelated.ID, stateAnswered)
 	}
 	eventually(t, "ancestor and callback cleanup joins", func() bool { return w.alice.executorsIdle() && w.bob.executorsIdle() })
 	data, err := os.ReadFile(filepath.Join(dir, "runs"))

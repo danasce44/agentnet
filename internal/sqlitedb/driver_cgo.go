@@ -3,6 +3,7 @@
 package sqlitedb
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -23,7 +24,43 @@ func (androidSQLiteDriver) Open(dsn string) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return (&sqlite3.SQLiteDriver{}).Open(translated)
+	conn, err := (&sqlite3.SQLiteDriver{}).Open(translated)
+	if err != nil {
+		return nil, err
+	}
+	return &androidSQLiteConn{conn.(*sqlite3.SQLiteConn)}, nil
+}
+
+type androidSQLiteConn struct{ *sqlite3.SQLiteConn }
+
+// The desktop driver uses deferred reads even with _txlock=immediate.
+// mattn ignores ReadOnly, so retain its ordinary write behavior explicitly
+// while allowing a WAL read snapshot to coexist with another writer.
+func (c *androidSQLiteConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
+	if !opts.ReadOnly {
+		return c.SQLiteConn.BeginTx(ctx, opts)
+	}
+	if _, err := c.ExecContext(ctx, "BEGIN DEFERRED", nil); err != nil {
+		return nil, err
+	}
+	return androidReadTx{c.SQLiteConn}, nil
+}
+
+type androidReadTx struct{ conn *sqlite3.SQLiteConn }
+
+func (t androidReadTx) Commit() error {
+	_, err := t.conn.Exec("COMMIT", nil)
+	if err != nil {
+		// Match SQLiteTx: database/sql ends the transaction on any commit
+		// result, while SQLite may still need its connection rolled back.
+		t.conn.Exec("ROLLBACK", nil)
+	}
+	return err
+}
+
+func (t androidReadTx) Rollback() error {
+	_, err := t.conn.Exec("ROLLBACK", nil)
+	return err
 }
 
 // Busy recognizes actual SQLite primary lock errors, including wrapped errors.

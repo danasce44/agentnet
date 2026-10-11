@@ -86,6 +86,8 @@ type partView struct {
 // decided when it was claimed). self and selfFP are this device's address
 // and key fingerprint.
 func agentVerdict(q dbq, r agentReq, self, selfFP string, output bool, views map[string]*partView) (int, string, error) {
+	q, closeReads := prepareMembershipReads(q)
+	defer closeReads()
 	key := r.Conv + "/" + r.PID
 	v, ok := views[key]
 	if !ok {
@@ -297,6 +299,10 @@ func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64
 		return j, false, pos, false, nil, err
 	}
 	defer tx.Rollback()
+	revokedChanged, err := endRevokedRequests(tx)
+	if err != nil {
+		return j, false, pos, false, nil, err
+	}
 	rows, err := tx.Query(`SELECT id, sender, coalesce(verified_by, ''), kind, body, coalesce(reply_to, ''), coalesce(status, ''),
 		conv, pid, coalesce(target, ''), state, local, arrival, request_followup
 		FROM inbox WHERE pid IS NOT NULL AND state IN ('`+stateAgentWaiting+`', '`+stateAccepted+`') AND replica = 0 AND arrival > ?
@@ -335,7 +341,7 @@ func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64
 		return j, false, pos, false, nil, err
 	}
 	views := map[string]*partView{}
-	wrote := false
+	wrote := revokedChanged > 0
 	for _, r := range page {
 		next = r.arrival
 		if r.followup.Valid {

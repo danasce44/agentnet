@@ -13,6 +13,42 @@ import (
 	"github.com/misunders2d/agentnet/internal/testhub"
 )
 
+func TestAdminRevokeExactPerson(t *testing.T) {
+	alice, bob, carol, _, _ := dmWorld(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	p, ok, err := bob.Person()
+	if err != nil || !ok {
+		t.Fatalf("person: %v %v", ok, err)
+	}
+	var listed bytes.Buffer
+	if err := runPerson(ctx, alice, []string{"list"}, &listed); err != nil {
+		t.Fatal(err)
+	}
+	for _, exact := range []string{p.Person, bob.Address, bob.Self().Fingerprint()} {
+		if !strings.Contains(listed.String(), exact) {
+			t.Fatalf("person lookup omitted exact offboarding target %q: %s", exact, listed.String())
+		}
+	}
+	for _, args := range [][]string{{"revoke", "--person"}, {"revoke", "--person", "Bob"}, {"revoke", "--person", bob.Address}} {
+		if err := runAdmin(ctx, alice, args); err == nil {
+			t.Fatalf("ambiguous person accepted: %v", args)
+		}
+	}
+	if err := runAdmin(ctx, carol, []string{"revoke", "--person", p.Person}); err == nil {
+		t.Fatal("non-admin could remove a person")
+	}
+	if err := runAdmin(ctx, alice, []string{"revoke", "--person", p.Person}); err != nil {
+		t.Fatal(err)
+	}
+	if revoked, err := alice.Revoked(ctx, bob.Address); err != nil || !revoked {
+		t.Fatalf("target still admitted: %v %v", revoked, err)
+	}
+	if revoked, err := alice.Revoked(ctx, carol.Address); err != nil || revoked {
+		t.Fatalf("unrelated person affected: %v %v", revoked, err)
+	}
+}
+
 // Fail closed (review finding 1): person approve ID, the flow a browser
 // is linked with too, trusts nothing; only person approve --native ID,
 // which says it is never for a browser, adds the device to the self-consent

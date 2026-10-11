@@ -6,6 +6,22 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- End undelivered copies addressed to a device or person permanently removed
+  from the relay. Keep delivering ordinary messages and replies the relay had
+  already accepted from them. Stop recreating background history for removed devices,
+  preserve proven receipts and original messages, and refuse unstarted requests
+  from known revoked keys. Offline or outdated devices keep their resumable copies.
+- Remove obsolete Pending and Needs-you prompts for permanently removed hosts.
+  Show **Host removed** and disable replies/proposal confirmation that cannot
+  reach them, while retaining the original records and later accepted answers.
+- Allow an admin to remove a whole verified person with `admin revoke --person ID`,
+  including current and pending devices and unused invitations. Google-linked
+  accounts are also denied re-enrollment through an otherwise allowed domain.
+- Wait for group-agent replies through the daemon's existing local change
+  notifications instead of polling room state four times a second. Coalesce
+  overlapping attention checks from nested runs while retaining new-state wakes.
+  Agent output alone no longer repeats permission checks; repeated participants
+  in a request chain are resolved once per current-state check.
 - Allow inviting an agent into a group topic when an unrelated member's app is
   outdated. Check the selected agent host; keep other devices' exact copies
   waiting independently until they can receive them.

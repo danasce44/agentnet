@@ -322,15 +322,18 @@ func (a *Agent) directory(ctx context.Context, address string) (protocol.Directo
 	var e protocol.DirectoryEntry
 	label, name, err := protocol.SplitAddress(address)
 	if err != nil {
-		return e, err
+		return e, errors.Join(errPermanent, err)
 	}
 	if err := a.hub.do(ctx, "GET", "/v1/agents/"+label+"/"+name, nil, &e); err != nil {
 		return e, err
 	}
 	if e.Public.Address != address {
-		return e, errors.New("directory answered for a different address")
+		return e, errors.Join(errPermanent, errors.New("directory answered for a different address"))
 	}
-	return e, e.Public.Verify()
+	if err := e.Public.Verify(); err != nil {
+		return e, errors.Join(errPermanent, err)
+	}
+	return e, nil
 }
 
 func sameKeys(a, b identity.Public) bool {
@@ -1029,7 +1032,7 @@ func (a *Agent) Review() ([]Message, error) {
 // requests wait for a person's decision there. They are decided there;
 // here they can only be read and resolved (Resolve).
 func (a *Agent) Notices() ([]Message, error) {
-	return a.store.messages(` WHERE state = ? AND (`+receivedNotice+`)`, stateNeedHuman, envelope.KindMessage, envelope.StatusReviewNotice)
+	return a.store.messages(` WHERE state = ? AND (`+receivedNotice+`) AND NOT `+revokedInboxSender, stateNeedHuman, envelope.KindMessage, envelope.StatusReviewNotice)
 }
 
 // Fingerprints returns the pinned fingerprint ("" if none) and the one the
@@ -1136,4 +1139,15 @@ func inviteTTL(ttl time.Duration) error {
 // Revoke revokes address on the Hub (admin only).
 func (a *Agent) Revoke(ctx context.Context, address string) error {
 	return a.hub.do(ctx, "POST", "/v1/admin/revoke", protocol.RevokeRequest{Address: address}, nil)
+}
+
+// RevokePerson atomically removes an exact person's workspace access (admin
+// only). It neither deletes retained messages nor transfers their keys.
+func (a *Agent) RevokePerson(ctx context.Context, person string) ([]string, error) {
+	if !protocol.ValidID(person) {
+		return nil, errors.New("use the exact person ID, not a name or device address")
+	}
+	var out protocol.RevokePersonResponse
+	err := a.hub.do(ctx, "POST", "/v1/admin/person/revoke", protocol.RevokePersonRequest{Person: person}, &out)
+	return out.Revoked, err
 }

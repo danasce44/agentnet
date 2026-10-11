@@ -419,6 +419,7 @@ reconnecting, and whether it accepts direct deliveries. Address one session
 with ADDRESS#SESSION.`,
 
 	"person": `Usage: agentnet person
+       agentnet person list
        agentnet person create NAME
        agentnet person rename NAME
        agentnet person service [--steward ADDRESS]
@@ -431,7 +432,9 @@ with ADDRESS#SESSION.`,
        agentnet person remove ADDRESS
 
 One person can use up to eight devices, each with its own keys. person shows
-your person and its devices, marking this one. create NAME sets up a new
+your person and its devices, marking this one. list shows locally known people
+with their exact IDs, verification state and device keys; it changes nothing.
+create NAME sets up a new
 person explicitly. NAME is a display name, not proof of identity: equal
 names never merge people. service marks an independent server or bot; it
 speaks as itself and does not create a human person. service --steward
@@ -868,6 +871,7 @@ were abandoned, and direct uploads never attached to a message.
 	"admin": `Usage: agentnet admin invite [--ttl 168h] [--admin] [--raw] LABEL
        agentnet admin invite [--ttl 168h] [--admin] --link (--name NAME [LABEL] | LABEL)
        agentnet admin revoke ADDRESS
+       agentnet admin revoke --person PERSON_ID
        agentnet admin release set --url URL [--note TEXT] VERSION
        agentnet admin release show | clear
        agentnet admin workspace [show] | set NAME | clear
@@ -880,6 +884,12 @@ a name, not a role; only --admin grants admin rights. Give different people
 different labels even when their names match (e.g. bernard-kim and
 bernard-smith): a label is only the name you typed, so the same label does not
 make two people one person, and it proves nothing about who they are.
+
+revoke ADDRESS removes one device. revoke --person PERSON_ID removes all
+current and pending devices of that exact person from this workspace and
+withdraws their unused invitations. Use the verified person ID, never a name.
+Undelivered copies end without claiming delivery; already retained messages
+and completed work stay. This cannot erase data from their computers.
 
 invite prints a self-contained invitation for the person LABEL (their
 address becomes LABEL/NAME, NAME chosen by them when joining): project and install links,

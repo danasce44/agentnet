@@ -6,6 +6,14 @@ section at release; keep detailed verification and remaining work here.
 
 ## Current work after v0.8.19
 
+The owner made **MEL-600** a v0.8.20 publication blocker: permanent relay
+offboarding must settle impossible delivery, not merely remove a group member.
+Native, browser and Hub changes are under independent review. Exact-device and
+whole-person revocation, retained authoritative receipts, admission races,
+obsolete sync producers and restart recovery are covered; offline/outdated
+devices retain resumable copies. [V0_8_20.md](plans/V0_8_20.md) is the current
+qualification and publication checklist. Do not publish before this passes.
+
 `fix/mel-595-remote-needs-human` contains the tested remote Needs you card and
 quiet device Details fixes (`3be6b6f4`). The owner also asked to verify and repair
 remaining history counters. A private audit identified redundant transport
@@ -58,6 +66,18 @@ loader.js no-cache assertion failed on a public `max-age=14400` header with the
 correct bytes; read-only completion checks passed. That cache-policy follow-up
 is recorded in MEL-551. No client/grant/task/session was manually changed.
 MEL-546/558 remain open for the owner's physical-phone outcomes.
+
+Relay operator access uses the existing `contabo-server` SSH alias over the
+authorized Tailscale route. Run `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes
+contabo-server`; the separate public `contabo` alias and its Atlantic key do not
+provide this access. Host execution is required when a sandbox hides local DNS
+or the Tailscale socket; no credential reset is needed. The existing target is
+`agentnet-revived-hub`, Compose service `hub` in
+`/opt/agentnet-revived/compose.yaml`. Preserve its original named volume,
+loopback binding, realm and neighboring `telegram-bot-api-local` container.
+The v0.8.20 deployment script is prepared privately outside the repository;
+it must not run before the published binary checksum and served-asset hashes
+are supplied and verified. No deployment occurred during access recovery.
 
 ## Previous release — v0.8.18, October 10, 2026 (UTC)
 

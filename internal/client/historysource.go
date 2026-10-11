@@ -187,6 +187,9 @@ func (a *Agent) prepareHistorySource(dev identity.Public, it historySourceRow) (
 
 func (a *Agent) checkHistoryCopies(q dbq, copies []outCopy) error {
 	for _, copy := range copies {
+		if err := currentDeliveryRecipient(q, copy.env.To, copy.recipientFP); err != nil {
+			return err
+		}
 		root, e := protocol.ParseConvRoot(copy.in.Root)
 		if e != nil {
 			return e

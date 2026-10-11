@@ -218,6 +218,19 @@ func (s *directServer) authenticate(w http.ResponseWriter, r *http.Request) (str
 // most memberTTL ago, that it is an active member whose key matches the one
 // this agent trusts.
 func (s *directServer) memberKey(ctx context.Context, agent string) (ed25519.PublicKey, error) {
+	pinned, _, found, err := s.a.store.peer(agent)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		denied, e := revokedDeviceKnown(s.a.store.db, agent, pinned.Fingerprint())
+		if e != nil {
+			return nil, e
+		}
+		if denied {
+			return nil, errNotMember
+		}
+	}
 	s.authMu.Lock()
 	m, ok := s.members[agent]
 	s.authMu.Unlock()
@@ -232,11 +245,10 @@ func (s *directServer) memberKey(ctx context.Context, agent string) (ed25519.Pub
 		return nil, errNotMember
 	}
 	if e.Revoked {
+		if err := s.a.store.endRecipient(agent, e.Public.Fingerprint(), true); err != nil {
+			return nil, err
+		}
 		return nil, errNotMember
-	}
-	pinned, _, found, err := s.a.store.peer(agent)
-	if err != nil {
-		return nil, err
 	}
 	if !found {
 		if err := s.a.store.pin(e.Public); err != nil {

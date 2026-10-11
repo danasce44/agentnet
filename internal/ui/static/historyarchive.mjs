@@ -39,7 +39,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
     return e.readSyncAuthority(manifest,from,key,e.address,e.fp,checks);
   }
   async function supported(dev){
-    if(!await e.ownHistoryAuthority(dev))return false;
+    if(!await e.recipientAvailable(dev)||!await e.ownHistoryAuthority(dev))return false;
     const pin=await e.store.get('pins',dev.address);
     if(!pin||pin.pending||pin.fingerprint!==dev.fingerprint)return false;
     try{
@@ -55,6 +55,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
   // The existing source cursor and exact sealed staging rows commit together.
   // Chunk encryption and blob I/O happen later, outside production and SSE.
   async function prepare(copies,ops,checks,dev){
+    if(!await e.recipientAvailable(dev,checks))throw new StoreConflict();
     const live=copies.filter(r=>r.fresh_live).map(v=>({
       s:'outbox',k:v.id,v
     }));
@@ -156,7 +157,9 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
   async function gate(row,checks=[]){
     const own=await e.groupRead(checks,'kv','person'),dev=own?.devices.find(d=>d.address===row.to&&d.fingerprint===row.recipient_fp);
     if(!dev||!await e.ownHistoryAuthority(dev,checks))throw Error('Archive destination is no longer a current own human device.');
+    if(!await e.recipientAvailable(dev,checks))throw Object.assign(Error('That device was removed from the server.'),{code:'recipient_revoked'});
     const pin=await e.groupRead(checks,'pins',dev.address),[ok]=await e.ctlSupport(dev.address,pin,wire.CapHistoryArchive);
+    if(!await e.recipientAvailable(dev,checks))throw Object.assign(Error('That device was removed from the server.'),{code:'recipient_revoked'});
     if(!ok)throw Object.assign(Error('Archive reader capability unavailable.'),{code:'history_archive_unsupported'});
     return {
       own,dev,pin
@@ -208,11 +211,11 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
         e.queueOutbox();
       }catch{
         const current=await e.store.get('kv',outgoing+row.id);
-        if(current)await e.store.write([{
+        if(current?.state==='prepared'&&current.error!=='transfer_pending')try{await e.store.write([{
           s:'kv',k:outgoing+row.id,v:{
             ...current,error:'transfer_pending'
           }
-        }]);
+        }],[{s:'kv',k:outgoing+row.id,v:current}]);}catch(error){if(!(error instanceof StoreConflict))throw error;}
       }
     }
   }
@@ -329,7 +332,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
     for(const id of job.children){
       const child=await e.store.get('outbox',id);
       checks.push({s:'outbox',k:id,v:child});
-      if(child?.state==='archive_staged'&&child.archive_chunk===row.id)ops.push({
+      if(['archive_staged','not_delivered'].includes(child?.state)&&child.archive_chunk===row.id)ops.push({
         s:'outbox',k:id,v:{
           ...child,state:'archive_accepted',...(child.files?{files:child.files.map(file=>({...file,ct:null}))}:{})
         }

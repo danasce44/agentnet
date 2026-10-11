@@ -108,8 +108,9 @@ export function deviceHistory(e,Hold){
  }
  function step(dev){return e.withHistoryProduction(()=>stepPage(dev));}
  async function stepPage(dev){
+  const recipientChecks=[];if(!await e.recipientAvailable(dev,recipientChecks))return false;
   const available=await historyWindow(e.store,dev);
-  const checks=[],ops=[],own=await read(checks,"kv","person");if(!await e.ownHistoryAuthority(dev,checks))return false;
+  const checks=recipientChecks,ops=[],own=await read(checks,"kv","person");if(!await e.ownHistoryAuthority(dev,checks))return false;
   const key=prefix+"job/"+dev.fingerprint,saved=await read(checks,"kv",key),ceiling=await read(checks,"kv","device-history-arrival")||0;
   const job=structuredClone(saved||{older:ceiling+1,tail:ceiling});
   const incoming=await e.store.directRows({after:job.tail,ceiling,limit:page}),older=available&&job.older?await e.store.directRows({ceiling:job.older-1,reverse:true,limit:page}):[];

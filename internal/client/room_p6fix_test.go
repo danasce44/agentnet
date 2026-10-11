@@ -42,6 +42,68 @@ func TestP6FixAnswerAudienceAndStoredReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	answer := replyAt(t, w.alice, conv, asked.LID)
+	checkReplyProjection := func() {
+		t.Helper()
+		full, err := w.alice.ConversationMessages(conv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := w.alice.conversationMessages(conv, asked.LID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs := map[string]bool{asked.LID: true}
+		for _, msg := range full {
+			if msg.LID == asked.LID {
+				refs[msg.ID] = true
+				for _, copy := range msg.Copies {
+					refs[copy.ID] = true
+				}
+			}
+		}
+		count := 0
+		for _, expected := range full {
+			if expected.LID != asked.LID && (!refs[expected.ReplyTo] || expected.Kind != envelope.KindAnswer && expected.Kind != envelope.KindResult) {
+				continue
+			}
+			count++
+			index := slices.IndexFunc(selected, func(m ConvMessage) bool { return m.ID == expected.ID })
+			var actual ConvMessage
+			if index >= 0 {
+				actual = selected[index]
+			}
+			if index < 0 || actual.Body != expected.Body || actual.PID != expected.PID || actual.Key != expected.Key || actual.VerifiedAgent != expected.VerifiedAgent || actual.Deleted != expected.Deleted {
+				t.Fatalf("exact projection differs from full signed view: id=%s found=%t pid=%s/%s key=%s/%s verified=%t/%t deleted=%t/%t body_equal=%t", expected.ID, index >= 0, actual.PID, expected.PID, actual.Key, expected.Key, actual.VerifiedAgent, expected.VerifiedAgent, actual.Deleted, expected.Deleted, actual.Body == expected.Body)
+			}
+		}
+		if len(selected) != count {
+			t.Fatalf("unrelated turn in exact projection: got=%d want=%d", len(selected), count)
+		}
+	}
+	checkReplyProjection()
+	if _, err := w.alice.store.db.Exec(`UPDATE inbox SET verified_by='wrong-key' WHERE id=?`, answer.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := w.alice.RoomReply(root.LID, asked.LID); err != nil || got != nil {
+		t.Fatalf("mismatched reply key accepted: %+v %v", got, err)
+	}
+	if _, err := w.alice.store.db.Exec(`UPDATE inbox SET verified_by=? WHERE id=?`, answer.Key, answer.ID); err != nil {
+		t.Fatal(err)
+	}
+	var requestCopy string
+	if err := w.alice.store.db.QueryRow(`SELECT id FROM inbox WHERE conv=? AND lid=? AND local=0 LIMIT 1`, conv, asked.LID).Scan(&requestCopy); err != nil {
+		t.Fatal(err)
+	}
+	// The execution decorator also recognizes physical copies of the same
+	// logical request. Keep them in the exact projection without changing
+	// RoomReply's own logical-reference acceptance.
+	if _, err := w.alice.store.db.Exec(`UPDATE inbox SET reply_to=? WHERE id=?`, requestCopy, answer.ID); err != nil {
+		t.Fatal(err)
+	}
+	checkReplyProjection()
+	if _, err := w.alice.store.db.Exec(`UPDATE inbox SET reply_to=? WHERE id=?`, asked.LID, answer.ID); err != nil {
+		t.Fatal(err)
+	}
 	if got, e := w.alice.RoomReply(root.LID, asked.LID); e != nil || got == nil || got.Body != answer.Body {
 		t.Fatalf("third-party reply: %+v %v", got, e)
 	}
@@ -67,6 +129,7 @@ func TestP6FixAnswerAudienceAndStoredReply(t *testing.T) {
 	if got, e := w.alice.RoomReply(root.LID, asked.LID); e != nil || got == nil {
 		t.Fatalf("reply outside prompt window: %+v %v", got, e)
 	}
+	checkReplyProjection()
 	if err = os.WriteFile(Harnesses["agentstub"].bin, []byte("#!/bin/sh\ncat >/dev/null\nhead -c 70000 /dev/zero | tr '\\000' x\nprintf '\\nemotion: neutral\\n'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +174,11 @@ func TestP6FixAnswerAudienceAndStoredReply(t *testing.T) {
 	if got, e := w.alice.RoomReply(root.LID, asked.LID); e != nil || got == nil {
 		t.Fatalf("stored reply after removal: %+v %v", got, e)
 	}
+	if _, err := w.bob.Retract(tctx(t), ControlRef{Conv: conv, ID: answer.LID, Fingerprint: answer.Key}, "remove retained answer"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "answer deletion control received", func() bool { return w.alice.deleted(ControlRef{Conv: conv, ID: answer.LID, Fingerprint: answer.Key}) })
+	checkReplyProjection()
 }
 
 func TestP6FixQueuedRoomAskIsNotACompletedOutput(t *testing.T) {
@@ -147,11 +215,32 @@ func TestP6FixQueuedRoomAskIsNotACompletedOutput(t *testing.T) {
 	if handled, allowed, err := w.alice.mayDeliverGroupParticipation(env); err != nil || !handled || !allowed {
 		t.Fatalf("running origin refused: handled=%v allowed=%v err=%v", handled, allowed, err)
 	}
+	if reply, err := w.alice.RoomReply(root.LID, child.LID); err != nil || reply != nil {
+		t.Fatalf("unanswered current scopes: reply=%+v err=%v", reply, err)
+	}
 	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateCancelled, root.LID); err != nil {
 		t.Fatal(err)
 	}
 	if _, allowed, err := w.alice.mayDeliverGroupParticipation(env); err != nil || allowed {
 		t.Fatalf("stopped origin still allowed: allowed=%v err=%v", allowed, err)
+	}
+	if reply, err := w.alice.RoomReply(root.LID, child.LID); err == nil || reply != nil {
+		t.Fatalf("cancelled unanswered origin: reply=%+v err=%v", reply, err)
+	}
+	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateRunning, root.LID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.alice.DismissParticipation(tctx(t), to.PID); err != nil {
+		t.Fatal(err)
+	}
+	if reply, err := w.alice.RoomReply(root.LID, child.LID); err == nil || reply != nil || !strings.Contains(err.Error(), "membership ended") {
+		t.Fatalf("removed unanswered target: reply=%+v err=%v", reply, err)
+	}
+	if _, err := w.alice.DismissParticipation(tctx(t), from.PID); err != nil {
+		t.Fatal(err)
+	}
+	if reply, err := w.alice.RoomReply(root.LID, child.LID); err == nil || reply != nil || !strings.Contains(err.Error(), "no longer a member") {
+		t.Fatalf("removed unanswered origin: reply=%+v err=%v", reply, err)
 	}
 }
 

@@ -13,6 +13,13 @@ const syncWindowQuery = `SELECT (SELECT coalesce(sum(CASE WHEN sub='history-arch
 // can exceed the threshold by its existing bounded dependency expansion.
 // Counts are durable and exact-key scoped; relay custody is not admission.
 func syncWindowFull(q dbq, dev identity.Public, prepared ...[]outCopy) (bool, error) {
+	// A retained signed roster may still list a relay-revoked key. Do not
+	// regenerate its background copies after terminal reconciliation.
+	if revoked, err := revokedDeviceKnown(q, dev.Address, dev.Fingerprint()); err != nil {
+		return false, err
+	} else if revoked {
+		return true, nil
+	}
 	var n int
 	err := q.QueryRow(syncWindowQuery, historyPage, dev.Address, dev.Fingerprint(), dev.Address, dev.Fingerprint()).Scan(&n)
 	if err != nil {

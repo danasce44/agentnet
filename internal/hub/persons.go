@@ -85,6 +85,12 @@ func enrollPending(tx *sql.Tx, person, inviter string, pub identity.Public, data
 	if !ok || !ed25519.Verify(pub.SignKey, protocol.JoinBytes(person, head.seq+1, head.hash, pub), link.Join) {
 		return errRosterStale
 	}
+	// The invite may have been minted before its exact author was revoked.
+	roster, err := protocol.ParsePersonRoster(head.record)
+	author, authorErr := agentIn(tx, inviter)
+	if err != nil || authorErr != nil || author.Revoked || author.Pending || author.Person != person || !roster.Has(inviter, author.Public.Fingerprint()) {
+		return errLinkGone
+	}
 	if room, err := devicesAvailable(tx, person, head); err != nil {
 		return err
 	} else if !room {
@@ -221,7 +227,7 @@ func (s *store) putPersonStep(caller identity.Public, raw []byte, r protocol.Per
 				return res, err
 			}
 			if n, _ := rev.RowsAffected(); n > 0 {
-				if err := dropNotify(tx, d.Address); err != nil {
+				if err := settleRevokedDevice(tx, d.Address); err != nil {
 					return res, err
 				}
 			}
@@ -288,9 +294,15 @@ func (h *Hub) handlePutPerson(w http.ResponseWriter, r *http.Request) {
 			h.streams.notify(res.activated) // its pending stream closes; it reconnects as a member
 		}
 		for _, d := range res.removed {
-			h.streams.notify(d)
+			if target, err := h.store.agent(d); err == nil && target.Revoked {
+				h.streams.disconnect(d)
+				h.presence.drop(d)
+			} else {
+				h.streams.notify(d)
+			}
 		}
-		h.membersChanged()
+		h.lookAgain() // removal may be outside the truncated member list
+		h.waiters.notifyAll()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -334,7 +346,7 @@ func (s *store) createDeviceInvite(caller, secret string, req protocol.DeviceInv
 	if err != nil {
 		return "", err
 	}
-	if me.Person == "" {
+	if me.Person == "" || me.Revoked || me.Pending {
 		return "", errNotPersonal
 	}
 	head, ok, err := personHeadIn(tx, me.Person)

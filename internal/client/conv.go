@@ -40,14 +40,15 @@ var ErrNotPublished = errors.New("not yet published on the Hub (the daemon publi
 
 // Upkeep that an event made due, done on the next sync (never on a timer).
 const (
-	convPublish   uint32 = 1 << iota // publish this run's capabilities and the person, if not yet
-	convRetry                        // new evidence: look again at every message held for proof (heldLook)
-	convRetryMore                    // continue that look from where the last page ended
-	convRelease                      // look again at waiting conversation messages
-	convPersons                      // compare published person records with the pinned ones
-	convHistory                      // queue the next page of history for a new device of this person (history.go)
-	convServe                        // answer a file request from another device of this person (historyfiles.go)
-	convFetch                        // keep received conversation files (historyfiles.go)
+	convPublish    uint32 = 1 << iota // publish this run's capabilities and the person, if not yet
+	convRetry                         // new evidence: look again at every message held for proof (heldLook)
+	convRetryMore                     // continue that look from where the last page ended
+	convRelease                       // look again at waiting conversation messages
+	convPersons                       // compare published person records with the pinned ones
+	convHistory                       // queue the next page of history for a new device of this person (history.go)
+	convServe                         // answer a file request from another device of this person (historyfiles.go)
+	convFetch                         // keep received conversation files (historyfiles.go)
+	convRecipients                    // continue bounded exact revocation discovery
 )
 
 // proofPage bounds the held messages looked at in one sync.
@@ -59,6 +60,7 @@ type convWork struct {
 	look            heldLook // the look at held messages under way (mu)
 	lookLoaded      bool     // look was read from the store (mu)
 	historyDeferred map[string]historyDeferredScan
+	recipients      recipientDiscovery
 	retried         atomic.Int64 // unix time the last full look at held messages began
 	// readerWait: own-device history produced nothing for a device that
 	// cannot read it now (or is suspended); the next member list, which
@@ -145,6 +147,11 @@ func (a *Agent) convSync(ctx context.Context) {
 	}
 	if work&convPersons != 0 { // before retrying held messages: a conflict must hold them
 		a.checkPersons(ctx, a.MemberView().Members)
+	}
+	if work&(convPersons|convRecipients) != 0 {
+		if err := a.reconcileRecipientLifecycle(ctx); err != nil {
+			a.Logf("reconciling permanently removed recipients: %v", err)
+		}
 	}
 	if err := a.flushOutbox(ctx, true); err != nil {
 		a.Logf("file outbox: %v", err)
@@ -457,6 +464,13 @@ func (a *Agent) Conversations() ([]ConversationInfo, error) {
 
 // ConversationMessages lists a conversation's messages here, oldest first.
 func (a *Agent) ConversationMessages(conv string) ([]ConvMessage, error) {
+	return a.conversationMessages(conv, "")
+}
+
+// reply selects only one exact request and its replies for a local waiter.
+// Selection grants no authority: the usual attribution and control resolution
+// below still checks every selected turn against current stored evidence.
+func (a *Agent) conversationMessages(conv, reply string) ([]ConvMessage, error) {
 	msgs, err := a.store.convMessages(conv, a.Address, a.id.Public(a.Address).Fingerprint(), a.ownDevices())
 	if err != nil {
 		return nil, err
@@ -473,6 +487,24 @@ func (a *Agent) ConversationMessages(conv string) ([]ConvMessage, error) {
 		msgs[i].Human = h
 	}
 	msgs = a.showExcerpts(msgs)
+	if reply != "" {
+		refs := map[string]bool{reply: true}
+		for _, msg := range msgs {
+			if msg.LID == reply {
+				refs[msg.ID] = true
+				for _, copy := range msg.Copies {
+					refs[copy.ID] = true
+				}
+			}
+		}
+		selected := msgs[:0]
+		for _, msg := range msgs {
+			if msg.LID == reply || refs[msg.ReplyTo] && (msg.Kind == envelope.KindAnswer || msg.Kind == envelope.KindResult) {
+				selected = append(selected, msg)
+			}
+		}
+		msgs = selected
+	}
 	a.verifyAgents(conv, msgs)
 	for i := range msgs {
 		// A turn sent from this device opens from its kept copy; one sent
@@ -1227,7 +1259,15 @@ func (a *Agent) retryProof(ctx context.Context) (more bool) {
 		if in.V == envelope.Version3 {
 			admit = a.admitControl
 		}
-		if err := admit(ctx, env, in, sender, true); err != nil && transient(err) {
+		retryCtx := ctx
+		var relay bool
+		if err := a.store.db.QueryRow(`SELECT relay_ingress FROM quarantine WHERE id=?`, env.ID).Scan(&relay); err != nil {
+			continue
+		}
+		if relay {
+			retryCtx = withRelayIngress(ctx, env.ID)
+		}
+		if err := admit(retryCtx, env, in, sender, true); err != nil && transient(err) {
 			// The Hub is out of reach: this page is looked at again on the
 			// next sync. Any other failure keeps only this row held, in place.
 			again = true
@@ -1276,7 +1316,14 @@ func holdForMember(err error, sender bool, hold func(string, string) error) erro
 // already, and is released when admitted.
 func (a *Agent) admitConv(ctx context.Context, env envelope.Envelope, in envelope.Inner, sender identity.Public, fromQuarantine bool) error {
 	hold := func(reason, why string) error {
-		return a.holdOpened("conversation message", env, in, sender, reason, why)
+		return a.holdOpened(ctx, "conversation message", env, in, sender, reason, why)
+	}
+	allowed, err := a.revokedIngressAllowed(ctx, env, in, sender)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return hold(reasonInvalid, "sender permanently removed from this workspace")
 	}
 	personErr := func(err error) error { return holdForPerson(err, hold) }
 	if in.Sub == envelope.SubHistoryArchive {

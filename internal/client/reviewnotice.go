@@ -103,6 +103,10 @@ func reviewNoticeDetail(from string) string {
 // nothing waits, which clears its card (no timer). Desktop notifications
 // are tracked separately.
 func (a *Agent) sendReviewNotice(ctx context.Context) {
+	a.withReviewPass(func() { a.sendReviewNoticeInPass(ctx) })
+}
+
+func (a *Agent) withReviewPass(work func()) {
 	// Serialize snapshots. A completion wake can be consumed by a pass
 	// that skips this busy sender, so reawaken after unlocking if local
 	// state changed while this snapshot was prepared or sent.
@@ -116,6 +120,10 @@ func (a *Agent) sendReviewNotice(ctx context.Context) {
 			a.wakeWorker()
 		}
 	}()
+	work()
+}
+
+func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 	gen, err := a.store.config(reviewToGenKey)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		a.Logf("review notice: %v", err)
@@ -694,3 +702,8 @@ func (a *Agent) privateNeedsYou(msgs []ConvMessage) error {
 // no reply_to, no files); its two parameters are KindMessage and
 // StatusReviewNotice.
 const receivedNotice = `kind = ? AND status IS ? AND reply_to IS NULL AND NOT EXISTS (SELECT 1 FROM attachments WHERE message_id = inbox.id)`
+
+// A removed host cannot keep asking this person to decide work there. Keep
+// its signed report as history, but no current alert or decision is possible.
+// Exact keys matter: a changed key or a merely offline host is not removal.
+const revokedInboxSender = `EXISTS (SELECT 1 FROM config c WHERE c.k='` + revokedDevicePrefix + `' || inbox.sender || '/' || inbox.verified_by AND c.v=inbox.sender)`

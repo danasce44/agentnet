@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -54,8 +55,8 @@ func heldCopyKey(env envelope.Envelope, in envelope.Inner, sender identity.Publi
 // (admitConv, admitControl): it records the logical record env carries
 // (heldLogicalKey), settles an exact re-sent copy (heldCopyKey) into the
 // first held row of its record, and logs only a change of hold state.
-func (a *Agent) holdOpened(what string, env envelope.Envelope, in envelope.Inner, sender identity.Public, reason, why string) error {
-	of, changed, err := a.store.holdCopy(env, heldCopyKey(env, in, sender), heldLogicalKey(in, sender.Fingerprint()), reason, why)
+func (a *Agent) holdOpened(ctx context.Context, what string, env envelope.Envelope, in envelope.Inner, sender identity.Public, reason, why string) error {
+	of, changed, err := a.store.holdCopy(env, heldCopyKey(env, in, sender), heldLogicalKey(in, sender.Fingerprint()), reason, why, relayIngress(ctx, env.ID))
 	if err == nil {
 		a.logHold(what, env, reason, why, of, changed)
 	}
@@ -73,7 +74,8 @@ func (a *Agent) holdOpened(what string, env envelope.Envelope, in envelope.Inner
 // changed (a new row, another reason or code) and the row this one is a
 // copy of. Only a change is signalled to the UI: an unchanged recheck
 // changes nothing shown.
-func (s *store) holdCopy(env envelope.Envelope, key, logical, reason, why string) (of string, changed bool, err error) {
+func (s *store) holdCopy(env envelope.Envelope, key, logical, reason, why string, relay ...bool) (of string, changed bool, err error) {
+	marked := len(relay) > 0 && relay[0]
 	raw, _ := json.Marshal(env)
 	code := heldFailureCode(reason, why)
 	tx, err := s.db.Begin()
@@ -91,12 +93,13 @@ func (s *store) holdCopy(env envelope.Envelope, key, logical, reason, why string
 		changed = oldReason != reason || oldCode != code
 	}
 	named := logical != "" && logical != oldLogical // the notice now names its record
-	if _, err = tx.Exec(`INSERT INTO quarantine(id, sender, reason, envelope, received_at, detail_code, copy_key, logical) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err = tx.Exec(`INSERT INTO quarantine(id, sender, reason, envelope, received_at, detail_code, copy_key, logical,relay_ingress) VALUES(?, ?, ?, ?, ?, ?, ?, ?,?)
 		ON CONFLICT(id) DO UPDATE SET reason = excluded.reason, detail_code = excluded.detail_code,
+		relay_ingress = CASE WHEN quarantine.envelope=excluded.envelope THEN max(quarantine.relay_ingress,excluded.relay_ingress) ELSE quarantine.relay_ingress END,
 		copy_key = CASE WHEN excluded.copy_key<>'' THEN excluded.copy_key ELSE quarantine.copy_key END,
 		logical = CASE WHEN excluded.logical<>'' THEN excluded.logical ELSE quarantine.logical END,
 		notice_archived = CASE WHEN excluded.reason IN ('invalid','proof_pending') AND quarantine.reason=excluded.reason AND (excluded.reason='proof_pending' OR quarantine.detail_code=excluded.detail_code) THEN quarantine.notice_archived ELSE 0 END`,
-		env.ID, env.From, reason, string(raw), time.Now().Unix(), code, key, logical); err != nil {
+		env.ID, env.From, reason, string(raw), time.Now().Unix(), code, key, logical, marked); err != nil {
 		return "", false, err
 	}
 	moved := false

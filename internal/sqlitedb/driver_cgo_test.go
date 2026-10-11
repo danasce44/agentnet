@@ -3,6 +3,8 @@
 package sqlitedb
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -10,6 +12,40 @@ import (
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
+
+func TestCGOReadOnlyCommitErrorCleansConnection(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "commit.db"), []string{
+		`CREATE TABLE parent(id INTEGER PRIMARY KEY); CREATE TABLE child(id INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	// ReadOnly is the driver's lock-mode hint, as in modernc. Force a
+	// deferred constraint failure to exercise database/sql's commit cleanup.
+	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO child VALUES(1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("invalid deferred constraint committed")
+	}
+	var rows int
+	if err := db.QueryRow(`SELECT count(*) FROM child`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("failed commit left an open transaction: rows=%d err=%v", rows, err)
+	}
+	next, err := db.Begin()
+	if err != nil {
+		t.Fatalf("connection not reusable after failed commit: %v", err)
+	}
+	if err := next.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // Run with -tags agentnet_sqlite_cgo on a CGo-enabled host to exercise the
 // actual Android adapter and the existing schema/backup suite. Android runtime

@@ -5,16 +5,17 @@ const sources=[['../web/src/features/Settings.profile.tsx','copyWords'],['../ski
 const base={state:'done',done:0,total:0,delivery_known:true,queued:0,custody:0,retained:0,delivered:0,blocked:0,deferred:0};
 let checks=0;
 for(const [path,name] of sources) {
+ const comic=path.includes('Settings.profile');
  const source=readFileSync(new URL(path,import.meta.url),'utf8');
  const body=source.match(new RegExp('function '+name+'\\([^\\n]+\\{\\n([\\s\\S]*?)\\n\\}'))?.[1];
  assert(body,'actual source formatter '+name);
  const words=new Function('h',body.replace('const parts: string[]','const parts'));
- for(const [delta,want] of [[{},/No message history waiting/],[{delivery_known:false},/confirmation unavailable/],[{queued:3},/3 waiting to send/],[{custody:4},/4 on the server, waiting for the device/],[{blocked:2},/2 history copies need attention/],[{state:'running',deferred:7},/7 history items waiting for context/],[{state:'running'},/Preparing history/],[{delivered:9},/9 history copies delivered/],[{state:'ended'},/stopped/]]) {
+ for(const [delta,want] of [[{},/No message history waiting/],[{delivery_known:false},/confirmation unavailable/],[{queued:3},/3 waiting to send/],[{custody:4},/4 on the server, waiting for the device/],[{blocked:2},comic?/2 blocked history copies/:/2 history copies need attention/],[{state:'running',deferred:7},comic?/7 pending history items/:/7 history items waiting for context/],[{state:'running'},/Preparing history/],[{delivered:9},/9 history copies delivered/],[{state:'ended'},/stopped/]]) {
   const value=words({...base,...delta});
   assert.match(value,want,path);assert.doesNotMatch(value,/Getting your chats|History queued|all chats synced/i,path);checks++;
  }
  const retained=words({...base,retained:50});
- assert.match(retained,/50 history records stored on the device/);
+ assert.match(retained,comic?/50 history items accepted for background import/:/50 history records stored on the device/);
  assert.doesNotMatch(retained,/waiting|attention|delivered|synced/i);checks++;
 }
 console.log('history source/receipt wording checks passed: '+checks);

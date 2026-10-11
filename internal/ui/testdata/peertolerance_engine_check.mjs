@@ -261,3 +261,5 @@ const groupEngine = async (devices) => {
   check(shown[0].copies.every((x) => !x.suspended) && shown[0].delivery === 'waiting', 'not suspended: a waiting device counts again');
 }
 console.log('PASS one device never stops everyone: ' + checks + ' checks');
+
+await import("./recipient_lifecycle_engine_check.mjs");

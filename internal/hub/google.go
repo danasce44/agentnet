@@ -414,8 +414,10 @@ func (h *Hub) handleGoogleAccessChange(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, address := range addresses {
 		h.streams.disconnect(address)
+		h.presence.drop(address)
 	}
-	h.lookAgain() // an admin role may have changed, which the list does not show
+	h.lookAgain() // wakes existing sender streams for terminal receipts too
+	h.waiters.notifyAll()
 	w.WriteHeader(204)
 }
 
@@ -456,7 +458,7 @@ func (s *store) changeGoogleAccess(c protocol.GoogleAccessChange) ([]string, err
 				if _, err = tx.Exec(`UPDATE agents SET revoked_at=?,revoked_reason='removed' WHERE address=?`, time.Now().Unix(), a); err != nil {
 					return nil, err
 				}
-				if err = dropNotify(tx, a); err != nil {
+				if err = settleRevokedDevice(tx, a); err != nil {
 					return nil, err
 				}
 			}

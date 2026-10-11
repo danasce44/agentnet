@@ -62,6 +62,24 @@ func TestMembershipPreparedReadsStayFresh(t *testing.T) {
 				t.Fatalf("previous person's rows reused: present=%t error=%v", ok, err)
 			}
 			check(q, "changed", personConflict, 4)
+			if events, err := participationEventsIn(q, "room", "participant"); err != nil || len(events) != 0 {
+				t.Fatalf("initial participation events: %+v %v", events, err)
+			}
+			if _, err := exec(`INSERT INTO participation_events(hash,conv,pid,type,author,event,received_at) VALUES('event','room','participant','invite','fixture','{"type":"invite"}',1)`); err != nil {
+				t.Fatal(err)
+			}
+			if events, err := participationEventsIn(q, "room", "participant"); err != nil || len(events) != 1 || events[0].Type != protocol.EventInvite {
+				t.Fatalf("fresh participation events: %+v %v", events, err)
+			}
+			if _, err := exec(`UPDATE participation_events SET event='{"type":"dismiss"}' WHERE hash='event'`); err != nil {
+				t.Fatal(err)
+			}
+			if events, err := participationEventsIn(q, "room", "participant"); err != nil || len(events) != 1 || events[0].Type != protocol.EventDismiss {
+				t.Fatalf("changed participation events: %+v %v", events, err)
+			}
+			if events, err := participationEventsIn(q, "room", "other"); err != nil || len(events) != 0 {
+				t.Fatalf("another participation reused rows: %+v %v", events, err)
+			}
 			closeReads()
 			if tx != nil {
 				if err := tx.Rollback(); err != nil {

@@ -224,6 +224,9 @@ func (a *Agent) ContinuationFor(id, key string, exec *ExecView) (*ContinuationAc
 	if e != nil || hostKey.Fingerprint() != fp {
 		return nil, e
 	}
+	if denied, err := revokedDeviceKnown(a.store.db, exec.Host, hostKey.Fingerprint()); err != nil || denied {
+		return nil, err
+	}
 	var n int
 	e = a.store.db.QueryRow(`SELECT count(*) FROM (SELECT id FROM inbox WHERE (id=? OR lid=?) AND verified_by=? AND kind IN (?,?) AND (conv IS NULL AND sender=? OR json_extract(target,'$.address')=?)
 	 UNION ALL SELECT id FROM outbox WHERE (id=? OR lid=?) AND ?=? AND coalesce(kind,json_extract(envelope,'$.kind')) IN (?,?) AND (conv IS NULL AND recipient=? OR json_extract(target,'$.address')=?)

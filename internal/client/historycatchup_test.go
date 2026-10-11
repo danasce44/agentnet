@@ -79,6 +79,19 @@ func historyCopiedItems(t *testing.T, a, phone *Agent) []HistoryItem {
 
 func TestHistoryCatchupRecentTailRestart(t *testing.T) {
 	w, phone, conv, ids := historyCatchupFixture(t, 57)
+	stopPhone := runAgent(t, phone)
+	defer stopPhone()
+	waitNamedAgentCaps(t, phone)
+	// This fixture drains individual history envelopes and proves their
+	// storage receipts. An archive-capable reader instead stages a chunk;
+	// that path has its own receipt-driven multi-chunk regression.
+	signCapsAfter(t, phone, without(ownCaps, protocol.CapHistoryArchive))
+	label, name, _ := protocol.SplitAddress(phone.Address)
+	eventually(t, "signed per-carrier history reader", func() bool {
+		var profile protocol.Profile
+		err := phone.hub.do(tctx(t), "GET", "/v1/agents/"+label+"/"+name+"/profile", nil, &profile)
+		return err == nil && profile.Supports(phone.Address, phone.Self().SignKey, protocol.CapOwnSyncV3) && !profile.Supports(phone.Address, phone.Self().SignKey, protocol.CapHistoryArchive)
+	})
 	a := w.alice
 	more, err := a.historyCatchupPage(tctx(t), phone.Self())
 	if err != nil || !more {
@@ -107,6 +120,10 @@ func TestHistoryCatchupRecentTailRestart(t *testing.T) {
 	}
 	if _, err := a.historyCatchupPage(tctx(t), phone.Self()); err != nil {
 		t.Fatal(err)
+	}
+	var archives int
+	if err = a.store.db.QueryRow(`SELECT count(*) FROM outbox WHERE recipient=? AND (sub=? OR state IN ('archive_staged','archive_uploading','archive_accepted'))`, phone.Address, envelope.SubHistoryArchive).Scan(&archives); err != nil || archives != 0 {
+		t.Fatalf("legacy fixture produced archives=%d err=%v", archives, err)
 	}
 	items = historyCopiedItems(t, a, phone)
 	if len(items) <= historyPage || items[historyPage].Body != "old timestamp arrives during backfill" {
@@ -150,6 +167,17 @@ func TestHistoryCatchupRecentTailRestart(t *testing.T) {
 	}
 	items = historyCopiedItems(t, a, phone)
 	if len(items) != len(ids)+1 {
+		rows, e := a.store.db.Query(`SELECT state,coalesce(sub,''),count(*) FROM outbox WHERE recipient=? GROUP BY state,sub`, phone.Address)
+		if e == nil {
+			for rows.Next() {
+				var state, sub string
+				var n int
+				if rows.Scan(&state, &sub, &n) == nil {
+					t.Logf("retained copies: state=%s sub=%s count=%d", state, sub, n)
+				}
+			}
+			rows.Close()
+		}
 		t.Fatalf("missing/duplicate exact copies: %d", len(items))
 	}
 	var jobs int

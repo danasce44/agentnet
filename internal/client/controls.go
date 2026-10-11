@@ -827,7 +827,14 @@ func addControlInboxIn(tx *sql.Tx, in envelope.Inner, verifiedBy string, fromQua
 // is checked whenever the target is shown (resolveControls).
 func (a *Agent) admitControl(ctx context.Context, env envelope.Envelope, in envelope.Inner, sender identity.Public, fromQuarantine bool) error {
 	hold := func(reason, why string) error {
-		return a.holdOpened("control", env, in, sender, reason, why)
+		return a.holdOpened(ctx, "control", env, in, sender, reason, why)
+	}
+	allowed, err := a.revokedIngressAllowed(ctx, env, in, sender)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return hold(reasonInvalid, "sender permanently removed from this workspace")
 	}
 	if envelope.AssistantReaction(in) { // the assistant's, decided as its reply would be
 		return a.admitAssistantReaction(ctx, env, in, sender, fromQuarantine, hold)
@@ -1535,6 +1542,9 @@ func (a *Agent) decorateLegacy(peer string, msgs []ConversationMessage) error {
 		if e, ok := execs[ControlRef{ID: m.ID, Fingerprint: fp}]; m.Dir == "out" && ok && e.Host == peer { // my request: the peer's word on it
 			status, at := legacyAnswer(msgs, m.ID)
 			e.settle(a.hostConnected(peer), status, at, time.Now().Unix())
+			if err := a.projectRevokedExec(&e, e.sourceKey); err != nil {
+				return err
+			}
 			m.Exec = &e
 		}
 		m.Controls = resolved[ControlRef{ID: m.ID, Fingerprint: fp}]
@@ -1726,6 +1736,9 @@ func (a *Agent) decorateConv(conv string, msgs []ConvMessage) error {
 			if e, ok := execs[ControlRef{ID: msg.LID, Fingerprint: key}]; ok && e.Host == msg.Target.Address { // only the target device speaks for it (admission checked the key)
 				status, at := convAnswer(msgs, *msg)
 				e.settle(a.hostConnected(e.Host), status, at, time.Now().Unix())
+				if err := a.projectRevokedExec(&e, e.sourceKey); err != nil {
+					return err
+				}
 				msg.Exec = &e
 			}
 		}
@@ -1760,6 +1773,22 @@ func (a *Agent) decorateConv(conv string, msgs []ConvMessage) error {
 				msg.Can = append(msg.Can, CanDelete) // an agent's output: its person may delete, not rewrite
 			}
 		}
+	}
+	return nil
+}
+
+func (a *Agent) projectRevokedExec(e *ExecView, fp string) error {
+	if fp == "" || (execTerminal(e.State) && e.State != envelope.StatusProposal && e.State != envelope.StatusInterrupted) || e.State == "answered" || e.State == "stopped" || e.State == "resolved" || e.State == "not_run" {
+		return nil
+	}
+	denied, err := revokedDeviceKnown(a.store.db, e.Host, fp)
+	if err != nil {
+		return err
+	}
+	if denied {
+		e.State = "unavailable"
+		e.Detail = "The host was permanently removed from this workspace."
+		e.Stale = true
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
@@ -13,6 +14,64 @@ import (
 type reviewSnapshotTransport func(*http.Request) (*http.Response, error)
 
 func (f reviewSnapshotTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestReviewAttentionCoalescesConcurrentRunWakes(t *testing.T) {
+	w := newWorld(t, "")
+	insert := func() {
+		t.Helper()
+		if _, err := w.bob.store.db.Exec(`INSERT INTO inbox(id,sender,ts,kind,body,received_at,state,verified_by) VALUES(?,?,?,?,?,?,?,?)`, protocol.NewID(), w.alice.Address, 1, envelope.KindQuestion, "PRIVATE", 1, stateHeld, w.alice.Self().Fingerprint()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert()
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	w.bob.nativeNotify = func(string) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+	}
+	go func() { defer close(done); w.bob.reviewAttention(tctx(t)) }()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-done
+	}()
+	select {
+	case <-entered:
+	case <-tctx(t).Done():
+		t.Fatal("attention pass never reached notifier")
+	}
+	insert()
+	w.bob.NoteChange()
+	w.bob.reviewAttention(tctx(t))
+	if calls.Load() != 1 {
+		t.Fatal("overlapping run wake performed another attention projection")
+	}
+	for {
+		select {
+		case <-w.bob.workerWake:
+			continue
+		default:
+		}
+		break
+	}
+	close(release)
+	<-done
+	select {
+	case <-w.bob.workerWake:
+	default:
+		t.Fatal("changed attention lost its wake while the older pass was busy")
+	}
+	w.bob.reviewAttention(tctx(t))
+	if calls.Load() != 2 {
+		t.Fatal("reawakened attention omitted the new held request")
+	}
+}
 
 func TestReviewSnapshotRechecksChangeWhileSending(t *testing.T) {
 	w := newWorld(t, "")

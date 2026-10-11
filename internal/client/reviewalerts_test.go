@@ -34,6 +34,41 @@ func reviewAlertBody(t *testing.T, host string, items ...ReportItem) string {
 	return string(b)
 }
 
+func TestRemovedHostReportsStopAskingWithoutErasingHistory(t *testing.T) {
+	w := newWorld(t, "")
+	host, key := w.alice.Address, w.alice.Self().Fingerprint()
+	body := reviewAlertBody(t, host, reviewAlertItem(w.alice))
+	id := insertReviewAlert(t, w.bob, host, key, body)
+	check := func(want int) {
+		t.Helper()
+		notices, err := w.bob.Notices()
+		if err != nil || len(notices) != want {
+			t.Fatalf("notices=%d want=%d err=%v", len(notices), want, err)
+		}
+		alerts, err := w.bob.remoteReviewAlerts()
+		if err != nil || alerts.Counts[host] != want {
+			t.Fatalf("alerts=%+v want=%d err=%v", alerts, want, err)
+		}
+		page, err := w.bob.PageReview()
+		if err != nil || len(page.Device) != want {
+			t.Fatalf("page=%d want=%d err=%v", len(page.Device), want, err)
+		}
+	}
+	check(1) // offline/presence has no authority to erase a report
+	if err := w.bob.store.endRecipient(host, w.bob.Self().Fingerprint(), true); err != nil {
+		t.Fatal(err)
+	}
+	check(1) // a different exact key must not hide this host's report
+	if err := w.bob.store.endRecipient(host, key, true); err != nil {
+		t.Fatal(err)
+	}
+	check(0)
+	var saved, state string
+	if err := w.bob.store.db.QueryRow(`SELECT body,state FROM inbox WHERE id=?`, id).Scan(&saved, &state); err != nil || saved != body || state != stateNeedHuman {
+		t.Fatalf("report history changed: state=%s err=%v", state, err)
+	}
+}
+
 func TestReviewReportSilentMalformedAndCountOnly(t *testing.T) {
 	w := newWorld(t, "")
 	n := fakeNotify(w.bob)

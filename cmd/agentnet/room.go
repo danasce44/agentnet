@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/misunders2d/agentnet/internal/client"
 )
@@ -47,22 +46,11 @@ func runRoom(ctx context.Context, a *client.Agent, args []string, out io.Writer)
 	default:
 		return errors.New("usage: room ask | room wait")
 	}
-	// Local storage only. No Hub polling, second stream or new daemon.
-	tick := time.NewTicker(250 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		reply, err := a.RoomReply(cause, ref)
-		if err != nil {
-			return err
-		}
-		if reply != nil {
-			fmt.Fprintf(out, "reply %s from agent participation %s\n%s\n", reply.ReplyTo, reply.PID, reply.Body)
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-tick.C:
-		}
+	// Existing local daemon wakes only; no timer or extra Hub stream.
+	reply, err := a.AwaitRoomReply(ctx, cause, ref)
+	if err != nil {
+		return err
 	}
+	fmt.Fprintf(out, "reply %s from agent participation %s\n%s\n", reply.ReplyTo, reply.PID, reply.Body)
+	return nil
 }

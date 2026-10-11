@@ -51,6 +51,8 @@ import (
 // ExecView is a request's execution state as its executing device last
 // reported it: never inferred from delivery or presence.
 type ExecView struct {
+	sourceKey string // exact signed status winner; local projection only, never JSON
+
 	State   string `json:"state"`
 	At      int64  `json:"at"` // the host's clock, unix seconds
 	Detail  string `json:"detail,omitempty"`
@@ -959,7 +961,7 @@ func execViews(rows []controlRow) map[ControlRef]ExecView {
 		ref := ControlRef{ID: c.refID, Fingerprint: c.refFP}
 		cur, ok := out[ref]
 		if !ok || st.N > cur.n || (st.N == cur.n && c.id > cur.id) {
-			out[ref] = best{st.N, c.id, ExecView{State: st.State, At: st.At, Detail: st.Detail, Host: c.author, Attempt: st.Attempt}}
+			out[ref] = best{st.N, c.id, ExecView{State: st.State, At: st.At, Detail: st.Detail, Host: c.author, Attempt: st.Attempt, sourceKey: c.authorFP}}
 		}
 	}
 	views := make(map[ControlRef]ExecView, len(out))

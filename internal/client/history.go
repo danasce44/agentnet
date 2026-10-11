@@ -638,6 +638,11 @@ func (a *Agent) kickNow() {
 // historyStep queues one page of every running snapshot and reports
 // whether any has more.
 func (a *Agent) historyStep(ctx context.Context) (more bool) {
+	if err := a.reconcileDepartedHistory(); err != nil {
+		a.Logf("ending departed-device history: %v", err)
+		a.convWork.due(convHistory)
+		return false
+	}
 	if err := a.reconcileHistory(); err != nil {
 		a.Logf("discovering own-device history: %v", err)
 		a.convWork.due(convHistory)

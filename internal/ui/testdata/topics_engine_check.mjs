@@ -272,4 +272,21 @@ check(changes > writesBefore && network === 0, 'changes are announced; nothing t
  check(!threads.find(t=>t.id===ordinary).notice_only,'ordinary user JSON still a topic');
  const page=await e.topicList(new URLSearchParams());check(!page.topics.some(t=>t.id===report)&&page.topics.some(t=>t.id===ordinary),'All topics preserves user JSON and omits internal reports');
 }
+
+// Definitive local non-delivery closes pending transport without erasing history.
+{
+ const s=memoryStore(),e=new Engine({store:s,base:'https://synthetic.invalid',now:()=>100000});e.address='own/desk';
+ const id=wire.newID(),custody=wire.newID(),answer=wire.newID();
+ const request={id,v:1,to:'peer/desk',kind:'question',body:'Retained original request',state:'not_delivered',at:90000};
+ await s.write([{s:'outbox',k:id,v:request},{s:'outbox',k:custody,v:{...request,id:custody,body:'Separate custody request',state:'custody',at:91000}}]);
+ let page=await e.topicList(new URLSearchParams());
+ check(page.topics.find(t=>t.id===id)?.pending===false,'not_delivered original no longer leaves topic Pending');
+ check(page.topics.find(t=>t.id===custody)?.pending===true,'actual relay custody still waits without false completion');
+ same((await s.get('outbox',id)).body,request.body,'ended original remains stored unchanged');
+ await s.write([{s:'inbox',k:answer,v:{id:answer,v:1,from:'peer/desk',fp:'peer-key',kind:'answer',body:'Actual accepted late answer',reply_to:id,status:'done',topic_done:true,at:95000}}]);
+ page=await e.topicList(new URLSearchParams());
+ const settled=page.topics.find(t=>t.id===id);
+ check(settled?.pending===false&&settled.state==='done','actual later accepted terminal answer wins normal topic derivation');
+}
+
 console.log(JSON.stringify({ checks }));

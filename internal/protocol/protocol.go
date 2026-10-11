@@ -219,6 +219,18 @@ type RevokeRequest struct {
 	Address string `json:"address"`
 }
 
+// RevokePersonRequest ends workspace access for all of one exact person's
+// enrolled and pending devices. Display names never select the target.
+type RevokePersonRequest struct {
+	Person string `json:"person"`
+}
+
+// RevokePersonResponse reports only the exact devices revoked by this action.
+// Standalone devices with no verified link to the person are not included.
+type RevokePersonResponse struct {
+	Revoked []string `json:"revoked"`
+}
+
 // Receipt reports what the Hub can prove about a message.
 const StreamReceipts = "receipts"
 const ReceiptBatch = 100
@@ -516,8 +528,11 @@ type PersonRef struct {
 // event), most recently joined first. Truncated means more agents are
 // enrolled than MaxMembers: the list is then not complete.
 type Members struct {
-	Members   []Member `json:"members"`
-	Truncated bool     `json:"truncated"`
+	// DiscoveryGeneration is an availability hint for explicit directory changes,
+	// including revocations hidden by a truncated list. It grants no authority.
+	DiscoveryGeneration uint64   `json:"discovery_generation,omitempty"`
+	Members             []Member `json:"members"`
+	Truncated           bool     `json:"truncated"`
 	// Workspace is the name the Hub's admin gave the workspace, if any (a
 	// label, never identity: the realm id is that). It is not checked by
 	// Valid: a receiver ignores a name ValidWorkspaceName refuses and keeps

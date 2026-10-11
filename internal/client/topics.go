@@ -116,7 +116,7 @@ var topicOpenIn = map[string]bool{stateHeld: true, stateAwaiting: true, stateNee
 
 // topicUndelivered are the sent states no reply can follow: such a request
 // waits on nobody, so it never keeps its topic from being archived.
-var topicUndelivered = map[string]bool{stateFailed: true, "expired": true, "quarantined": true}
+var topicUndelivered = map[string]bool{stateFailed: true, stateNotDelivered: true, "expired": true, "quarantined": true}
 
 // topicOpen reports whether one message keeps its topic pending.
 func topicOpen(r threadRow, replied bool) bool {
@@ -133,7 +133,7 @@ func topicOpen(r threadRow, replied bool) bool {
 
 func topicExecutionClosed(state string) bool {
 	switch state {
-	case "done", "answered", "failed", "timeout", "cancelled", "stopped", "declined", "resolved", "not_run", "proposal":
+	case "done", "answered", "failed", "timeout", "cancelled", "stopped", "declined", "resolved", "not_run", "proposal", "unavailable":
 		return true
 	}
 	return false // interrupted and needs_human still require an explicit decision

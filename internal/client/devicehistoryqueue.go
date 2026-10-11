@@ -30,6 +30,11 @@ func (a *Agent) syncDeviceHistory() (bool, error) {
 		if dev.Address == a.Address {
 			continue
 		}
+		if known, e := revokedDeviceKnown(a.store.db, dev.Address, dev.Fingerprint()); e != nil {
+			return more, e
+		} else if known {
+			continue
+		}
 		if err = historyRecoveryCurrent(a.store.db, a.Self(), dev); err != nil {
 			continue
 		}
@@ -62,6 +67,9 @@ func (a *Agent) deviceHistoryPage(dev identity.Public) (bool, error) {
 	}
 	defer tx.Rollback()
 	if err = historyRecoveryCurrent(tx, a.Self(), dev); err != nil {
+		return false, err
+	}
+	if err = currentDeliveryRecipient(tx, dev.Address, dev.Fingerprint()); err != nil {
 		return false, err
 	}
 	full, e := syncWindowFull(tx, dev)

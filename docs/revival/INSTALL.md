@@ -476,6 +476,46 @@ button journey. Interactive Windows/macOS upgrades remain unverified. See
 
 ### Relay / Hub
 
+#### Retiring a device or removing a person
+
+Replacing a phone: link and approve the replacement as a new device of your
+existing person. Remove the retired phone under **You → Your devices**. Its
+exact key loses own-person synchronization authority; other devices retain
+their messages. Removing a link-enrolled device also revokes its relay access.
+An independently enrolled device detached from a person remains a standalone
+relay device until an admin revokes it.
+
+Offboarding someone from the workspace is a separate admin operation. Select
+their exact verified person ID from `agentnet person list`, then run:
+
+```bash
+agentnet admin revoke --person PERSON_ID
+```
+
+This revokes the devices currently or provisionally linked to that person
+atomically, invalidates their unused enrollment invitations and disconnects
+their streams. The command prints the exact revoked addresses. Standalone
+devices without a verified link to this person are not included: revoke each
+separately with `agentnet admin revoke ADDRESS`. For a Google-linked person,
+the verified email scope also includes detached Google-enrolled devices and
+denies re-enrollment, even if its domain remains allowed.
+
+Messages and replies already accepted by the relay from a removed device still
+reach their recipients, including people who were offline. Removing a phone
+does not recall its earlier messages. Copies addressed to the removed device
+expire; new sends from it are refused. Undelivered requests to run agents and
+background synchronization from the removed device expire rather than gaining
+authority after removal. Received controls still require current authorization.
+These operations preserve originals and delivered evidence. They cannot erase
+plaintext already received or undo actions an agent has already performed.
+Clients stop unstarted requests once they learn the exact sender was revoked;
+an offline client cannot learn that decision until it reconnects. Being offline
+or outdated is not removal: those devices retain resumable delivery and never
+block other recipients. Removing someone from one group changes only that
+group's authority, not their access to the whole relay.
+
+#### Upgrading the relay
+
 A desktop or CLI update on a laptop does not update the relay. For an
 authorized relay upgrade:
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -55,7 +56,8 @@ type MemberView struct {
 	// Current: the list arrived on the connection open now and nothing
 	// unreadable came after it, so its presence is the Hub's current view.
 	// Otherwise presence is unknown and the list is only as of At.
-	Current bool
+	Current   bool
+	discovery uint64 // local generation of directory-relevant member evidence
 }
 
 type memberState struct {
@@ -115,7 +117,21 @@ func (a *Agent) onMembers(data []byte) {
 		a.typingMembershipChanged()
 		return
 	}
-	a.members.view = MemberView{Listed: MembersListed, Members: m, At: time.Now(), Current: true}
+	old := a.members.view
+	discovery := old.discovery
+	before, after := slices.Clone(old.Members.Members), slices.Clone(m.Members)
+	for i := range before {
+		before[i].Presence = ""
+	}
+	for i := range after {
+		after[i].Presence = ""
+	}
+	slices.SortFunc(before, func(a, b protocol.Member) int { return strings.Compare(a.Address, b.Address) })
+	slices.SortFunc(after, func(a, b protocol.Member) int { return strings.Compare(a.Address, b.Address) })
+	if !old.Current || old.Members.DiscoveryGeneration != m.DiscoveryGeneration || old.Members.Truncated != m.Truncated || !reflect.DeepEqual(before, after) {
+		discovery++
+	}
+	a.members.view = MemberView{discovery: discovery, Listed: MembersListed, Members: m, At: time.Now(), Current: true}
 	a.members.mu.Unlock()
 	a.keepMemberFacts(m) // before the bump below, so a page reads them
 	if a.reviewAgain.note() {

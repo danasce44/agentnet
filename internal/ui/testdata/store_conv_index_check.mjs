@@ -13,7 +13,7 @@ const realIDB=typeof window!=='undefined';let checks=0;
 const check=(x,m)=>{assert.ok(x,m);checks++;};
 const convA='a'.repeat(64),convB='b'.repeat(64),id=n=>n.toString(16).padStart(32,'0');
 const row=(n,conv,extra={})=>({id:id(n),lid:id(n),conv,at:1000+n,ts:1,kind:'message',body:'generated '+n,fp:'f'.repeat(64),...extra});
-const inbox=[row(3,convA),row(1,convA),row(5,convB),row(2,convA,{sub:'event'}),row(4,convB),{id:id(6),v:1,at:7,kind:'message',body:'device thread'}];
+const inbox=[row(3,convA),row(1,convA),row(5,convB),row(2,convA,{sub:'event',state:'held',status:'review_notice'}),row(4,convB),{id:id(6),v:1,at:7,kind:'message',body:'device thread'}];
 const outbox=[row(9,convA,{to:'peer/desk',state:'custody'}),row(8,convB,{to:'peer/desk',state:'delivered'})];
 const name='conv-index-'+Math.random().toString(16).slice(2);
 let st;
@@ -24,8 +24,10 @@ if(realIDB) {
  await new Promise((resolve,reject)=>{const tx=old.transaction(['inbox','outbox'],'readwrite');for(const r of inbox)tx.objectStore('inbox').put(r,r.id);for(const r of outbox)tx.objectStore('outbox').put(r,r.id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
  old.close();st=await openIDB(name);
  const v=await new Promise((resolve,reject)=>{const q=indexedDB.open(name);q.onsuccess=()=>{const d=q.result,info={version:d.version,indexes:['inbox','outbox'].map(s=>[...d.transaction(s).objectStore(s).indexNames].sort().join())};d.close();resolve(info);};q.onerror=()=>reject(q.error);});
- check(v.version===6&&v.indexes[0]==='conv,device_arrival,history_arrival,history_pos'&&v.indexes[1]==='conv,device_arrival,history_pos','existing v5 database gains the conv index without losing others: '+JSON.stringify(v));
+ check(v.version===8&&v.indexes[0]==='conv,device_arrival,history_arrival,history_pos,state,status'&&v.indexes[1]==='conv,device_arrival,history_pos,lane_demote,recipient_state,state,sub','existing v5 database gains conversation and pending-state indexes without losing history: '+JSON.stringify(v));
 } else {st=memoryStore();await st.write([...inbox.map(r=>({s:'inbox',k:r.id,v:r})),...outbox.map(r=>({s:'outbox',k:r.id,v:r}))]);}
+check((await st.inboxStates(['held'])).map(r=>r.id).join()===id(2),'state index selects persisted pending row without historical messages');
+check((await st.inboxStatus('review_notice')).map(r=>r.id).join()===id(2),'status index selects persisted report rows without historical scan');
 assert.deepEqual((await st.byConv('inbox',convA)).map(r=>r.id),[id(1),id(2),id(3)],'one conversation, existing rows, key order');checks++;
 assert.deepEqual((await st.byConv('outbox',convB)).map(r=>r.id),[id(8)]);checks++;
 check((await st.byConv('inbox','c'.repeat(64))).length===0,'unknown conversation reads nothing');

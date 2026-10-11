@@ -253,6 +253,12 @@ func (a *Agent) confirmableProposalIn(q dbq, id string) (p confirmableProposal, 
 	if err != nil {
 		return p, err
 	}
+	if denied, e := revokedDeviceKnown(q, p.from, p.key); e != nil || denied {
+		if e != nil {
+			return p, e
+		}
+		return p, ErrPeerRevoked
+	}
 	if kind != envelope.KindAnswer || status != envelope.StatusProposal || local || p.key == "" || strings.TrimSpace(p.body) == "" {
 		return p, ErrNotConfirmable
 	}

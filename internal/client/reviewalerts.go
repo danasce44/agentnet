@@ -79,7 +79,7 @@ func notificationReport(body, host, key string) (Report, bool) {
 func (a *Agent) remoteReviewAlerts() (remoteReviewAlerts, error) {
 	out := remoteReviewAlerts{Counts: map[string]int{}}
 	rows, err := a.store.db.Query(`SELECT id, sender, coalesce(verified_by, ''), body, notified, state
-  FROM inbox WHERE conv IS NULL AND local = 0 AND replica = 0 AND (`+receivedNotice+`) ORDER BY rowid`, envelope.KindMessage, envelope.StatusReviewNotice)
+  FROM inbox WHERE conv IS NULL AND local = 0 AND replica = 0 AND (`+receivedNotice+`) AND NOT `+revokedInboxSender+` ORDER BY rowid`, envelope.KindMessage, envelope.StatusReviewNotice)
 	if err != nil {
 		return out, err
 	}

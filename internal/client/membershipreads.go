@@ -37,7 +37,11 @@ func membershipReadSQL(query string) bool {
 		`SELECT ` + personCols + ` FROM persons WHERE person IN (SELECT person FROM person_devices WHERE address=?)`,
 		`SELECT address, added FROM person_devices WHERE person = ?`,
 		`SELECT hash FROM person_chain WHERE person = ?`,
+		`SELECT hash FROM person_chain WHERE person=?`,
 		`SELECT count(*) FROM person_chain WHERE person = ? AND hash = ?`,
+		`SELECT count(*) FROM person_chain WHERE person=? AND hash=?`,
+		`SELECT hash FROM room_membership_events WHERE conv=?`,
+		`SELECT event FROM participation_events WHERE conv = ? AND pid = ? ORDER BY hash`,
 		`SELECT count(*) FROM group_pending_withdrawals WHERE conv=? AND person=? AND admission=?`,
 		`SELECT count(*) FROM group_withdrawals WHERE conv=? AND person=? AND admission=?`,
 		`SELECT count(*) FROM (SELECT admission FROM group_withdrawals WHERE conv=? AND person=? AND admission=? UNION ALL SELECT admission FROM group_pending_withdrawals WHERE conv=? AND person=? AND admission=?)`:

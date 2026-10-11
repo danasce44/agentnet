@@ -21,6 +21,10 @@ func (a *Agent) ownSyncReader(ctx context.Context, dev identity.Public, cap stri
 	if ok, seen := checked[key]; seen {
 		return ok
 	}
+	if revoked, err := revokedDeviceKnown(a.store.db, dev.Address, dev.Fingerprint()); err != nil || revoked {
+		checked[key] = false
+		return false
+	}
 	ok := !a.store.suspendedDevices()[dev.Address]
 	if ok && cap != "" {
 		ok = !errors.Is(a.requireParticipationCaps(ctx, dev, cap), errAgentIdentityUnsupported)

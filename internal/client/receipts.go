@@ -14,14 +14,14 @@ func (s *store) applyReceipt(r protocol.ReceiptEvent) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`UPDATE outbox SET state=?, error=NULL WHERE id=? AND (state IN ('custody','queued') OR (state='not_delivered' AND send_stopped=1 AND coalesce(handover_started,1)=1) OR (state='quarantined' AND ?='delivered'))`, r.State, r.ID, r.State)
+	_, err = tx.Exec(`UPDATE outbox SET state=?, error=NULL WHERE id=? AND (state IN ('custody','queued') OR (state='not_delivered' AND ? IN ('delivered','expired','quarantined')) OR (state='quarantined' AND ?='delivered'))`, r.State, r.ID, r.State, r.State)
 	if err != nil {
 		return err
 	}
 	if r.State == protocol.StateDelivered {
 		// The descriptor ACK proves durable chunk retention, not completion
 		// of its child imports. Retire these rows from pending window scans.
-		if _, err = tx.Exec(`UPDATE outbox SET state=? WHERE state=? AND id IN (SELECT child FROM history_archive_entries WHERE manifest=?) AND EXISTS(SELECT 1 FROM outbox WHERE id=? AND sub='history-archive' AND state='delivered')`, archiveAccepted, archiveStaged, r.ID, r.ID); err != nil {
+		if _, err = tx.Exec(`UPDATE outbox SET state=?,error=NULL WHERE state IN (?,?) AND id IN (SELECT child FROM history_archive_entries WHERE manifest=?) AND EXISTS(SELECT 1 FROM outbox WHERE id=? AND sub='history-archive' AND state='delivered')`, archiveAccepted, archiveStaged, stateNotDelivered, r.ID, r.ID); err != nil {
 			return err
 		}
 	}

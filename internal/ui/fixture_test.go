@@ -236,6 +236,11 @@ func TestFixtureSimulationAndCounter(t *testing.T) {
 
 // Plain labels never claim more than the stored state proves.
 func TestStateTextAndNext(t *testing.T) {
+	// Expiry can now mean permanent workspace revocation as well as an
+	// ended session. The receipt alone must not invent which cause occurred.
+	if got := StateText("out", KindMessage, "expired", "bob/desk"); got != "Not delivered" {
+		t.Fatalf("expiry invents its cause: %q", got)
+	}
 	if got := StateText("out", KindQuestion, "delivered", "bob/desk"); got != "Delivered to bob/desk" {
 		t.Fatalf("delivered: %q", got)
 	}

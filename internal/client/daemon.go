@@ -478,11 +478,21 @@ func (a *Agent) accept(ctx context.Context, env envelope.Envelope) error {
 // storeReceived retains the durable disposition before a receipt is sent.
 // The stream queues receipts; other callers retain their synchronous path.
 func (a *Agent) storeReceived(ctx context.Context, env envelope.Envelope) error {
+	ctx = withRelayIngress(ctx, env.ID)
 	seen, err := a.store.seen(env.ID)
 	if err != nil {
 		return err
 	}
 	if seen {
+		// Only an actual byte-identical relay redelivery can upgrade a saved
+		// hold from direct/legacy ingress. Never infer provenance by ID alone.
+		raw, e := json.Marshal(env)
+		if e != nil {
+			return e
+		}
+		if _, e = a.store.db.ExecContext(ctx, `UPDATE quarantine SET relay_ingress=1 WHERE id=? AND envelope=? AND relay_ingress=0`, env.ID, string(raw)); e != nil {
+			return e
+		}
 		var imported int
 		if err = a.store.db.QueryRow(`SELECT count(*) FROM history_archive_children WHERE id=?`, env.ID).Scan(&imported); err != nil {
 			return err
@@ -586,7 +596,7 @@ func (a *Agent) admissionFailed(ctx context.Context, env envelope.Envelope, err 
 		reason = reasonProof
 	}
 	a.Logf("message %s from %s held (%s): admission failed: %v", env.ID, env.From, reason, err)
-	if e := a.holdDiagnostic(env, reason, "admission failed"); e != nil {
+	if e := a.holdDiagnostic(ctx, env, reason, "admission failed"); e != nil {
 		return errors.Join(err, e)
 	}
 	a.kickNow() // its quarantined receipt
@@ -624,7 +634,7 @@ func (a *Agent) flushReceipts(ctx context.Context) error {
 
 func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error {
 	if env.To != a.Address {
-		return a.holdDiagnostic(env, reasonInvalid, "addressed to another device")
+		return a.holdDiagnostic(ctx, env, reasonInvalid, "addressed to another device")
 	}
 	sender, _, found, err := a.store.peer(env.From)
 	if err != nil {
@@ -636,7 +646,12 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 			if retryable(err) || transient(err) {
 				return err
 			}
-			return a.holdDiagnostic(env, reasonInvalid, "sender key unavailable")
+			return a.holdDiagnostic(ctx, env, reasonInvalid, "sender key unavailable")
+		}
+		if e.Revoked {
+			if err := a.store.endRecipient(env.From, e.Public.Fingerprint(), true); err != nil {
+				return err
+			}
 		}
 		if err := a.store.pin(e.Public); err != nil {
 			return err
@@ -644,8 +659,22 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 		sender = e.Public
 	}
 	in, err := envelope.Open(env, a.id, a.Address, sender)
+	if err == nil {
+		allowed, e := a.revokedIngressAllowed(ctx, env, in, sender)
+		if e != nil {
+			return e
+		}
+		if !allowed {
+			return a.holdDiagnostic(ctx, env, reasonInvalid, "sender permanently removed from this workspace")
+		}
+	}
 	if err == nil && in.V == envelope.Version2 {
-		return a.admitConv(ctx, env, in, sender, false)
+		err = a.admitConv(ctx, env, in, sender, false)
+		if err == nil && !in.Replica && (in.Kind == envelope.KindQuestion || in.Kind == envelope.KindTask) {
+			a.convWork.due(convRecipients)
+			a.kickNow()
+		}
+		return err
 	}
 	if err == nil && in.V == envelope.Version3 {
 		err = a.admitControl(ctx, env, in, sender, false)
@@ -658,7 +687,7 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 	if err == nil {
 		invalid := func(why string) error { // held after it opened: its logical record is known
 			raw, _ := json.Marshal(env)
-			return a.store.quarantineDiagnostic(env.ID, env.From, reasonInvalid, raw, why, heldLogicalKey(in, sender.Fingerprint()))
+			return a.store.quarantineDiagnostic(env.ID, env.From, reasonInvalid, raw, why, heldLogicalKey(in, sender.Fingerprint()), relayIngress(ctx, env.ID))
 		}
 		if namedAgentFields(in) {
 			if err := a.checkDeviceAgent(in, sender); err != nil {
@@ -699,6 +728,10 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 		if err := a.processReceiverCatalog(in, sender.Fingerprint()); err != nil {
 			return err
 		}
+		if !in.Replica && (in.Kind == envelope.KindQuestion || in.Kind == envelope.KindTask) {
+			a.convWork.due(convRecipients)
+			a.kickNow()
+		}
 		a.wakeWorker()
 		if in.ReceiverRoute == nil || in.ReceiverRoute.Op == "request" {
 			a.noteStatus(in.ID)
@@ -723,19 +756,19 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 			return err
 		}
 		a.Logf("message %s held: keys for %s changed; run `agentnet trust %s` after verifying", env.ID, env.From, env.From)
-		return a.hold(env, reasonKeyChanged)
+		return a.holdDiagnostic(ctx, env, reasonKeyChanged, "")
 	}
 	a.Logf("message %s from %s rejected: envelope verification failed", env.ID, env.From)
-	return a.holdDiagnostic(env, reasonInvalid, "envelope verification failed")
+	return a.holdDiagnostic(ctx, env, reasonInvalid, "envelope verification failed")
 }
 
 func (a *Agent) hold(env envelope.Envelope, reason string) error {
-	return a.holdDiagnostic(env, reason, "")
+	return a.holdDiagnostic(context.Background(), env, reason, "")
 }
 
-func (a *Agent) holdDiagnostic(env envelope.Envelope, reason, why string) error {
+func (a *Agent) holdDiagnostic(ctx context.Context, env envelope.Envelope, reason, why string) error {
 	raw, _ := json.Marshal(env)
-	return a.store.quarantineDiagnostic(env.ID, env.From, reason, raw, why, "")
+	return a.store.quarantineDiagnostic(env.ID, env.From, reason, raw, why, "", relayIngress(ctx, env.ID))
 }
 
 // startWorker marks jobs a previous daemon left running as interrupted and
@@ -772,7 +805,7 @@ func (a *Agent) startWorker(ctx context.Context) (func(), error) {
 		a.wakeWorker()
 		a.wakeStatus() // a status another process noted (noteStatus)
 		a.changes.bump()
-		work := convHistory | convServe | convFetch | convRelease
+		work := convHistory | convServe | convFetch | convRelease | convRecipients
 		if !a.ownKick() {
 			work |= convRetry // a local participation record shares its public scope with guests now
 		}

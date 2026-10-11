@@ -5,12 +5,79 @@ import (
 	"errors"
 	"net"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/secfile"
 )
+
+func TestAwaitRoomReplyUsesLocalWakes(t *testing.T) {
+	for _, finish := range []string{"reply", "cancel", "disconnect"} {
+		t.Run(finish, func(t *testing.T) {
+			w := newWorld(t, "")
+			stop, err := listenChanges(w.alice.home, w.alice.Changed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if stop != nil {
+					stop()
+				}
+			}()
+			ctx, cancel := context.WithCancel(tctx(t))
+			defer cancel()
+			var ready atomic.Bool
+			checks := make(chan struct{}, 4)
+			done := make(chan error, 1)
+			go func() {
+				reply, err := w.alice.awaitRoomReply(ctx, func() (*ConvMessage, error) {
+					checks <- struct{}{}
+					if ready.Load() {
+						return &ConvMessage{Body: "verified reply"}, nil
+					}
+					return nil, nil
+				})
+				if finish == "reply" && (reply == nil || reply.Body != "verified reply") && err == nil {
+					err = errors.New("reply wake omitted its stored reply")
+				}
+				done <- err
+			}()
+			// One initial storage check plus the existing socket's initial byte.
+			for i := 0; i < 2; i++ {
+				select {
+				case <-checks:
+				case <-ctx.Done():
+					t.Fatal("initial local wake missing")
+				}
+			}
+			select {
+			case <-checks:
+				t.Fatal("room wait rechecked unchanged storage without a wake")
+			case <-time.After(350 * time.Millisecond):
+			}
+			switch finish {
+			case "reply":
+				ready.Store(true)
+				w.alice.NoteChange()
+			case "cancel":
+				cancel()
+			case "disconnect":
+				stop()
+				stop = nil
+			}
+			select {
+			case err := <-done:
+				if finish == "reply" && err != nil || finish == "cancel" && !errors.Is(err, context.Canceled) || finish == "disconnect" && !errors.Is(err, ErrDaemonNotRunning) {
+					t.Fatalf("%s: %v", finish, err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("local wake did not finish room wait")
+			}
+		})
+	}
+}
 
 // The command that asked waits for the answer and gets it, woken by the
 // local daemon (MEL-537).

@@ -40,6 +40,9 @@ UPDATE outbox SET state='queued' WHERE state='custody' AND sub IN ('history','de
 `
 
 func (a *Agent) archivesFor(ctx context.Context, dev identity.Public) bool {
+	if currentDeliveryRecipient(a.store.db, dev.Address, dev.Fingerprint()) != nil {
+		return false
+	}
 	return historyRecoveryCurrent(a.store.db, a.Self(), dev) == nil && a.requireParticipationCaps(ctx, dev, protocol.CapHistoryArchive) == nil
 }
 
@@ -299,6 +302,9 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 	}
 	defer tx.Rollback()
 	if err = historyRecoveryCurrent(tx, a.Self(), dev); err != nil {
+		return err
+	}
+	if err = currentDeliveryRecipient(tx, dev.Address, dev.Fingerprint()); err != nil {
 		return err
 	}
 	for _, entry := range chunk.Entries {
