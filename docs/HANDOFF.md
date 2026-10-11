@@ -44,7 +44,8 @@ the exact own-question and running-report regressions.
 Local branch cleanup preserved real unmerged work on `next/audience-prechecks`.
 The root remains the sole registered worktree; 24 earlier obsolete branches have
 a recovery bundle in `.git/cleanup-backups/20261011T102146Z.bundle`. The merged
-v0.8.20 fix branch can be removed after this release record is committed.
+v0.8.20 fix branch was removed locally and remotely after ancestry verification;
+its commits remain on main and the immutable release tag.
 
 ## Handoff to Claude — completed in v0.8.17
 
