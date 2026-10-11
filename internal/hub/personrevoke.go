@@ -166,4 +166,9 @@ func settleRevokedDevice(tx *sql.Tx, address string) error {
 
 // Outer kind is signed and checked on admission. Lane is only an availability
 // hint: clients still verify the encrypted shape and reject revoked controls.
-const revokedSenderWorkSQL = `(lane='sync' OR json_extract(CAST(envelope AS TEXT),'$.kind') IN ('question','task'))`
+// Old opaque/corrupt records must not abort the whole upgrade or revocation.
+// CASE guards JSON parsing even when SQLite evaluates this before the address
+// predicate. An unreadable removed-sender record cannot be retained as proven
+// ordinary communication; unrelated records remain untouched.
+const revokedSenderWorkSQL = `(lane='sync' OR CASE WHEN json_valid(CAST(envelope AS TEXT))
+ THEN json_extract(CAST(envelope AS TEXT),'$.kind') IN ('question','task') ELSE 1 END)`

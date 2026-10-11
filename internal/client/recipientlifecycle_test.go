@@ -14,6 +14,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/misunders2d/agentnet/internal/envelope"
+	"github.com/misunders2d/agentnet/internal/identity"
 
 	"github.com/misunders2d/agentnet/internal/protocol"
 )
@@ -74,17 +75,43 @@ func TestRecipientLifecyclePermanentRemovalPreservesEvidence(t *testing.T) {
 	if dm != stateQueued {
 		t.Fatalf("detached standalone DM=%s", dm)
 	}
+	old, err := identity.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := old.Public("person/standalone")
+	fp := public.Fingerprint()
+	raw, err := json.Marshal(protocol.PersonRoster{Person: "owner", Label: "owner", Devices: []identity.Public{public}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO person_chain(person,seq,hash,record) VALUES('owner',0,'hash',?)`, string(raw)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.db.Exec(`INSERT INTO persons(person,label,seq,hash,record,state,pinned_at) VALUES('owner','owner',0,'hash','{}',?,1)`, personSelf); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('sync','person/standalone','key','device-history','original','exact','archive_staged',1)`); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('sync','person/standalone',?,'device-history','original','exact','archive_staged',1)`, fp); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('foreign-history','foreign/device',?,'history','selected','exact','queued',1)`, fp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO history_jobs VALUES('foreign/device',?,'{}',1,'running',1,1)`, fp); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.endRecipient("foreign/device", fp, false); err != nil {
+		t.Fatal(err)
+	}
+	var foreign string
+	if err = s.db.QueryRow(`SELECT state FROM outbox WHERE id='foreign-history'`).Scan(&foreign); err != nil || foreign != stateQueued {
+		t.Fatalf("foreign selected history=%s err=%v", foreign, err)
 	}
 	// A roster refreshed between discovery and the transaction keeps copies.
-	if _, err = s.db.Exec(`INSERT INTO person_devices VALUES('person/standalone','owner','key',1)`); err != nil {
+	if _, err = s.db.Exec(`INSERT INTO person_devices VALUES('person/standalone','owner',?,1)`, fp); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.endRecipient("person/standalone", "key", false); err != nil {
+	if err = s.endRecipient("person/standalone", fp, false); err != nil {
 		t.Fatal(err)
 	}
 	var syncState string
@@ -92,17 +119,52 @@ func TestRecipientLifecyclePermanentRemovalPreservesEvidence(t *testing.T) {
 	if syncState != archiveStaged {
 		t.Fatalf("current roster sync=%s", syncState)
 	}
+	// A still-enrolled former own phone may receive a new independently granted
+	// selected share. A same-target own carrier is identified by its existing ledger.
+	if _, err = s.db.Exec(`INSERT INTO outbox(id,recipient,recipient_fp,sub,body,envelope,state,created_at) VALUES('former-selected','person/standalone',?,'history','selected','exact','queued',1),('own-carrier','person/standalone',?,'history','own history','exact','queued',1)`, fp, fp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO history_copies(recipient_fp,conv,author,lid,hash,carrier,source_dir,source_id) VALUES(?,'conv','author','lid','hash','own-carrier','in','original')`, fp); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.db.Exec(`DELETE FROM person_devices WHERE address='person/standalone'`); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.endRecipient("person/standalone", "key", false); err != nil {
+	if err = s.endRecipient("person/standalone", fp, false); err != nil {
 		t.Fatal(err)
 	}
 	s.db.QueryRow(`SELECT state FROM outbox WHERE id='sync'`).Scan(&syncState)
 	s.db.QueryRow(`SELECT state FROM outbox WHERE id='dm'`).Scan(&dm)
+	var selectedState, ownState string
+	if err = s.db.QueryRow(`SELECT state FROM outbox WHERE id='former-selected'`).Scan(&selectedState); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.db.QueryRow(`SELECT state FROM outbox WHERE id='own-carrier'`).Scan(&ownState); err != nil {
+		t.Fatal(err)
+	}
+	if selectedState != stateQueued || ownState != stateNotDelivered {
+		t.Fatalf("former-own selected=%s own carrier=%s", selectedState, ownState)
+	}
 	if syncState != stateNotDelivered || dm != stateQueued {
 		t.Fatalf("departed sync=%s standalone DM=%s", syncState, dm)
 	}
+	t.Run("legacy-unbound-history", func(t *testing.T) {
+		w := newWorld(t, "")
+		if _, err := w.alice.CreatePerson(tctx(t), "owner"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.alice.store.db.Exec(`INSERT INTO outbox(id,recipient,sub,body,envelope,state,created_at) VALUES('unbound','foreign/device','history','selected','exact','queued',1)`); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.alice.reconcileDepartedHistory(); err != nil {
+			t.Fatalf("legacy unbound carrier blocked history: %v", err)
+		}
+		var state string
+		if err := w.alice.store.db.QueryRow(`SELECT state FROM outbox WHERE id='unbound'`).Scan(&state); err != nil || state != stateQueued {
+			t.Fatalf("legacy state=%s err=%v", state, err)
+		}
+	})
+
 }
 
 func TestRecipientLifecycleKnownRevokedSenderCannotStartNewWork(t *testing.T) {
@@ -288,6 +350,7 @@ func TestRecipientLifecycleRevokedOwnReaderDoesNotRegenerateCopies(t *testing.T)
 }
 
 func TestRecipientLifecycleLateReceiptPreservesProvenRetention(t *testing.T) {
+	t.Run("ordinary_request_handover", testLifecycleReceiptRequiresPossibleRequestHandover)
 	s, err := openStore(filepath.Join(t.TempDir(), "agent.db"))
 	if err != nil {
 		t.Fatal(err)

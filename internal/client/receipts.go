@@ -14,7 +14,19 @@ func (s *store) applyReceipt(r protocol.ReceiptEvent) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`UPDATE outbox SET state=?, error=NULL WHERE id=? AND (state IN ('custody','queued') OR (state='not_delivered' AND ? IN ('delivered','expired','quarantined')) OR (state='quarantined' AND ?='delivered'))`, r.State, r.ID, r.State, r.State)
+	// Only ordinary question/task rows track pre-network handover. Their
+	// zero marker proves never sent; untracked carriers cannot make that
+	// claim. A lifecycle-ended row may accept late relay proof only when
+	// handover was possible, while arbitrary final rows remain final.
+	_, err = tx.Exec(`UPDATE outbox SET state=?, error=NULL WHERE id=? AND
+	 (state IN ('custody','queued') OR
+	  (state='not_delivered' AND ? IN ('delivered','expired','quarantined') AND
+	   ((send_stopped=1 AND coalesce(handover_started,1)=1) OR
+	    (error IN (?,?) AND (coalesce(handover_started,1)=1 OR NOT
+	     (coalesce(kind,'') IN ('question','task') AND coalesce(sub,'')=''))))) OR
+	  (state='quarantined' AND ?='delivered'))`, r.State, r.ID, r.State,
+		"not delivered: the recipient was permanently removed from this workspace",
+		"not delivered: that exact device is no longer part of this person", r.State)
 	if err != nil {
 		return err
 	}

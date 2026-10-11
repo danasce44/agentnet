@@ -3,7 +3,10 @@ package client
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
+
+	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 type recipientTarget struct{ address, fp string }
@@ -169,7 +172,14 @@ func (s *store) endRecipient(address, fp string, revoked bool) error {
 		if !departed {
 			return nil
 		}
-		filter = ` AND (sub IN ` + syncSubs + ` OR id IN (SELECT child FROM history_archive_entries))`
+		wasOwn, err := pastOwnRecipientIn(tx, address, fp)
+		if err != nil {
+			return err
+		}
+		if !wasOwn {
+			return nil // foreign selected-history recipients were never detached own devices
+		}
+		filter = ` AND (` + ownHistoryTransport + `)`
 		reason = "not delivered: that exact device is no longer part of this person"
 	}
 	if err = count(tx.Exec(`UPDATE outbox SET state=?,error=? WHERE recipient=? AND recipient_fp=? AND state IN ('queued','waiting','receiver_waiting','archive_staged','archive_uploading')`+filter, stateNotDelivered, reason, address, fp)); err != nil {
@@ -247,7 +257,7 @@ func (a *Agent) reconcileDepartedHistory() error {
 	if err != nil || !ok {
 		return err
 	}
-	rows, err := a.store.db.Query(`SELECT device,fingerprint FROM history_jobs WHERE state!='ended' UNION SELECT recipient,recipient_fp FROM outbox WHERE sub IN ` + syncSubs + ` AND state IN ('queued','waiting','receiver_waiting','archive_staged','archive_uploading')`)
+	rows, err := a.store.db.Query(`SELECT device,fingerprint FROM history_jobs WHERE state!='ended' AND fingerprint IS NOT NULL AND fingerprint!='' UNION SELECT recipient,recipient_fp FROM outbox WHERE recipient_fp IS NOT NULL AND recipient_fp!='' AND (` + ownHistoryTransport + `) AND state IN ('queued','waiting','receiver_waiting','archive_staged','archive_uploading')`)
 	if err != nil {
 		return err
 	}
@@ -269,9 +279,46 @@ func (a *Agent) reconcileDepartedHistory() error {
 		return err
 	}
 	for _, t := range ended {
+		wasOwn, err := pastOwnRecipientIn(a.store.db, t.address, t.fp)
+		if err != nil {
+			return err
+		}
+		if !wasOwn {
+			continue
+		}
 		if err = a.store.endRecipient(t.address, t.fp, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// A subtype or old snapshot job is not own-device provenance: selected group
+// history goes to other people too. Only this person's verified pinned chain
+// can prove the exact address/key once belonged to it. No current authority is granted.
+func pastOwnRecipientIn(q dbq, address, fp string) (bool, error) {
+	rows, err := q.Query(`SELECT c.record FROM person_chain c JOIN persons p ON p.person=c.person WHERE p.state=? ORDER BY c.seq DESC`, personSelf)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return false, err
+		}
+		var roster protocol.PersonRoster
+		if json.Unmarshal([]byte(raw), &roster) != nil {
+			continue
+		}
+		if d, ok := roster.Device(fp); ok && d.Address == address {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+// Selected group grants also use SubHistory, including grants to an independently
+// enrolled former own phone. Only own producer ledgers/live-forward metadata
+// identify history transport that should stop when that phone detaches.
+const ownHistoryTransport = `(sub IN ` + syncSubs + ` AND (sub!='history' OR replication_live=1 OR EXISTS(SELECT 1 FROM history_copies h WHERE h.carrier=outbox.id AND h.recipient_fp=outbox.recipient_fp))) OR id IN (SELECT child FROM history_archive_entries)`

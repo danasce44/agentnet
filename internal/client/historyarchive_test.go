@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -126,7 +127,13 @@ func TestHistoryArchiveCanceledStreamHandsOffNewWake(t *testing.T) {
 
 func TestHistoryArchiveLegacyCustodyMigrationExactAndOnce(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store.db")
-	db, err := sqlitedb.Open(path, schema[:len(schema)-1])
+	// Stop before the archive step itself, not before whichever newer migration
+	// happens to be last when this regression runs.
+	step := slices.Index(schema, historyArchiveSchema)
+	if step < 1 {
+		t.Fatal("archive migration missing")
+	}
+	db, err := sqlitedb.Open(path, schema[:step])
 	if err != nil {
 		t.Fatal(err)
 	}

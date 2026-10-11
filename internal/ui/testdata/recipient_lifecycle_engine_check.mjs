@@ -102,7 +102,7 @@ async function fixture(linked=false) {
   check(ended.state==='ended'&&ended.error==='That device was removed from the server.','upload catch never rewrites terminal archive job');
   await assert.rejects(e.archives().prepare([row('new','queued',{sub:'history'})],[],[],{address:pub.address,fingerprint:fp}),/storage changed/);
   check(looked===0,'revoked prepare never falls back to queued legacy carriers');
-  await e.store.write([{s:'outbox',k:id,v:row(id,'not_delivered',{sub:wire.SubHistoryArchive})},{s:'outbox',k:childID,v:row(childID,'not_delivered',{sub:'history',archive_chunk:id})},{s:'outbox',k:expiredID,v:row(expiredID,'not_delivered')},{s:'kv',k:'history-archive/out/'+id,v:{...ended,children:[childID],state:'ended'}}]);
+  await e.store.write([{s:'outbox',k:id,v:row(id,'not_delivered',{sub:wire.SubHistoryArchive,detail:'That device was removed from the server.'})},{s:'outbox',k:childID,v:row(childID,'not_delivered',{sub:'history',archive_chunk:id})},{s:'outbox',k:expiredID,v:row(expiredID,'not_delivered',{detail:'That device was removed from the server.'})},{s:'kv',k:'history-archive/out/'+id,v:{...ended,children:[childID],state:'ended'}}]);
   e.runHistory=async()=>{};e.syncRoots=async()=>{};e.syncReadMarks=async()=>{};e.syncTopicTitles=async()=>{};e.syncInvitations=async()=>{};
   await e.dispatch('receipt',JSON.stringify({id:expiredID,state:'expired',seq:1}));
   check((await e.store.get('outbox',expiredID)).state==='expired','actual relay expiry overrides local not-delivered after in-flight race');
@@ -376,3 +376,20 @@ console.log('Recipient removed-host action checks complete:',checks);
  check(JSON.stringify(await e.store.get('inbox',id))===JSON.stringify(kept),'removed proposal source and historical attribution remain stored');
 }
 console.log('Recipient removed-host proposal checks complete:',checks);
+
+{
+ const {e,pub,fp,row}=await fixture();
+ const selected=row('selected','queued',{sub:'history',recipient_admission:'exact-selected-admission'});
+ await e.store.write([{s:'outbox',k:selected.id,v:selected}]);
+ await e.reconcileDepartedRecipients();
+ check((await e.store.get('outbox',selected.id)).state==='queued','cross-person selected group history is not own-device replication');
+ await e.store.write([{s:'kv',k:'history',v:{[pub.address]:{device:pub.address,fingerprint:fp,state:'running'}}}]);
+ await e.reconcileDepartedRecipients();
+ check((await e.store.get('outbox',selected.id)).state==='queued','former-own selected group history survives old own history job');
+ const own=await e.store.get('kv','person');await e.store.write([{s:'kv',k:'history'},{s:'kv',k:'person',v:{...own,known:[...(own.known||[]),{address:pub.address,fingerprint:fp}]}},{s:'outbox',k:'rootless-own',v:row('rootless-own','queued',{sub:wire.SubRootSync})}]);
+ await e.reconcileDepartedRecipients();
+ check((await e.store.get('outbox','rootless-own')).state==='not_delivered','exact historical own key terminates rootless own-sync without broadening to foreign recipients');
+ const cases=[['Retracted before sending',false,false],['That device was removed from the server.',false,false],['That device was removed from the server.',true,true]];
+ for(const [detail,handover,accepted] of cases){const id=wire.newID();await e.store.write([{s:'outbox',k:id,v:row(id,'not_delivered',{kind:'question',detail,handover_started:handover})}]);await e.dispatch('receipt',JSON.stringify({id,state:'delivered',seq:1}));check((await e.store.get('outbox',id)).state===(accepted?'delivered':'not_delivered'),'terminal receipt needs lifecycle termination and possible question handover');}
+}
+console.log('Recipient selected-history/receipt checks complete:',checks);

@@ -388,6 +388,11 @@ func TestUpgradeRepairsEveryRevokedCustodyOnce(t *testing.T) {
 	if _, err := oldDB.Exec(`INSERT INTO messages(id,sender,recipient,envelope,state,created_at) VALUES('accepted-before-removal',?,?,?,'custody',1)`, removed.addr, other.addr, []byte(`{"kind":"message","ct":"a2VwdA=="}`)); err != nil {
 		t.Fatal(err)
 	}
+	for _, row := range []struct{ id, from string }{{"opaque-unrelated", sender.addr}, {"opaque-removed", removed.addr}} {
+		if _, err := oldDB.Exec(`INSERT INTO messages(id,sender,recipient,envelope,state,created_at) VALUES(?,?,?,?,'custody',1)`, row.id, row.from, other.addr, []byte("legacy opaque bytes")); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// Simulate the shipped version: revoke metadata without settling copies.
 	if _, err := oldDB.Exec(`UPDATE agents SET revoked_at=1 WHERE address=?`, removed.addr); err != nil {
 		t.Fatal(err)
@@ -401,6 +406,9 @@ func TestUpgradeRepairsEveryRevokedCustodyOnce(t *testing.T) {
 		for _, m := range []member{sender, removed} {
 			max, err := repaired.receiptMax(m.addr)
 			want := int64(copies / 2)
+			if m.addr == removed.addr {
+				want++ // an unreadable removed-sender record cannot prove ordinary content
+			}
 			if i != 0 && m.addr == removed.addr {
 				want++
 			} // its retained message arrived after removal
@@ -409,7 +417,7 @@ func TestUpgradeRepairsEveryRevokedCustodyOnce(t *testing.T) {
 			}
 		}
 		var expired, preserved int
-		if err := repaired.db.QueryRow(`SELECT count(*) FROM messages WHERE state='expired'`).Scan(&expired); err != nil || expired != copies {
+		if err := repaired.db.QueryRow(`SELECT count(*) FROM messages WHERE state='expired'`).Scan(&expired); err != nil || expired != copies+1 {
 			t.Fatalf("repair count: %d %v", expired, err)
 		}
 		if err := repaired.db.QueryRow(`SELECT count(*) FROM messages WHERE envelope=?`, []byte(retainedWire)).Scan(&preserved); err != nil || preserved != copies {
@@ -418,6 +426,13 @@ func TestUpgradeRepairsEveryRevokedCustodyOnce(t *testing.T) {
 		_, _, state, err := repaired.messageState("untouched", sender.addr)
 		if err != nil || state != protocol.StateCustody {
 			t.Fatalf("unrelated custody changed: %s %v", state, err)
+		}
+		for id, want := range map[string]string{"opaque-unrelated": protocol.StateCustody, "opaque-removed": protocol.StateExpired} {
+			var raw []byte
+			var state string
+			if err := repaired.db.QueryRow(`SELECT envelope,state FROM messages WHERE id=?`, id).Scan(&raw, &state); err != nil || state != want || string(raw) != "legacy opaque bytes" {
+				t.Fatalf("opaque record %s: state=%s bytes=%q err=%v", id, state, raw, err)
+			}
 		}
 		_, _, state, err = repaired.messageState("accepted-before-removal", other.addr)
 		want := protocol.StateCustody

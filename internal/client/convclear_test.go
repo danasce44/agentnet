@@ -272,12 +272,25 @@ func TestDeletionErasesExactlyTheNamedTurns(t *testing.T) {
 	runAgent(t, w.alice)
 	runAgent(t, w.bob)
 	persons(t, w.alice, w.bob)
-	phone := linked(t, w.alice)
+	phone, awaited, _ := linkPhone(t, w.alice, "phone")
+	if err := w.alice.DecideLink(tctx(t), pendingLink(t, w.alice).ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if out := <-awaited; out.err != nil {
+		t.Fatal(out.err)
+	}
+	stopPhone := runAgent(t, phone)
 	waitNamedAgentCaps(t, phone)
 	dropCapSuccessor(t, phone, protocol.CapConvClear) // its deletion copies wait, to be handed over in order
 	conv := newDM(t, w.bob, w.alice)
 	sendConv(t, w.bob, conv, ConvOutgoing{Body: "m0"})
 	eventually(t, "m0 on both", func() bool { return len(convBodies(t, w.alice, conv)) == 1 && len(convBodies(t, phone, conv)) == 1 })
+	// From here delivery order is manual. Ordinary own-device history sync
+	// would rightly copy the phone-only turn back and broaden the laptop's
+	// retained set, independently of the exact deletion snapshot under test.
+	stopPhone()
+	phone.stopBackgroundPosts()
+	phone.stopArchivePosts()
 	_, raw := rootOf(t, w.alice, conv)
 	turn := func(body string) envelope.Inner {
 		return envelope.Inner{Kind: envelope.KindMessage, Body: body, Conv: conv, LID: protocol.NewID(), Root: raw,

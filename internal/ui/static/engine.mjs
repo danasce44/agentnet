@@ -1709,7 +1709,7 @@ export class Engine {
       const sync = new Set(["history", wire.SubHistoryArchive, wire.SubDeviceHistory, wire.SubReadSync, wire.SubRootSync, wire.SubTopicSync, wire.SubTopicStateSync, wire.SubModelSync, wire.SubInvitationSync]);
       const detail = revoked ? "That device was removed from the server." : "That exact device is no longer one of your devices.";
       for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"], address)) {
-        if (retained.has(row.id) || row.recipient_fp !== fingerprint || !revoked && !sync.has(row.sub) && !children.has(row.id)) continue;
+        if (retained.has(row.id) || row.recipient_fp !== fingerprint || !revoked && (!sync.has(row.sub) && !children.has(row.id) || row.sub === "history" && row.recipient_admission && !row.group_history)) continue;
         checks.push({s:"outbox",k:row.id,v:row});
         ops.push({s:"outbox",k:row.id,v:{...row,state:"not_delivered",detail}});
       }
@@ -1741,7 +1741,7 @@ export class Engine {
     if (own?.state !== "self") return;
     const book = await this.historyBook(), targets = new Map();
     const sync = new Set(["history", wire.SubHistoryArchive, wire.SubDeviceHistory, wire.SubReadSync, wire.SubRootSync, wire.SubTopicSync, wire.SubTopicStateSync, wire.SubModelSync, wire.SubInvitationSync]);
-    for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"])) if (sync.has(row.sub) && row.to && row.recipient_fp) targets.set(row.to + "/" + row.recipient_fp, {address:row.to,fingerprint:row.recipient_fp});
+    for (const row of await this.store.outboxStates(["queued","waiting","receiver_waiting","archive_staged","archive_uploading"])) if (sync.has(row.sub) && row.to && row.recipient_fp && (own.known || []).some(d => d.address === row.to && d.fingerprint === row.recipient_fp)) targets.set(row.to + "/" + row.recipient_fp, {address:row.to,fingerprint:row.recipient_fp});
     for (const job of Object.values(book)) targets.set(job.device + "/" + job.fingerprint, {address:job.device,fingerprint:job.fingerprint});
     for (const job of await this.store.prefix("kv", "history-archive/out/")) targets.set(job.to + "/" + job.recipient_fp, {address:job.to,fingerprint:job.recipient_fp});
     for (const dev of targets.values()) if (!own.devices.some(d => d.address === dev.address && d.fingerprint === dev.fingerprint)) await this.endRecipient(dev.address,dev.fingerprint);
@@ -7305,7 +7305,8 @@ export class Engine {
       if(!r||Object.keys(r).some(k=>!["id","state","seq"].includes(k))||!wire.validID(r.id)||!Number.isSafeInteger(r.seq)||r.seq<=0||!["delivered","quarantined","expired"].includes(r.state))return;
       const row=await this.store.get("outbox",r.id),cursor=await this.store.get("kv","receipt-cursor");
       const cancelledUnknown = row?.delivery_cancelled && row.handover_started!==false && !["delivered","expired","quarantined"].includes(row.state);
-      const ops=[{s:"kv",k:"receipt-cursor",v:r.seq}];if(row&&(["queued","custody","not_delivered"].includes(row.state)||cancelledUnknown||row.state==="quarantined"&&r.state==="delivered"))ops.push({s:"outbox",k:r.id,v:{...row,state:r.state,detail:""}});
+      const lifecycleUnknown = row?.state === "not_delivered" && ["That device was removed from the server.","That exact device is no longer one of your devices."].includes(row.detail) && (!["question","task"].includes(row.kind) || row.control || row.handover_started !== false);
+      const ops=[{s:"kv",k:"receipt-cursor",v:r.seq}];if(row&&(["queued","custody"].includes(row.state)||lifecycleUnknown||cancelledUnknown||row.state==="quarantined"&&r.state==="delivered"))ops.push({s:"outbox",k:r.id,v:{...row,state:r.state,detail:""}});
       try { await this.store.write(ops,[{s:"outbox",k:r.id,v:row},{s:"kv",k:"receipt-cursor",v:cursor}]); } catch(e) { if(e instanceof StoreConflict)return this.dispatch(event,data);throw e; }this.changed(true);
       if(row?.sub===wire.SubHistoryArchive&&ops.length>1){this.archiveReceiptRun=this.archives().receipt({...row,state:r.state});this.archiveReceiptRun.catch(()=>{});}
       if(row&&backgroundCopy(row)&&ops.length>1){

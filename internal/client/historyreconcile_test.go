@@ -367,6 +367,7 @@ func TestHistoryLateOwnCopyConvergesAfterCompletedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
+	reopened.Logf = t.Logf
 	for i, copy := range delayed {
 		// Admission of an already sealed, reordered own replica. A's daemon
 		// remains offline and cannot discover or backfill C itself.

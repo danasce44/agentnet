@@ -944,7 +944,11 @@ func TestGroupTurnsT5StaleFanAndUnsupportedOperations(t *testing.T) {
 
 func TestGroupTurnsMigrationPreservesUnboundLegacyRows(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
-	db, err := sqlitedb.Open(path, schema[:len(schema)-1])
+	step := slices.Index(schema, groupTurnRecipientSchema)
+	if step < 1 {
+		t.Fatal("recipient binding migration missing")
+	}
+	db, err := sqlitedb.Open(path, schema[:step])
 	if err != nil {
 		t.Fatal(err)
 	}

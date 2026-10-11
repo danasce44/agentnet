@@ -56,7 +56,7 @@ func TestCLIGroupSelectedHistoryFile(t *testing.T) {
 		}
 		// Capture before process cleanup. Only local status/count metadata
 		// is emitted: never envelopes, consent bytes, identities or errors.
-		for _, home := range []string{"alice", "bob"} {
+		for _, home := range []string{"alice", "bob", "carol"} {
 			for _, line := range groupHistoryStateSummary(filepath.Join(c.dir, home, "agent.db"), conv) {
 				t.Logf("group-state %s %s", home, line)
 			}
@@ -113,6 +113,13 @@ func TestCLIGroupSelectedHistoryFile(t *testing.T) {
 	}
 	c.run("--home", "carol", "group", "accept", selected.ID)
 	var imported client.ConvMessage
+	var seenRows, seenFiles int
+	var selectedBody, seenHistory, emptyKey bool
+	defer func() {
+		if t.Failed() {
+			t.Logf("selected-history projection: rows=%d selected=%t history=%t key_empty=%t attachments=%d", seenRows, selectedBody, seenHistory, emptyKey, seenFiles)
+		}
+	}()
 	waitFor(t, "Carol only selected native history", func() bool {
 		a, e := client.Open(filepath.Join(c.dir, "carol"))
 		if e != nil {
@@ -120,10 +127,12 @@ func TestCLIGroupSelectedHistoryFile(t *testing.T) {
 		}
 		defer a.Close()
 		rows, e := a.ConversationMessages(conv)
+		seenRows = len(rows)
 		if e != nil || len(rows) != 1 {
 			return false
 		}
 		imported = rows[0]
+		selectedBody, seenHistory, emptyKey, seenFiles = imported.Body == "SELECTED exact historical turn", imported.History, imported.Key == "", len(imported.Attachments)
 		return imported.Body == "SELECTED exact historical turn" && imported.History && imported.Key == "" && len(imported.Attachments) == 1
 	})
 	if text := dmShow(c, "carol", conv); strings.Contains(text, "UNSELECTED") || strings.Contains(text, "unselected.bin") {
@@ -172,8 +181,8 @@ func groupHistoryStateSummary(path, conv string) []string {
 	var result []string
 	for _, query := range []struct{ label, sql string }{
 		{"invitation", `SELECT direction||':'||state,count(*) FROM group_invitations WHERE conv=? GROUP BY direction,state ORDER BY direction,state`},
-		{"outbound-control", `SELECT sub||':'||state||CASE WHEN coalesce(error,'')<>'' THEN ':has-error' ELSE '' END,count(*) FROM outbox WHERE conv=? AND sub IN('group-invite','group-consent','group-proof','group-context') GROUP BY sub,state,coalesce(error,'')<>'' ORDER BY sub,state`},
-		{"admitted-control", `SELECT sub,count(*) FROM inbox WHERE conv=? AND sub IN('group-invite','group-consent','group-proof','group-context') GROUP BY sub ORDER BY sub`},
+		{"outbound-control", `SELECT sub||':'||state||CASE WHEN coalesce(error,'')<>'' THEN ':has-error' ELSE '' END,count(*) FROM outbox WHERE conv=? AND sub IN('group-invite','group-consent','group-proof','group-context','history') GROUP BY sub,state,coalesce(error,'')<>'' ORDER BY sub,state`},
+		{"admitted-control", `SELECT sub,count(*) FROM inbox WHERE conv=? AND sub IN('group-invite','group-consent','group-proof','group-context','history') GROUP BY sub ORDER BY sub`},
 		{"publication", `SELECT 'seq='||seq||':published='||published,count(*) FROM group_publications WHERE conv=? GROUP BY seq,published ORDER BY seq`},
 		{"context", `SELECT 'seq='||json_extract(payload,'$.state.seq'),count(*) FROM group_context WHERE conv=? GROUP BY json_extract(payload,'$.state.seq')`},
 		{"proof", `SELECT 'seq='||seq,count(*) FROM group_proof_records WHERE conv=? GROUP BY seq ORDER BY seq`},

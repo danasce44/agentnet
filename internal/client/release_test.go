@@ -136,10 +136,12 @@ func TestReleaseNoticeRetriedAfterRestart(t *testing.T) {
 	stop()
 	n.setFail(nil)
 	runWith(t, w, w.bob, RunOptions{})
-	eventually(t, "retry", func() bool { return n.count() == 2 })
-	if done, _ := w.bob.store.config("release_notified"); done != "v7.0.0 https://example.test/" {
-		t.Fatalf("marked %q", done)
-	}
+	// The notifier records its call before returning; the worker persists the
+	// successful result afterwards. Wait for that durable completion as well.
+	eventually(t, "successful retry recorded", func() bool {
+		done, err := w.bob.store.config("release_notified")
+		return err == nil && n.count() == 2 && done == "v7.0.0 https://example.test/"
+	})
 }
 
 // A slow desktop notifier runs on the worker and does not hold up the
