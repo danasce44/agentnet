@@ -4,16 +4,44 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Current release — v0.8.20, October 11, 2026 (UTC)
+## Current release — v0.8.22, October 11, 2026 (UTC)
 
-**Active follow-up v0.8.22:** MEL-602 fixes native Android dead-connection
-recovery and an inaccessible saved-send retry action. Root owns
-`fix/v0.8.22-mobile-reconnect`, the sole worktree; no release yet. Real TLS/HTTP2
-and mobile-core fault tests reproduce the old failure and pass with the fix;
-physical phone timing remains unverified. Source/native qualification is in
-progress. The v0.8.21 draft remains unpublished after a Windows gate found a refusal
-race; see [V0_8_22.md](plans/V0_8_22.md). Preserve original queues, identities
-and user sessions; no purge, relink, grant changes or task replays.
+[Download v0.8.22](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22).
+Published **16:41:57 UTC**, exact qualified tag
+`375ba6b1b9052bed82660456a8983070044f026d`. All thirteen assets match their
+GitHub digests and SHA256SUMS. The signed APK passes an in-place upgrade and
+warm/cold preservation of the exact 203-message fixture, queued sends,
+attachment, draft, identity and origin. Install over the existing Android app;
+do not uninstall or relink.
+
+MEL-602 fixes Android dead connections after resume, network changes and
+timeouts, and exposes saved-send recovery inside phone chats. Final Windows
+qualification also found and fixed a device-link refusal/expiry race without
+weakening revocation checks. Composed race gates, native Linux/macOS/Windows,
+real mixed-version delivery, container and rendered checks pass. The v0.8.21
+draft remains unpublished and explicitly superseded; its tag is unchanged.
+See [V0_8_22.md](plans/V0_8_22.md) for exact evidence and release hashes.
+
+The existing relay runs `agentnet-revived:v0.8.22-375ba6b1`, verified
+**16:43:10 UTC**, with the original realm, volume, loopback binding and neighbor
+unchanged. All fifteen served asset hashes match. The stopped-state backup at
+`/opt/agentnet-revived/backups/pre-v0.8.22-mbESNWbx` passes isolated readback:
+12 agents, 20,414 messages, 479 attachments and three profile pictures. The
+MEL-601 picture-restore allowlist workaround and MEL-551 cache-header follow-up
+remain as documented below; neither is claimed fixed by this release.
+
+The owner's read-only Bezos-to-phone trace measured about 69 seconds for one
+exact question/reply: 2 seconds before worker claim, 66 seconds in Pi execution
+and answer preparation, and 1 second from answer creation to phone receipt.
+Logs do not separate model/tool time or prove the phone's render time. MEL-563
+retains that investigation; physical owner-phone latency and wider mobile
+history cases remain open. No live request was replayed or permission changed.
+
+Release work is merged into main. The completed v0.8.21/v0.8.22 fix branches
+were removed after ancestry checks; immutable tags remain. The root is the sole
+worktree, and unmerged `next/audience-prechecks` is preserved.
+
+## Previous release — v0.8.20, October 11, 2026 (UTC)
 
 [Download v0.8.20](https://github.com/misunders2d/agentnet/releases/tag/v0.8.20).
 Published **14:27:24 UTC**, tag `123de827a760f6726d749e7decba1074d7ea2f28`,
