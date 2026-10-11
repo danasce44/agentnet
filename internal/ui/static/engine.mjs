@@ -14,7 +14,7 @@
 
 import * as wire from "./wire.mjs";
 import { contributionPreview, contributionApply, contributionRecheck } from "./historycontribution.mjs";
-import {deviceHistory,directHistoryRow} from "./devicehistory.mjs";
+import {deviceHistory,deviceHistoryDirection,directHistoryRow} from "./devicehistory.mjs";
 import { backgroundCopy, historyWindow } from "./historywindow.mjs";
 import { historyArchive } from "./historyarchive.mjs";
 import { Decrypter, Encrypter } from "./vendor/age.mjs";
@@ -3786,8 +3786,8 @@ export class Engine {
   // received and sent, joined by replies as the core does (peerThreads),
   // each oldest first.
   async v1Threads(view = null) {
-    const msgs = [...(view?.inbox||await this.store.all("inbox")).filter((m) => m.v === 1 && !m.aside && !this.erasedRow(m)).map((m) => ({ ...m, dir:m.device_history?.direction||"in", peer:m.device_history?.peer||m.from,author_fp:m.fp,stored_in:true })),
-      ...(view?.outbox||await this.store.all("outbox")).filter((r) => r.v === 1 && !r.aside && !this.erasedRow(r)).map((r) => ({ ...r, dir:r.device_history?.direction||"out", peer:r.device_history?.peer||r.to,author_fp:this.fp }))]; // a deleted thread's messages are not shown
+    const msgs = [...(view?.inbox||await this.store.all("inbox")).filter((m) => m.v === 1 && !m.aside && !this.erasedRow(m)).map((m) => ({ ...m, dir:deviceHistoryDirection(m,"in"), peer:m.device_history?.peer||m.from,author_fp:m.fp,stored_in:true })),
+      ...(view?.outbox||await this.store.all("outbox")).filter((r) => r.v === 1 && !r.aside && !this.erasedRow(r)).map((r) => ({ ...r, dir:deviceHistoryDirection(r,"out",r.from||this.address), peer:r.device_history?.peer||r.to,author_fp:this.fp }))]; // a deleted thread's messages are not shown
     const byID = new Map(msgs.map((m) => [m.id, m]));
     const parent = new Map(msgs.map((m) => [m.id, m.id]));
     const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
@@ -10601,7 +10601,7 @@ export class Engine {
   async openFile(id, i, dir) {
     if (dir && dir !== "in" && dir !== "out") throw new Error("dir is in or out.");
     let m = dir === "out" ? null : await this.store.get("inbox", id);
-    if(dir==="out"&&!await this.store.get("outbox",id)){const row=await this.store.get("inbox",id);if(row?.device_history?.direction==="out")m=row;}
+    if(dir==="out"&&!await this.store.get("outbox",id)){const row=await this.store.get("inbox",id);if(row?.device_history&&deviceHistoryDirection(row,"in")==="out")m=row;}
     if (dir === "in" && !m) throw new Error("No received message with that id here.");
     if (!m) return this.openSent(id, i);
     if (await this.isRetracted(m)) throw new Error("That message was deleted.");

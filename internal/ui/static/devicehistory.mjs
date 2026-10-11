@@ -4,6 +4,13 @@ import * as wire from "./wire.mjs";
 import { historyWindow } from "./historywindow.mjs";
 
 export const directHistoryRow=r=>!!r&&!r.conv&&!r.local&&Number.isFinite(r.at)&&[1,3].includes(r.v)&&(!r.aside||r.control)&&["",wire.SubStatus,wire.SubReaction,wire.SubRevision,wire.SubRetraction].includes(r.sub||"")&&(!r.receiver_route||r.receiver_route.op==="request");
+// A mapped request is relative to its preserved peer, even when its parent is
+// an incoming answer. Also correct retained rows without rewriting originals.
+export const deviceHistoryDirection=(row,fallback,from=row.from)=>{
+ const meta=row.device_history;
+ if(meta?.peer&&from&&["question","task"].includes(row.kind))return from===meta.peer?"in":"out";
+ return meta?.direction||fallback;
+};
 const prefix="device-history/",page=50;
 const fileEqual=(a,b)=>["lid","author","hash","index","name","size","sha256"].every(k=>a[k]===b[k]);
 
@@ -66,7 +73,7 @@ export function deviceHistory(e,Hold){
    }
    if(h.agent_id){const t=parent.item.target;if(!t||t.address!==h.from||t.fingerprint!==h.from_key||t.agent_id!==h.agent_id)fail("named output differs from its requested agent.");}
    const meta=parent.row.device_history;
-   if(meta){peer=meta.peer;if(["question","task"].includes(h.kind))direction=meta.direction;if(["answer","result"].includes(h.kind)||h.status===wire.StatusProgress)direction=h.from===peer?"in":"out";}
+   if(meta){peer=meta.peer;if(["question","task","answer","result"].includes(h.kind)||h.status===wire.StatusProgress)direction=h.from===peer?"in":"out";}
   }
   return {recipient:r.recipient,recipient_key:r.recipient_key,peer,direction,hash:r.hash};
  }

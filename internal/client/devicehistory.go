@@ -162,6 +162,15 @@ func deviceHistoryHuman(q dbq, person, address, fp string) (bool, error) {
 	return false, rows.Err()
 }
 
+// Requests follow the original sender relative to the retained peer, not the
+// direction of the answer they continue. This also corrects old saved views.
+func deviceHistoryRequestDirection(from, peer string) string {
+	if from == peer {
+		return "in"
+	}
+	return "out"
+}
+
 func (a *Agent) deviceHistoryProjection(q dbq, r *deviceHistoryRow, person string) error {
 	fromOwn, err := deviceHistoryHuman(q, person, r.item.From, r.item.FromKey)
 	if err != nil {
@@ -195,7 +204,7 @@ func (a *Agent) deviceHistoryProjection(q dbq, r *deviceHistoryRow, person strin
 		if err == nil {
 			r.peer = peer
 			if r.item.Kind == envelope.KindQuestion || r.item.Kind == envelope.KindTask {
-				r.dir = dir
+				r.dir = deviceHistoryRequestDirection(r.item.From, peer)
 			}
 			if r.item.Kind == envelope.KindAnswer || r.item.Kind == envelope.KindResult || r.item.Status == envelope.StatusProgress {
 				if r.item.From == peer {

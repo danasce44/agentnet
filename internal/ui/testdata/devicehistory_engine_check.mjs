@@ -142,6 +142,53 @@ const restarted=new Engine({store:a.store,base:a.base,fetch});Object.assign(rest
  check(!await reader.store.get('held',early)&&view.messages.every(m=>!m.state&&m.history),'dependency arrival recovers inert own reply');
  const progress={v:1,id:wire.newID(),lid:'',from:host.address,from_key:host.fp,ts:3,at:3000,kind:'message',status:wire.StatusProgress,agent_id:wire.newID(),reply_to:requestID,body:'Working'};progress.lid=progress.id;
  check(wire.parseHistory(wire.historyJSON(progress)).agent_id===progress.agent_id,'named progress history accepts the same signed shape as native');
+
+ // Follow-ups retain the host peer but must not inherit the answer's incoming
+ // direction. The host is also an own device: that alone cannot imply "You".
+ const fileBytes=new TextEncoder().encode('exact own follow-up attachment\n');
+ const file=await wire.encryptFile(fileBytes,'followup.txt',host.pub);blobs.set(file.attachment.blob.id,{bytes:file.ct});
+ const followup={id:wire.newID(),from:sender.address,to:host.address,ts:3,kind:'question',reply_to:replyID,body:'own laptop follow-up',attachments:[file.attachment]};
+ const reply2={id:wire.newID(),from:host.address,to:sender.address,ts:4,kind:'answer',reply_to:followup.id,body:'next host answer'};
+ const task={id:wire.newID(),from:sender.address,to:host.address,ts:5,kind:'task',reply_to:reply2.id,body:'own laptop task'};
+ const peerQuestion={id:wire.newID(),from:host.address,to:sender.address,ts:6,kind:'question',reply_to:task.id,body:'host question'};
+ const peerTask={id:wire.newID(),from:host.address,to:sender.address,ts:7,kind:'task',reply_to:task.id,body:'host task'};
+ for(const m of [followup,reply2,task,peerQuestion,peerTask]){
+  if(m.from===sender.address){await receiveHistory(await wire.seal(m,sender.keys,host.pub),host);await host.store.write([{s:'inbox',k:m.id,v:{...await host.store.get('inbox',m.id),at:m.ts*1000}}]);}
+  else await host.store.write([{s:'outbox',k:m.id,v:{...m,v:1,at:m.ts*1000,fp:sender.fp,state:'delivered',envelope:await wire.seal(m,host.keys,sender.pub)}}]);
+ }
+ await drain(host,reader);
+ const expected=new Map([[followup.id,'out'],[reply2.id,'in'],[task.id,'out'],[peerQuestion.id,'in'],[peerTask.id,'in']]);
+ for(const copy of (await copies(host)).filter(r=>r.to===reader.address&&expected.has(JSON.parse(r.body).item.id)))await receiveHistory(copy.envelope,reader);
+ const fresh=await reader.thread(requestID);
+ check(fresh.messages.length===7&&fresh.peer===host.address,'follow-ups keep one original host thread and seven exact IDs');
+ for(const [id,dir]of expected){
+  const row=await reader.store.get('inbox',id),m=fresh.messages.find(m=>m.id===id);
+  check(row.device_history.direction===dir&&m.dir===dir&&m.history&&!m.state,'fresh mapped request/output has sender-relative inert direction '+id);
+ }
+ // Recreate shipped incorrect metadata. Reading corrects the presentation,
+ // including the outgoing file path, without changing any retained field.
+ for(const [id,dir]of expected)if(id!==reply2.id){const row=await reader.store.get('inbox',id);await reader.store.write([{s:'inbox',k:id,v:{...row,device_history:{...row.device_history,direction:dir==='out'?'in':'out'}}}]);}
+ const retained=new Map(await Promise.all([...expected.keys()].map(async id=>[id,JSON.stringify(await reader.store.get('inbox',id))])));
+ const corrected=await reader.thread(requestID);
+ for(const [id,dir]of expected){
+  const row=await reader.store.get('inbox',id),m=corrected.messages.find(m=>m.id===id);
+  check(m.dir===dir&&corrected.peer===host.address&&m.from_key===(m.from===host.address?host.fp:sender.fp)&&m.synced_from===host.address&&JSON.stringify(row)===retained.get(id),'retained read preserves exact sender key, peer, provenance and stored original '+id);
+ }
+ const originalFile=await reader.store.get('inbox',followup.id);
+ check(originalFile.device_history.recipient===host.address&&originalFile.device_history.recipient_key===host.fp&&originalFile.attachments[0].sha256===file.attachment.sha256,'retained follow-up preserves exact original recipient and attachment manifest');
+ await assert.rejects(()=>reader.openFile(followup.id,0,'out'),/get it from/);checks++;
+ await reader.requestFile(followup.id,0);
+ const fileRequest=(await copies(reader,wire.SubDeviceFile)).at(-1);await receive(fileRequest.envelope,host);
+ await host.directHistory().serveFile(await host.store.get('kv','serve/'+fileRequest.id));
+ const fileOffer=(await copies(host,wire.SubDeviceFile)).at(-1);await receive(fileOffer.envelope,reader);
+ const opened=await reader.openFile(followup.id,0,'out');
+ check(new TextDecoder().decode(opened.bytes)===new TextDecoder().decode(fileBytes),'retained wrongly incoming follow-up opens exact requested outgoing attachment');
+ for(const kind of ['question','task']){
+  const incoming=wire.newID(),outgoing=wire.newID(),native=(await reader.v1Threads({inbox:[{v:1,id:incoming,kind,from:sender.address,at:1}],outbox:[{v:1,id:outgoing,kind,to:host.address,at:2}]})).flat();
+  check(native.find(m=>m.id===incoming).dir==='in'&&native.find(m=>m.id===outgoing).dir==='out','unmapped '+kind+' retains native storage direction');
+  const ownHost=(await host.v1Threads({inbox:[],outbox:[{v:1,id:wire.newID(),kind,to:sender.address,at:1,device_history:{peer:host.address,direction:'out'}}]})).flat();
+  check(ownHost[0].dir==='in','local outbox '+kind+' from the preserved own host peer remains incoming without a stored from field');
+ }
 }
 // A legacy missing recipient key is not the current reader's key and cannot
 // acquire proposal/status authority from a later duplicate's assertion.

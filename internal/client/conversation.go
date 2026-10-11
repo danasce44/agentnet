@@ -269,16 +269,16 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 		}
 		rows, err := s.db.Query(`SELECT i.id, kind, coalesce(status, ''), body, coalesce(i.reply_to, ''), ts, received_at, read_at IS NOT NULL,
 			state, coalesce(responder, ''), coalesce(detail, ''),
-			CASE WHEN kind IN ('question', 'task') THEN '' ELSE coalesce(agent_id, '') END, coalesce(target, ''),coalesce(quote,''),l.direction,i.sender,l.recipient,l.author_fp,i.replica,coalesce(i.via,'') FROM inbox i JOIN device_thread_links l ON l.id=i.id AND l.storage='in' WHERE l.peer=? AND i.conv IS NULL AND ref_id IS NULL AND i.id IN (`+marks+`)`, args...)
+			CASE WHEN kind IN ('question', 'task') THEN '' ELSE coalesce(agent_id, '') END, coalesce(target, ''),coalesce(quote,''),l.direction,i.sender,l.recipient,l.author_fp,i.replica,coalesce(i.via,''),EXISTS(SELECT 1 FROM device_history_rows h WHERE h.storage='in' AND h.id=i.id) FROM inbox i JOIN device_thread_links l ON l.id=i.id AND l.storage='in' WHERE l.peer=? AND i.conv IS NULL AND ref_id IS NULL AND i.id IN (`+marks+`)`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			m := ConversationMessage{Dir: "in", From: peer, storedIn: true}
 			var ts, recv int64
-			var read bool
+			var read, deviceHistory bool
 			var detail, target string
-			if err := rows.Scan(&m.ID, &m.Kind, &m.Status, &m.Body, &m.ReplyTo, &ts, &recv, &read, &m.State, &m.Responder, &detail, &m.AgentID, &target, &m.Quote, &m.Dir, &m.From, &m.To, &m.FromKey, &m.History, &m.SyncedFrom); err != nil {
+			if err := rows.Scan(&m.ID, &m.Kind, &m.Status, &m.Body, &m.ReplyTo, &ts, &recv, &read, &m.State, &m.Responder, &detail, &m.AgentID, &target, &m.Quote, &m.Dir, &m.From, &m.To, &m.FromKey, &m.History, &m.SyncedFrom, &deviceHistory); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -287,6 +287,11 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 					rows.Close()
 					return nil, err
 				}
+			}
+			// Stored device history has already verified its original endpoints.
+			// Older copies inherited a parent answer's direction for follow-ups.
+			if deviceHistory && (m.Kind == envelope.KindQuestion || m.Kind == envelope.KindTask) {
+				m.Dir = deviceHistoryRequestDirection(m.From, peer)
 			}
 			m.SentAt, m.At, m.Read = time.Unix(ts, 0), time.Unix(recv, 0), &read
 			if m.State == stateSummary {
@@ -300,7 +305,7 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		rows, err = s.db.Query(`SELECT o.id, envelope, coalesce(status, ''), body, coalesce(o.reply_to, ''), created_at, state, coalesce(path, ''), coalesce(error, ''), coalesce(agent_id, ''), coalesce(target, ''),coalesce(quote,''),send_stopped,send_stopped=1 AND state='not_delivered' AND coalesce(handover_started,1)=1,l.direction,l.recipient,l.author_fp
+		rows, err = s.db.Query(`SELECT o.id, envelope, coalesce(status, ''), body, coalesce(o.reply_to, ''), created_at, state, coalesce(path, ''), coalesce(error, ''), coalesce(agent_id, ''), coalesce(target, ''),coalesce(quote,''),send_stopped,send_stopped=1 AND state='not_delivered' AND coalesce(handover_started,1)=1,l.direction,l.recipient,l.author_fp,EXISTS(SELECT 1 FROM device_history_rows h WHERE h.storage='out' AND h.id=o.id)
 			FROM outbox o JOIN device_thread_links l ON l.id=o.id AND l.storage='out' WHERE l.peer=? AND conv IS NULL AND ref_id IS NULL AND o.id IN (`+marks+`)`, args...)
 		if err != nil {
 			return nil, err
@@ -309,7 +314,8 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 			m := ConversationMessage{Dir: "out", To: peer}
 			var data, target string
 			var created int64
-			if err := rows.Scan(&m.ID, &data, &m.Status, &m.Body, &m.ReplyTo, &created, &m.State, &m.Path, &m.Detail, &m.AgentID, &target, &m.Quote, &m.SendStopped, &m.DeliveryUncertain, &m.Dir, &m.To, &m.FromKey); err != nil {
+			var deviceHistory bool
+			if err := rows.Scan(&m.ID, &data, &m.Status, &m.Body, &m.ReplyTo, &created, &m.State, &m.Path, &m.Detail, &m.AgentID, &target, &m.Quote, &m.SendStopped, &m.DeliveryUncertain, &m.Dir, &m.To, &m.FromKey, &deviceHistory); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -325,6 +331,9 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 				return nil, fmt.Errorf("sent message %s: %w", m.ID, err)
 			}
 			m.From, m.Kind, m.At = env.From, env.Kind, time.Unix(created, 0)
+			if deviceHistory && (m.Kind == envelope.KindQuestion || m.Kind == envelope.KindTask) {
+				m.Dir = deviceHistoryRequestDirection(m.From, peer)
+			}
 			out[m.ID] = m
 		}
 		rows.Close()
