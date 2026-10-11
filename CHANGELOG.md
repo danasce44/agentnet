@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+## [0.8.21] — 2026-10-11
+
 - Reconnect Android after resume or a default-network change without reopening
   its saved chats. Retire dead HTTP/2 connections after request or stream
   timeouts so sends and incoming messages can recover together. Preserve
@@ -583,6 +585,7 @@ guide and test/rollout evidence in the handoff.
 
 </details>
 
+[0.8.21]: https://github.com/misunders2d/agentnet/releases/tag/v0.8.21
 [0.8.4]: https://github.com/misunders2d/agentnet/releases/tag/v0.8.4
 [0.8.3]: https://github.com/misunders2d/agentnet/releases/tag/v0.8.3
 [0.8.2]: https://github.com/misunders2d/agentnet/releases/tag/v0.8.2

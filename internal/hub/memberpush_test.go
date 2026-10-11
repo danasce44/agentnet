@@ -117,13 +117,23 @@ func TestSessionStartAndEndSendMembersAgain(t *testing.T) {
 	after := func(what string, expect ...string) {
 		t.Helper()
 		id := sendMessage(t, h, alice, bob)
-		for _, name := range expect {
-			if e := next(); e.name != name {
-				t.Fatalf("%s: %s %s, want %s", what, e.name, e.data, name)
+		// A session change can occur after the stream's generation check but
+		// before its pending-message query. Both must arrive; only members
+		// before teams is ordered, not those updates before the new message.
+		message, changed := false, 0
+		for !message || changed < len(expect) {
+			e := next()
+			if e.name == "message" {
+				if message || envelopeID(t, e.data) != id {
+					t.Fatalf("%s: unexpected or repeated message", what)
+				}
+				message = true
+				continue
 			}
-		}
-		if e := next(); e.name != "message" || envelopeID(t, e.data) != id {
-			t.Fatalf("%s: %s %s, want the message", what, e.name, e.data)
+			if changed >= len(expect) || e.name != expect[changed] {
+				t.Fatalf("%s: unexpected %s event (refresh %d of %d)", what, e.name, changed, len(expect))
+			}
+			changed++
 		}
 	}
 	for e := next(); e.name != "groups"; e = next() { // the lists sent on connect

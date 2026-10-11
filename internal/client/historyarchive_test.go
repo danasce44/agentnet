@@ -249,6 +249,28 @@ func TestHistoryArchiveCapabilityLossKeepsExactManifestAcrossRestart(t *testing.
 
 func TestHistoryArchiveReceiptDrivenMultiChunkCompletion(t *testing.T) {
 	_, a, phone, conv := archiveFixture(t, 123)
+	// This test drives every chunk and receipt synchronously. The phone's
+	// capability publication can race setup's coalesced sender, leaving plain
+	// history copies in the exact-key sync window after archiveFixture resets
+	// their ledger. Join those workers before resetting this synthetic export.
+	a.stopBackgroundPosts()
+	a.stopArchivePosts()
+	for _, query := range []string{
+		`DELETE FROM outbox WHERE recipient_fp=? AND sub IN ` + syncSubs,
+		`DELETE FROM history_catchup WHERE fingerprint=?`,
+		`DELETE FROM history_copies WHERE recipient_fp=?`,
+		`DELETE FROM history_deferred WHERE recipient_fp=?`,
+	} {
+		if _, err := a.store.db.Exec(query, phone.Self().Fingerprint()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !a.archivesFor(tctx(t), phone.Self()) {
+		t.Fatal("linked phone lacks current archive authority or capability")
+	}
+	if full, err := syncWindowFull(a.store.db, phone.Self()); err != nil || full {
+		t.Fatalf("synthetic export did not start with an available sync window: %v %v", full, err)
+	}
 	for page := int64(1); page <= 4; page++ {
 		if _, err := a.historyCatchupPage(tctx(t), phone.Self()); err != nil {
 			t.Fatal(err)
