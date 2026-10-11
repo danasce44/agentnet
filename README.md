@@ -39,6 +39,13 @@ For an agent, a new topic also starts a separate conversation context. Follow-up
 questions stay attached to that topic, so a stock check and an invoice review
 can progress independently.
 
+In **Comic**, select several messages to move them to a new or existing topic,
+or review and merge one topic's messages into another. Their replies and files
+keep their original identities; later messages you did not select stay put.
+Topic **Done, Reopen and Archive** choices follow your linked human devices.
+In people chats, Done/Reopen are shared with participants; names and manual
+Archive remain your own, not everybody else's.
+
 ## Bring in someone who can help
 
 Use **Bring in** when a conversation needs another person's knowledge or an
@@ -49,6 +56,10 @@ A guest can help with the matter at hand, then leave while the original
 participants carry on. What they already received remains theirs; ending a
 visit stops future access through that participation. Other conversations
 are not opened up by the invitation.
+
+In **Comic**, you can also share selected history into a group as an attributed
+quotation. Review the destination audience and included files first. Originals
+stay in their source chat; quoted questions and tasks never execute.
 
 A permanent group member is a different choice: add them when they should
 remain part of the group. Invitations show whether someone has joined or is
@@ -78,9 +89,9 @@ have, not from a built-in inventory or accounting system in AgentNet.
 
 ## Your agents, with your setup
 
-Connect the assistants you already use, such as **Claude Code, Codex or Pi**.
-They keep their owner's tools, skills, connections and permissions. A company
-assistant can look up information using its existing access; a personal
+Connect the assistants you already use, such as **Claude Code, Codex, Pi or
+Antigravity**. They keep their owner's tools, skills, connections and permissions.
+A company assistant can look up information using its existing access; a personal
 assistant can work with the files and tools available on its own computer.
 
 Ask an agent directly, mention it in a conversation where it has been brought
@@ -88,15 +99,30 @@ in, or let your assistant consult another person's agent. Answers return to
 the conversation where the question was asked. When a supported, connected
 assistant session sends a request, the reply can return to that session too.
 
-**You decide what may run.** You can approve routine questions from someone
-you trust. Tasks need acceptance or a standing task permission you have
-chosen to grant. Asking a question does not create a new permission. Existing
-tools retain the effects their owner already allows; AgentNet does not make
+**You decide what may run.** Your verified personal devices can ask your own
+agent questions without another AgentNet approval. You can approve routine
+questions from someone you trust. Tasks need acceptance or a standing task
+permission you have chosen to grant. Asking a question does not create a new
+permission. Existing tools retain the effects their owner already allows;
+AgentNet does not make
 an unrestricted tool harmless merely by calling the request a question.
 
 Agents work in background sessions. Your open assistant session stays yours.
 People can also talk, share files and make decisions without involving an
 agent at all.
+
+In **Comic**, use a request's correction/follow-up action to keep new instructions
+attached to the exact work. Supported running Codex group questions can accept
+steering; other runs receive a queued follow-up. An uncertain acknowledgement
+is shown as uncertain, not silently retried. Select a message and its available
+files to assign a reviewed task to one of your own agents; its private chat
+retains the source attribution.
+
+Your own agents can show their **last reported model**, or explicitly say it
+is unknown. That information is owner-only across your verified devices, not
+live model detection or a control that changes the assistant's model settings.
+Shared mentions such as **@everyone** and named team tags stay compact while
+retaining the exact selected recipients and each agent's independent outcome.
 
 ## Reach the right device
 
@@ -110,11 +136,15 @@ The request goes to that computer, where its own tools and permissions
 apply. The phone is where you talk; the selected computer is where the
 agent runs. That computer must be online and its agent configured to answer.
 
-Linked devices share messages and conversation history. Each keeps its own
-identity keys, and an existing human device approves a new device joining
-your person. Signing in is not permission to add an unknown device silently.
-Some details, including unread badges and topic preferences, still have
-cross-device limitations; see the current release limits below.
+Linked devices share messages and conversation history. Recent history arrives
+in bounded encrypted batches; older pages continue in the background without
+holding up live delivery. Catch-up progress is in device **Details**, not a
+request to approve background work. Each device keeps its own identity keys,
+and an existing human device approves a new device joining your person.
+Signing in is not permission to add an unknown device silently.
+Physical-phone timing and complete history convergence remain unverified;
+see the current release limits below. Keep a source device online for history
+and files it still holds. Updating does not require a reset or relink.
 
 ## Keep company conversations private
 
@@ -162,8 +192,8 @@ compatibility; they do not make arbitrary skin code safe.
 
 ## Get started
 
-**Current release: [v0.8.16](https://github.com/misunders2d/agentnet/releases/tag/v0.8.16)**,
-published October 10, 2026. AgentNet is actively developing; the expandable
+**Current release: [v0.8.22](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22)**,
+published October 11, 2026. AgentNet is actively developing; the expandable
 release section below names what has been checked and what still needs work.
 
 **Update recovery:** an app attached to a separate daemon may show a local
@@ -172,8 +202,9 @@ finishes, quit AgentNet from its tray menu and reopen it from the launcher.
 v0.8.15 repairs local-page readiness and shell reload; physical recovery of the
 reported failure remains unconfirmed. See [the handoff](docs/HANDOFF.md).
 
-1. **Install the app on your computer.** Choose your download below. Phones
-   use the workspace's browser app and can add it to their home screen.
+1. **Install the app on your computer or Android phone.** Choose your download
+   below. The workspace's browser app also works on phones and can be added
+   to their home screen.
 2. **Open your workspace invitation.** For a workspace with Google sign-in,
    use the account your company allows. Adding another device to an existing
    person also needs approval on a device you already use.
@@ -184,11 +215,21 @@ reported failure remains unconfirmed. See [the handoff](docs/HANDOFF.md).
    tools. These are separate choices; some tool connections take effect in
    newly started sessions.
 
-| Computer | Download and open |
+| Device | Download and open |
 | --- | --- |
-| Windows | Run the [Windows installer](https://github.com/misunders2d/agentnet/releases/download/v0.8.16/AgentNet-windows-x64-setup.exe), then open AgentNet from Start. |
-| Linux | Download the [AppImage](https://github.com/misunders2d/agentnet/releases/download/v0.8.16/AgentNet-linux-x86_64.AppImage), allow it to run in its file properties, then open it. [deb and rpm packages](https://github.com/misunders2d/agentnet/releases/tag/v0.8.16) are also available. |
-| macOS | Open the [DMG](https://github.com/misunders2d/agentnet/releases/download/v0.8.16/AgentNet-macos-universal.dmg) and copy AgentNet into Applications. Interactive installation remains unverified on a real Mac. |
+| Windows | Run the [Windows installer](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-windows-x64-setup.exe), then open AgentNet from Start. |
+| Linux | Download the [AppImage](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-linux-x86_64.AppImage), allow it to run in its file properties, then open it. [deb and rpm packages](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22) are also available. |
+| macOS | Open the [DMG](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-macos-universal.dmg) and copy AgentNet into Applications. Interactive installation remains unverified on a real Mac. |
+| Android 8+, ARM64 | Download the [signed native preview APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-android.apk) and open it with Android's installer. It is a GitHub preview, not a Google Play release. |
+
+**Android updates:** install over your existing native preview—**do not uninstall
+or relink**. Early previews need one manual in-place APK installation. Current
+previews use **Settings → About → Check for updates / Update AgentNet**: the
+app verifies the official download, checksum and original signing certificate,
+then Android asks you to confirm installation. Allow installation from that
+source if Android asks. Canceling keeps your app and data. Browser and native
+apps have separate device identities; one does not silently replace the other.
+The phone is a messaging device, not a local coding-agent runtime.
 
 Closing the desktop window leaves AgentNet in the tray. **Start when I log in**
 controls whether it starts with your computer; **Quit AgentNet** stops it.
@@ -206,9 +247,9 @@ once. v0.8.3 fixes the case where the app updated but an older official
 unchanged official copies automatically.
 
 **Upgrading a v0.8.3/v0.8.4 AppImage:** its old updater still needs one
-manual reopen after updating to v0.8.16. Open AgentNet from its launcher if it
+manual reopen after updating to v0.8.22. Open AgentNet from its launcher if it
 closes without returning. If v0.8.4's Update button is unavailable, run
-`agentnet update v0.8.16` for the registered desktop installation, then reopen
+`agentnet update v0.8.22` for the registered desktop installation, then reopen
 once. Updates started by v0.8.5 include the restart fix.
 
 **With v0.8.5 or later installed**, the button and `agentnet update` update AgentNet
@@ -225,6 +266,26 @@ switch waits for accepted work to finish. An older busy daemon may refuse
 preparation; retry after its current job finishes. If an older attached app
 has no Update control, install the current desktop package once, keeping the
 existing identity and data.
+
+## Know what needs your attention
+
+**OKs** keeps actionable decisions and identity warnings. Passive synchronization
+records live under **Settings → About → Technical details**; moving them there
+does not claim that their underlying history problem is repaired. A remote
+**Needs you** card identifies the executing computer and its recorded reason.
+
+Admins can permanently remove a device or a whole verified person. Removal
+stops future authorized access and unstarted work, not copies already received
+by others. Offline or outdated devices are different: their messages remain
+queued for recovery, not treated as permanently removed.
+
+**Current limits:** native permission inheritance across every supported harness
+(MEL-504) and valid replies rejected after an own-history peer mismatch (MEL-604)
+are **next-release blockers**, not fixes shipped in v0.8.22. Physical-phone
+latency/history, profile-picture backup restoration (MEL-601), and updater/cache
+follow-ups remain open. Passing fixtures and emulator tests do not verify your
+physical phone. See [current evidence and limits](#current-release-evidence)
+and [the handoff](docs/HANDOFF.md).
 
 ## Guides for agents and maintainers
 
@@ -331,6 +392,12 @@ still need its own acceptance; a new grant never re-runs failed or interrupted
 work. If the harness cannot do what is needed within its rules, it must report
 that a person is needed, rather than claim completion.
 
+![Message, question, task and local follow-up summary flow](docs/revival/readme-assets/inbox-flow.svg)
+
+Questions and tasks both retain native permissions; a standing task grant can
+cover a verified person or an exact device key. The diagram's **Follow-up** is
+the CLI's local reply summary, distinct from Comic's correction/steering action.
+
 **Return to the asking session.** Pi/OMP hooks, the Claude channel and Codex's
 app-server hook integration support this under their documented setup.
 Install/trust requirements and new-session activation matter. Requests from
@@ -362,7 +429,7 @@ These are different operations:
 | v0.8.0 desktop app | Install the current matching desktop package once. Keep the same data home and app location. |
 | v0.8.1+ desktop app | Settings → About → Update AgentNet. v0.8.3/v0.8.4 AppImages need the one-time reopen described above; use the registered-app CLI if the old Update button is unavailable. |
 | v0.8.3+ command with a registered desktop app | `agentnet update` uses the same whole-app updater and includes verified official PATH copies. An active agent job must finish first. |
-| CLI-only installation, without a registered desktop app | `agentnet update` or `agentnet update v0.8.16`; this changes the executing CLI. |
+| CLI-only installation, without a registered desktop app | `agentnet update` or `agentnet update v0.8.22`; this changes the executing CLI. |
 | Relay | Replace the deployed server binary/image separately, after a stopped-state backup, keeping the existing volume and configuration. |
 
 The app refreshes its bundled command, verified official terminal copies and
@@ -375,14 +442,23 @@ changes. Check both the app's About version and the command actually resolved
 on PATH. If the app attaches to an older manually managed daemon, follow the
 [existing-installation instructions](docs/revival/INSTALL.md#existing-installs-and-recovery).
 
-A server recommendation is installed: daemons and the app with automatic
-update on (the default) install a recommended release newer than their own
-by themselves once no job runs, from the GitHub release only, checked
-against its SHA256SUMS; `agentnet update --auto off` turns that off for a
-home. The app's update button checks GitHub independently of that notice.
+**Latest-release policy:** a released relay requires its own release version.
+After a grace period (30 minutes by default; `hub serve --update-grace` or
+`AGENTNET_UPDATE_GRACE`), older devices are suspended from new work. Their
+messages wait in custody until they update; other devices keep working.
+Already-admitted answers/results and their required lookups, acknowledgements
+and uploads may finish. An admin recommendation alone cannot suspend devices.
+
+With automatic updates on (the default), desktop apps and headless daemons
+install the relay's recommended newer official release after active work finishes,
+using GitHub assets and SHA256SUMS. Browser pages reload without losing drafts.
+`agentnet update --auto off` disables automatic installation for that home,
+not the relay's version requirement. Older clients may need a manual update
+once; Android requires its matching APK and Android's installation confirmation.
+The app's update button checks GitHub independently of the recommendation.
 The v0.8.0 About page incorrectly directs desktop users to `agentnet update`;
 use a desktop package instead. If its **What's new** link does nothing, open
-[the release page](https://github.com/misunders2d/agentnet/releases/tag/v0.8.16) directly.
+[the release page](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22) directly.
 
 The [complete update/recovery guide](docs/revival/INSTALL.md#updating-and-downgrading)
 covers backups, package handling, managed commands, relay upgrades and rollback.
@@ -418,7 +494,7 @@ agentnet hub restore --from hub-backup.tgz --data /var/lib/agentnet-restored
 
 # From an enrolled admin device: recommend a client release separately.
 agentnet admin release show
-agentnet admin release set --url https://github.com/misunders2d/agentnet/releases/tag/v0.8.16 v0.8.16
+agentnet admin release set --url https://github.com/misunders2d/agentnet/releases/tag/v0.8.22 v0.8.22
 ```
 
 A server-hosted company agent is an ordinary member with its own separate
@@ -474,6 +550,8 @@ trustworthy or every optional feature is available on every platform.
 | `internal/ui`, `internal/ui/static` | UI host, local APIs, browser device engine and skin loader |
 | `internal/ui/web`, `internal/ui/skins` | Portable interface packages |
 | `internal/a2abind`, `itest` | A2A adapter and separate-process integration journeys |
+
+![AgentNet network: your agent, the encrypted relay and a colleague's agent, with optional direct delivery](docs/revival/readme-assets/architecture.svg)
 
 Devices sign with Ed25519 and encrypt message/attachment content with age.
 Invitations grant membership; signed, verified person rosters bind devices.
@@ -544,8 +622,39 @@ contributors as described in AGENTS.md. Licensed under [Apache 2.0](LICENSE).
 
 </details>
 
+<a id="current-release-evidence"></a>
+
 <details>
-<summary><strong>v0.8.16 release evidence and known limits</strong></summary>
+<summary><strong>v0.8.22 release evidence and known limits</strong></summary>
+
+Published October 11, 2026 at **16:41:57 UTC** from
+`375ba6b1b9052bed82660456a8983070044f026d`. Android recovers after resume,
+network changes and dead connections, with saved-message retry inside the chat.
+The device-link refusal/expiry race is repaired without weakening revocation.
+
+**Qualification:** composed client/UI races, affected native Linux/macOS/Windows
+checks, real mixed-version delivery, container and rendered checks passed.
+All thirteen release assets match GitHub digests; all twelve payload entries
+match SHA256SUMS. The exact signed APK passed in-place emulator upgrade and
+warm/cold preservation of 203 messages, queued sends, attachment, draft,
+identity and origin. These are automated/emulator results, not proof of the
+owner's physical-phone latency or complete history convergence.
+[The release record](docs/plans/V0_8_22.md) preserves exact evidence and limits.
+
+MEL-504 (native permission inheritance) and MEL-604 (own-history peer mismatch
+rejecting valid replies) block the **next** release; neither is claimed repaired.
+Physical-phone latency/history, the profile-picture restore allowlist (MEL-601),
+and updater/cache follow-ups remain open. Desktop installers remain unsigned;
+the Android preview is signed. Interactive Windows/macOS installation and
+physical Android behavior remain unverified. Keep source devices online for
+retained history/files and upgrade in place, without resetting or relinking.
+See [the handoff](docs/HANDOFF.md) for current status; older sections below are
+historical evidence, not current qualification.
+
+</details>
+
+<details>
+<summary><strong>Historical v0.8.16 release evidence and known limits</strong></summary>
 
 Published October 10, 2026 from `45e38feea7b7e7ae9454247b2fdda28b362ceea6`.
 Saved chats open before additional workspaces reconnect. Fresh verified replies
