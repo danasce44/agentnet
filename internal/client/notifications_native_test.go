@@ -63,3 +63,30 @@ func TestHumanOnlyReviewAttentionUsesChanges(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestWorkerStartupReviewUsesRunNativeNotifier(t *testing.T) {
+	w := newWorld(t, "")
+	desktop := fakeNotify(w.bob)
+	id := protocol.NewID()
+	if _, err := w.bob.store.db.Exec(`INSERT INTO inbox(id,sender,ts,kind,body,received_at,state,verified_by) VALUES(?,?,?,?,?,?,?,?)`, id, w.alice.Address, 1, envelope.KindQuestion, "PRIVATE", 1, stateHeld, w.alice.Self().Fingerprint()); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var got []string
+	stop, _ := runWith(t, w, w.bob, RunOptions{Notify: func(fragment string) {
+		mu.Lock()
+		got = append(got, fragment)
+		mu.Unlock()
+	}})
+	eventually(t, "startup held review uses native notifier", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got) == 1
+	})
+	stop()
+	mu.Lock()
+	defer mu.Unlock()
+	if got[0] != "msg="+id+"&dir=in" || desktop.count() != 0 {
+		t.Fatalf("startup review routes=%v desktop=%d", got, desktop.count())
+	}
+}

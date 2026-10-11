@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/misunders2d/agentnet/internal/secfile"
 	"github.com/misunders2d/agentnet/internal/ui"
 )
 
@@ -161,7 +162,7 @@ func TestAppWorkspaceIsolationAndReconnect(t *testing.T) {
 	other.Close()
 	id := strings.Repeat("a", 32)
 	secondHome := filepath.Join(home, "workspaces", id)
-	if e := os.MkdirAll(secondHome, 0700); e != nil {
+	if e := secfile.EnsureDir(secondHome); e != nil {
 		t.Fatal(e)
 	}
 	for _, name := range []string{"identity.json", "agent.db"} {
@@ -169,7 +170,7 @@ func TestAppWorkspaceIsolationAndReconnect(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if e = os.WriteFile(filepath.Join(secondHome, name), data, 0600); e != nil {
+		if e = secfile.Write(filepath.Join(secondHome, name), data); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -186,7 +187,7 @@ func TestAppWorkspaceIsolationAndReconnect(t *testing.T) {
 		Version int                `json:"version"`
 		Items   []client.Workspace `json:"items"`
 	}{1, entries})
-	if e = os.WriteFile(filepath.Join(home, "workspaces.json"), data, 0600); e != nil {
+	if e = secfile.Write(filepath.Join(home, "workspaces.json"), data); e != nil {
 		t.Fatal(e)
 	}
 	a, e := OpenApp(home, 0)

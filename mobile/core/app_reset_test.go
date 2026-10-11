@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func TestMobileSetAsidePreservesWholeHome(t *testing.T) {
 		t.Fatal(e)
 	}
 	info, e := os.Stat(backup)
-	if e != nil || info.Mode().Perm() != 0700 {
+	if e != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0700) {
 		t.Fatal("backup permissions", e)
 	}
 	for _, name := range []string{"identity.json", "agent.db", "agent.db-wal", "workspaces.json", "workspaces/other/identity.json"} {
@@ -41,6 +42,9 @@ func TestMobileSetAsidePreservesWholeHome(t *testing.T) {
 	}
 }
 func TestAppExplicitIncompleteResetKeepsOrigin(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Android/POSIX reset renames a directory containing an open daemon lock; the mobile host is not shipped on Windows")
+	}
 	home := filepath.Join(t.TempDir(), "mobile")
 	if e := os.Mkdir(home, 0700); e != nil {
 		t.Fatal(e)
@@ -98,6 +102,9 @@ func TestAppResetRefusesEnrolledOrDamagedHome(t *testing.T) {
 }
 
 func TestAppEndedResetPreservesHistoryAndWorkspaces(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Android/POSIX reset renames a directory containing an open daemon lock; the mobile host is not shipped on Windows")
+	}
 	s, home := fixture(t)
 	s.Close()
 	db, e := sql.Open("sqlite", filepath.Join(home, "agent.db"))
