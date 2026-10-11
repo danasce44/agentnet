@@ -1,10 +1,18 @@
-# AgentNet v0.8.19 — Android release integration in progress
+# AgentNet v0.8.19 — published; physical-phone verification remains
 
-Sergey requires the next Android APK to be built by tag CI, published with
-SHA256SUMS, and downloadable through a working native Update action. Root owns
-integration and release; the Android helpers own bounded native/UI changes.
-[V0_8_19.md](plans/V0_8_19.md) records the gates. Do not treat a local APK as
-completion. Preserve the original preview package/signing key and existing data.
+[v0.8.19](https://github.com/misunders2d/agentnet/releases/tag/v0.8.19) published
+October 11 at **08:33:39 UTC**; existing relay verified **08:37:03 UTC**.
+[The full record](plans/V0_8_19.md) covers qualified source, all thirteen assets,
+Android in-place data preservation, native update check and MEL-594's corrected
+history direction, including existing saved copies. Root main is integrated.
+
+Next: owner phone verification of the published APK, prompt fresh replies and
+history convergence. Keep MEL-546/558 open. Investigate the public loader.js
+four-hour cache header recorded in MEL-551; served bytes currently match the
+release, and no CDN configuration was changed during deployment. Do not
+reset/relink/purge or replay tasks. Existing old previews install the APK over
+their app once; clients otherwise use their own update controls. No new feature
+batch is assigned here.
 
 ## v0.8.18 — published; physical-phone verification remains
 

@@ -2,8 +2,8 @@
 
 ## v0.8.19 release integration — October 11
 
-The owner now requires Android to ship in normal releases. This branch is being
-integrated into main; [V0_8_19.md](V0_8_19.md) owns the current release checklist.
+The owner requires Android to ship in normal releases. v0.8.19 is published
+and this branch is integrated into main; [V0_8_19.md](V0_8_19.md) owns the current release checklist.
 `release.yml` requires the Android job before creating a draft. Its
 `AgentNet-android.apk` is signed with the original preview key, covered by the
 release SHA256SUMS, and built from the exact tagged Go core and bundled Comic UI.

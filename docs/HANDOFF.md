@@ -9,21 +9,32 @@ section at release; keep detailed verification and remaining work here.
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))
 was taken over by Claude and shipped as v0.8.17 below.
 
-## Active — v0.8.19 Android release integration
+## Current published release — v0.8.19, October 11, 2026 (UTC)
 
-Sergey requires the Android APK to ship through normal tag CI and GitHub release
-assets, with SHA256SUMS and a working Update action. Implementation is in
-`feat/native-android`, based on the published v0.8.18 core; not yet released.
-Final source `c50bb371` is qualified, including the MEL-594 follow-up direction
-fix and existing-row read correction. The last exact client race selection
-passed in 536.773s. Release tag `v0.8.19` points to
-`2a71b98d35ba8157e7c06f286bd556f40ee40a8d`; packaging and artifact verification
-remain before publication. This main-only documentation record avoids starting
-a redundant full suite after the completed composed qualification.
-See [V0_8_19.md](plans/V0_8_19.md) for scope, ownership and remaining gates.
-The original preview signing key and package must be preserved for updates.
+[Download v0.8.19](https://github.com/misunders2d/agentnet/releases/tag/v0.8.19).
+Published **08:33:39 UTC**, tag `2a71b98d35ba8157e7c06f286bd556f40ee40a8d`,
+above qualified application source `c50bb371`. Android is integrated into main
+and every tagged release: the original signed preview APK is one of thirteen
+verified release assets, covered by SHA256SUMS. Its native update controls work;
+old previews need one manual in-place installation without uninstalling/relinking.
+MEL-594 corrects copied follow-up questions/tasks and existing saved views that
+incorrectly appeared incoming. A lost final review wake is also fixed.
 
-## Current published release — v0.8.18, October 10, 2026 (UTC)
+All composed source gates, exact remaining client race selection (536.773s),
+focused native Linux/macOS/Windows and Android CGo checks pass. All six packaging
+jobs passed. The tag-built APK preserved all 203 fixture messages and existing
+identity/data; its real native Check for updates recognizes published v0.8.19.
+[The release record](plans/V0_8_19.md) contains exact hashes, tests and limitations.
+
+Existing relay `agentnet-revived:v0.8.19-2a71b98d` started **08:34:29 UTC**, verified
+**08:37:03 UTC** after a stopped-state backup. Original realm, volume, port and
+neighbor remain unchanged; all twelve browser hashes match. The verifier's
+loader.js no-cache assertion failed on a public `max-age=14400` header with the
+correct bytes; read-only completion checks passed. That cache-policy follow-up
+is recorded in MEL-551. No client/grant/task/session was manually changed.
+MEL-546/558 remain open for the owner's physical-phone outcomes.
+
+## Previous release — v0.8.18, October 10, 2026 (UTC)
 
 [Download v0.8.18](https://github.com/misunders2d/agentnet/releases/tag/v0.8.18).
 Published at **21:29:14 UTC** from tag
