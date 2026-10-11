@@ -16,7 +16,10 @@ assets, with SHA256SUMS and a working Update action. Implementation is in
 `feat/native-android`, based on the published v0.8.18 core; not yet released.
 Final source `c50bb371` is qualified, including the MEL-594 follow-up direction
 fix and existing-row read correction. The last exact client race selection
-passed in 536.773s; tag packaging and artifact verification remain.
+passed in 536.773s. Release tag `v0.8.19` points to
+`2a71b98d35ba8157e7c06f286bd556f40ee40a8d`; packaging and artifact verification
+remain before publication. This main-only documentation record avoids starting
+a redundant full suite after the completed composed qualification.
 See [V0_8_19.md](plans/V0_8_19.md) for scope, ownership and remaining gates.
 The original preview signing key and package must be preserved for updates.
 
