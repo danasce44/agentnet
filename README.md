@@ -318,6 +318,12 @@ agentnet reply QUESTION_ID "Use the latest approved stock report."
 | Task | Requires acceptance or a local standing task grant for the verified person/exact device key. A model's suggestion, received text or display name grants nothing. |
 | Follow-up summary | `--follow-up` asks the local responder to summarize the first correlated reply. It does not send that summary back or start an agent loop. |
 
+Your current verified personal devices can ask your own agent questions without
+another AgentNet approval. Their signed human-device identity and trusted keys
+are checked again before execution; agent hosts and removed devices do not get
+this right. Existing never-run held own-human questions can proceed after update.
+Completed work, failed/interrupted work and copied history never rerun.
+
 `agentnet approve PERSON` permits eligible future questions; `approve --tasks`
 is a distinct grant for tasks. `agentnet approvals` lists grants, and
 `unapprove` / `unapprove --tasks` removes them. An already held question may

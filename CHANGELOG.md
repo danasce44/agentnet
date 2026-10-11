@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+## [0.8.20] — 2026-10-11
+
 - Answer questions from your verified personal devices without another AgentNet
   approval. Already-delivered questions that never ran can proceed after update;
   completed work and copied history never run again. Human requesters appear as

@@ -1,5 +1,22 @@
 # AgentNet Revival — Architectural Decision Records & Linear Roadmap
 
+## October 11, 2026 — own-human questions and permanent offboarding
+
+The owner restated that their current verified human devices are them: direct
+questions from those exact keys need no second AgentNet approval, even when a
+redundant saved question grant is absent. Eligibility requires the current signed
+own-human roster, matching trusted public keys and no revocation/conflict. It
+does not authorize agent-host keys, removed devices or replay of old completed,
+failed, interrupted or copied requests. Native harness permissions are unchanged.
+Tasks retain their existing standing grants and exact acceptance rules.
+
+Permanent recipient removal ends impossible copies; ordinary offline or outdated
+devices retain resumable delivery. The owner chose delivery of ordinary messages
+and terminal replies that the relay accepted before sender removal. Relay-bound
+provenance permits those retained records only; it grants no new execution or
+control authority. Exact revoked hosts lose obsolete pending actions while their
+original records stay available. See [V0_8_20.md](plans/V0_8_20.md) for verification.
+
 ## October 10, 2026 — v0.8.18 linked-device catch-up
 
 The owner's rule is that history sync must not obstruct live communication.

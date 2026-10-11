@@ -9,8 +9,10 @@ section at release; keep detailed verification and remaining work here.
 The owner made **MEL-600** a v0.8.20 publication blocker: permanent relay
 offboarding must settle impossible delivery, not merely remove a group member.
 Native, browser and Hub lifecycle changes pass composed client, Hub and itest
-qualification. Final UI corrections and the owner-reported own-human question
-approval fix are in qualification. Exact-device and
+qualification. Final UI corrections, the owner-reported own-human question
+approval fix and the remote running-report correction are qualified, with
+focused native checks on Linux, macOS and Windows. Tag packaging and verified
+publication/deployment remain. Exact-device and
 whole-person revocation, retained authoritative receipts, admission races,
 obsolete sync producers and restart recovery are covered; offline/outdated
 devices retain resumable copies. [V0_8_20.md](plans/V0_8_20.md) is the current
