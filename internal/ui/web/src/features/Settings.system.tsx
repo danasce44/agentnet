@@ -296,7 +296,7 @@ export function AboutSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingEle
         {o?.release ? (
           <Card tone="agent" className="p-4">
             <p className="font-display text-[20px] font-bold leading-tight">Version {o.release} is out</p>
-            <p className="mt-1 text-[15px] text-text-2">Your server recommends it. Use Update AgentNet below in the desktop app.</p>
+            <p className="mt-1 text-[15px] text-text-2">{store.host.platform === "android" ? "Your server recommends it. Use Update AgentNet below to open Android’s installer." : "Your server recommends it. Use Update AgentNet below in the desktop app."}</p>
             <a href="https://github.com/misunders2d/agentnet/releases" target="_blank" rel="noopener noreferrer"
               className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full stroke bg-surface px-4 font-semibold hover:bg-sunken">What’s new<IconArrowUpRight size={18} aria-hidden="true" /></a>
           </Card>

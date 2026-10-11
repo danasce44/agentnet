@@ -1,4 +1,4 @@
-// Desktop-only actions use the shell's host methods, never membership APIs.
+// Installed-app actions use the shell's host methods, never membership APIs.
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../context";
 import { errorText } from "../api";
@@ -9,6 +9,8 @@ import { Confirm } from "./Message.actions";
 
 export function AppControls({ command = false }: { command?: boolean }) {
   const store = useApp(), host = store.host;
+  const android = host.platform === "android";
+  const supportedHost = host.platform === "daemon" || android;
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
   const [replace, setReplace] = useState(false);
@@ -19,17 +21,34 @@ export function AppControls({ command = false }: { command?: boolean }) {
   useEffect(() => {
     checkGeneration.current++;
     setChecked(null); setChecking(false); setCheckError("");
-    if (host.platform !== "daemon") return;
+    if (!supportedHost || (android && command)) return;
     let alive = true;
-    host.appStatus?.().then((v) => { if (alive) setStatus(v); }, (e) => {
-      if (!alive) return;
-      if (/404|not found/i.test(errorText(e))) setUnavailable(true);
-      else setError(errorText(e));
-    });
-    return () => { alive = false; checkGeneration.current++; };
+    let generation = 0;
+    const refresh = () => {
+      const request = ++generation;
+      const current = () => alive && request === generation && store.isActive();
+      host.appStatus?.().then((v) => {
+        if (!current()) return;
+        setStatus(v); setUnavailable(false); setError("");
+        if (android && v.update_result) setMessage("");
+      }, (e) => {
+        if (!current()) return;
+        if (/404|not found/i.test(errorText(e))) setUnavailable(true);
+        else setError(errorText(e));
+      });
+    };
+    const visible = () => {
+      if ((window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible !== false) refresh();
+    };
+    refresh();
+    if (android) document.addEventListener("agentnet-native-visibility", visible);
+    return () => {
+      alive = false; generation++; checkGeneration.current++;
+      document.removeEventListener("agentnet-native-visibility", visible);
+    };
   }, [host, command]);
   const check = async () => {
-    if (checking || busy || !host.appCheckUpdate || host.platform !== "daemon") return;
+    if (checking || busy || !host.appCheckUpdate || !supportedHost) return;
     const generation = ++checkGeneration.current;
     const current = () => generation === checkGeneration.current && store.isActive();
     setChecking(true); setChecked(null); setCheckError("");
@@ -39,19 +58,19 @@ export function AppControls({ command = false }: { command?: boolean }) {
   };
   const act = async (command: boolean) => {
     if (busy) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setMessage("");
     try {
       if (command) { const v = await host.appReplaceCommand?.(); if (v && store.isActive()) setStatus((previous) => previous ? { ...previous, ...v } : previous); }
       else { const v = await host.appUpdate?.(); if (v && store.isActive()) setMessage(v.message); }
     } catch (e) { if (store.isActive()) setError(errorText(e)); }
     finally { if (store.isActive()) setBusy(false); }
   };
-  if (host.platform !== "daemon") return null;
+  if (!supportedHost || (android && command)) return null;
   if (!status) {
     if (unavailable) return <Card className="space-y-2 p-4">
-      <h3 className="font-bold">{command ? "AgentNet command for your tools" : "Update this computer"}</h3>
+      <h3 className="font-bold">{command ? "AgentNet command for your tools" : android ? "Update this phone" : "Update this computer"}</h3>
       {!command && <Button variant="act" disabled>Update AgentNet</Button>}
-      <Hint>This page does not expose the app’s update controls. If a separately managed daemon owns this home, stop it when idle using its normal service manager, then reopen the installed AgentNet app to update.</Hint>
+      <Hint>{android ? "This Android app does not expose update controls. Install the newer APK over this app to keep your chats and identity. Do not uninstall it." : "This page does not expose the app’s update controls. If a separately managed daemon owns this home, stop it when idle using its normal service manager, then reopen the installed AgentNet app to update."}</Hint>
     </Card>;
     return error ? <p role="alert" className="text-danger">{error}</p> : null;
   }
@@ -71,8 +90,8 @@ export function AppControls({ command = false }: { command?: boolean }) {
       {available ? <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 aria-live="polite" className="font-display text-[24px] font-extrabold leading-tight">Version {available} is available.</h3>
         {update}
-      </div> : <h3 className="font-bold">Update this computer</h3>}
-      <p>The app, its AgentNet command and connected tools update together. The app restarts when ready.</p>
+      </div> : <h3 className="font-bold">{android ? "Update this phone" : "Update this computer"}</h3>}
+      <p>{android ? "AgentNet checks the release APK before opening Android’s installer. Install it over this app to keep your chats and identity. Do not uninstall it." : "The app, its AgentNet command and connected tools update together. The app restarts when ready."}</p>
       <Hint>Installed app: {status.version}.</Hint>
       <div className="flex flex-wrap gap-3">
         {host.appCheckUpdate && <Button disabled={checking || busy} onClick={() => void check()}>{checking ? "Checking…" : "Check for updates"}</Button>}
@@ -81,8 +100,8 @@ export function AppControls({ command = false }: { command?: boolean }) {
       {checked && !available && <p role="status">{checked.state === "current" ? `This app matches the latest stable release (${checked.latest}).` :
           `This app (${checked.version}) is ahead of the latest stable release (${checked.latest}).`}</p>}
       {checkError && <p role="alert" className="text-danger">{checkError}</p>}
-      {!status.app_update_supported && <Hint>{status.problem || "This installation is updated by its package manager."}</Hint>}
-      {message ? <p role="status">{message}</p> : status.update_result && (available ?
+      {!status.app_update_supported && <Hint>{status.problem || (android ? "Updates are unavailable in this installation." : "This installation is updated by its package manager.")}</Hint>}
+      {message ? <p role="status">{message}</p> : status.update_result && (available && !android ?
         <Hint>Last update: {status.update_result}</Hint> : <p role="status">{status.update_result}</p>)}
     </>}
     {error && <p role="alert" className="text-danger">{error}</p>}

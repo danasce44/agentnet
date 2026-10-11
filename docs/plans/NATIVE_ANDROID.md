@@ -1,5 +1,30 @@
 # Native Android development
 
+## v0.8.19 release integration — October 11
+
+The owner now requires Android to ship in normal releases. This branch is being
+integrated into main; [V0_8_19.md](V0_8_19.md) owns the current release checklist.
+`release.yml` requires the Android job before creating a draft. Its
+`AgentNet-android.apk` is signed with the original preview key, covered by the
+release SHA256SUMS, and built from the exact tagged Go core and bundled Comic UI.
+The old local previews below remain historical evidence, not current delivery.
+
+Build the same package locally with `VERSION=v0.8.19
+AGENTNET_PREVIEW_KEYSTORE=/private/path/to/original.keystore
+mobile/android/scripts/build-release.sh` (one command, with the environment
+assignments before the script). The explicit release version and original key
+are mandatory. CI stores the key in the repository's encrypted
+`ANDROID_PREVIEW_KEYSTORE_BASE64` Actions secret. Never commit or print its value.
+The script verifies the original certificate, package/version, both ABIs and
+16KiB alignment before copying the sole APK to `dist/AgentNet-android.apk`.
+
+The GitHub preview uses Android's PackageInstaller after fixed-origin download,
+checksum and APK validation. `previewRelease` is not debuggable and preserves
+the `.preview` identity. Installer permission and self-update are excluded from
+the ordinary release variant; a future Play build must use Play distribution.
+No Play publication is claimed. An old preview with the broken desktop-only
+Update route needs one manual in-place installation, then native updates work.
+
 ## Owner correction — current app is the minimum, October 10
 
 The owner rejected the preview's primitive presentation and reduced feature set.

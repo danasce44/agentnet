@@ -13,6 +13,24 @@ const document = {addEventListener:(name,fn)=>events.set(name,fn)};
 runInNewContext(script, {window,document,location:{origin:'http://127.0.0.1:40000'},HTMLAnchorElement:Anchor,
  Uint8Array, btoa:s=>Buffer.from(s,'binary').toString('base64'), fetch:async()=>({ok:true,blob:async()=>new Blob(['x'.repeat(66000)])})});
 assert.equal(window.__agentnetPlatform, 'android');
+for (const [action,result] of [['status',{version:'v0.8.17',app_update_supported:true}],['check',{state:'available',latest:'v0.8.18'}],['update',{state:'installer',message:'Android installer opened.'}]]) {
+ const pending=window.__agentnetNativeAppJSON(action,action==='update'?{}:undefined);
+ assert.equal(sent.at(-1).type,'app:'+action);
+ assert.deepEqual(Object.keys(sent.at(-1)).sort(),['id','type'],'native owns installation selection');
+ bridge.onmessage({data:JSON.stringify({id:sent.at(-1).id,ok:true,result})});
+ assert.deepEqual(JSON.parse(JSON.stringify(await pending)),result);
+}
+const beforeInvalid=sent.length;
+await assert.rejects(window.__agentnetNativeAppJSON('cli'),/Unsupported/);
+for (const body of [{url:'https://attacker.test/update.apk'},{path:'/data/foreign.apk'},{version:'v99.0.0'},null,[],'']) {
+ await assert.rejects(window.__agentnetNativeAppJSON('update',body),/installation options/);
+}
+assert.equal(sent.length,beforeInvalid,'invalid app actions never reach native');
+const updateFailure=window.__agentnetNativeAppJSON('update',{});
+bridge.onmessage({data:JSON.stringify({id:sent.at(-1).id,ok:false,error:'Release APK is unavailable. Try again later.'})});
+await assert.rejects(updateFailure,/APK is unavailable/);
+// Keep the existing exact-correlation assertions independent of added calls.
+sent.length=0;
 const first=window.__agentnetAndroid.connection(), second=window.__agentnetAndroid.notificationStatus();
 bridge.onmessage({data:JSON.stringify({id:sent[1].id,ok:true,granted:true})});
 assert.equal((await second).granted,true);

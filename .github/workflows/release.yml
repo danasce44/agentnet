@@ -1,6 +1,6 @@
 name: release
 # A tag vX.Y.Z makes a DRAFT release with the agentnet program for every
-# system (scripts/build.sh), the AgentNet app's installers (desktop.yml)
+# system (scripts/build.sh), desktop installers (desktop.yml), the Android APK
 # and one SHA256SUMS over all of them. The owner checks and publishes it;
 # the relay's "Get AgentNet" links work once it is published.
 on:
@@ -27,8 +27,46 @@ jobs:
           path: dist/agentnet-*
           if-no-files-found: error
           retention-days: 7
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+      - name: pinned Android toolchain
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+      - name: build and verify signed Android preview
+        env:
+          VERSION: ${{ github.ref_name }}
+          AGENTNET_PREVIEW_KEYSTORE_BASE64: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_BASE64 }}
+          GOMAXPROCS: '2'
+        run: |
+          set -euo pipefail
+          umask 077
+          export AGENTNET_PREVIEW_KEYSTORE="$RUNNER_TEMP/agentnet-preview.keystore"
+          trap 'rm -f "$AGENTNET_PREVIEW_KEYSTORE"' EXIT
+          test -n "$AGENTNET_PREVIEW_KEYSTORE_BASE64"
+          printf '%s' "$AGENTNET_PREVIEW_KEYSTORE_BASE64" | base64 --decode > "$AGENTNET_PREVIEW_KEYSTORE"
+          unset AGENTNET_PREVIEW_KEYSTORE_BASE64
+          mobile/android/scripts/build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentnet-app-Android
+          path: dist/AgentNet-android.apk
+          if-no-files-found: error
+          retention-days: 7
   draft:
-    needs: [app, program]
+    needs: [app, program, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write # this job only: it creates the draft release
@@ -43,4 +81,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes "AgentNet $TAG. The AgentNet app (installers are not signed) and the agentnet program for agents and servers; check files against SHA256SUMS." files/*
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes "AgentNet $TAG. Desktop installers, the signed Android preview APK, and the agentnet program for agents and servers. Check all files against SHA256SUMS. Desktop installers are not signed; the Android preview preserves its existing signing key." files/*

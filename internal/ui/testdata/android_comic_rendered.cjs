@@ -7,10 +7,26 @@ const fs = require('node:fs');
     for (const width of [390, 320]) {
       const context = await browser.newContext({viewport:{width,height:844},colorScheme:'light',isMobile:true,hasTouch:true});
       const page = await context.newPage();
-      const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+      const errors=[], appHTTP=[];page.on('pageerror',e=>errors.push(String(e)));
+      page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/app/'))appHTTP.push(request.url());});
       await page.addInitScript(() => {
+        window.androidAppCalls=[];
+        window.androidUpdateResult='';
+        let updateCalls=0;
         window.AgentNetAndroid = { postMessage(raw) {
           const request=JSON.parse(raw);
+          if (request.type.startsWith('app:')) {
+            window.androidAppCalls.push(request.type);
+            let result;
+            if(request.type==='app:status') result={version:'v0.8.17',app_update_supported:true,update_result:window.androidUpdateResult};
+            if(request.type==='app:check') result={state:'available',version:'v0.8.17',latest:'v0.8.18'};
+            if(request.type==='app:update') {
+              updateCalls++;
+              if(updateCalls===1) {queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:false,error:'Release APK is unavailable. Try again later.'})}));return;}
+              result={state:'installer',message:'Android installer opened.'};
+            }
+            queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,result})}));return;
+          }
           queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,enabled:false,granted:true,drafts:[]})}));
         }};
       });
@@ -61,6 +77,25 @@ const fs = require('node:fs');
       // The actual mobile tab navigation, without a replacement Kotlin menu.
       const nav=page.locator('nav').filter({has:page.getByRole('button',{name:'You',exact:true})}).last();
       await nav.getByRole('button',{name:'You',exact:true}).click();
+      await page.getByRole('button',{name:/About/}).first().click();
+      await page.getByRole('heading',{name:'Update this phone',exact:true}).waitFor();
+      await page.getByRole('button',{name:'Check for updates',exact:true}).click();
+      await page.getByRole('heading',{name:'Version v0.8.18 is available.',exact:true}).waitFor();
+      await page.getByRole('button',{name:'Update AgentNet',exact:true}).click();
+      await page.getByRole('alert').filter({hasText:'Release APK is unavailable.'}).waitFor();
+      await page.getByRole('button',{name:'Update AgentNet',exact:true}).click();
+      await page.getByText('Android installer opened.',{exact:true}).waitFor();
+      await page.evaluate(()=>{
+        window.androidUpdateResult='Installation canceled. You can try again.';
+        window.agentnetNativeVisibility(true);
+      });
+      await page.getByText('Installation canceled. You can try again.',{exact:true}).waitFor();
+      assert.equal(await page.getByText('Android installer opened.',{exact:true}).count(),0);
+      assert.equal(await page.getByText('AgentNet command for your tools',{exact:true}).count(),0);
+      assert.deepEqual(await page.evaluate(()=>window.androidAppCalls),['app:status','app:check','app:update','app:update','app:status']);
+      assert.deepEqual(appHTTP,[],'Android updates must not call the absent desktop HTTP routes');
+      await fits('About native update failure and retry'); await snap('about-update');
+      await back();
       await page.getByRole('button',{name:/Notifications/}).first().click();
       await page.getByText('Stay connected in the background',{exact:true}).waitFor();
       await snap('notifications'); await fits('notifications');
@@ -86,6 +121,31 @@ const fs = require('node:fs');
       await page.locator('section[aria-label="Chats"]').waitFor();
       await snap('dark-chats'); await fits('dark chats');
       assert.equal(await page.evaluate(()=>window.agentnetNativeBack()),false);
+
+      // A suspended old APK offers the same native action from the banner,
+      // and final installer feedback remains visible without navigation.
+      await context.route('**/api/overview*', async route => {
+        const response=await route.fetch(), value=await response.json();
+        value.app=true; value.update_required={latest:'v0.8.18'};
+        await route.fulfill({response,json:value});
+      });
+      await page.reload();
+      await page.getByText('Update AgentNet to v0.8.18 to continue',{exact:true}).waitFor();
+      const updateNow=page.getByRole('button',{name:'Update now',exact:true});
+      await updateNow.click();
+      await page.getByText('Release APK is unavailable. Try again later.',{exact:true}).waitFor();
+      await updateNow.click();
+      await page.getByText('Android installer opened.',{exact:true}).waitFor();
+      await page.evaluate(()=>{
+        window.androidUpdateResult='Installation canceled. You can try again.';
+        window.agentnetNativeVisibility(true);
+      });
+      await page.getByText('Installation canceled. You can try again.',{exact:true}).waitFor();
+      assert.equal(await updateNow.isEnabled(),true,'canceled installation remains retryable');
+      assert.equal(await page.getByText('Android installer opened.',{exact:true}).count(),0);
+      assert.deepEqual(appHTTP,[]);
+      await fits('required update native result'); await snap('required-update');
+      await context.unroute('**/api/overview*');
 
       // The native page stays available when its relay loop has stopped.
       // Project that failure honestly, and name the exact copied-link source.

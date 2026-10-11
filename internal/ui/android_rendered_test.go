@@ -1,11 +1,9 @@
 package ui
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
@@ -23,12 +21,12 @@ func TestAndroidComicRendered(t *testing.T) {
 	if _, err := f.NewDM("vitalii/laptop"); err != nil {
 		t.Fatal(err)
 	}
-	var page http.Handler
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { page.ServeHTTP(w, r) }))
+	ts := httptest.NewUnstartedServer(nil)
 	defer ts.Close()
-	s := New(f, strings.TrimPrefix(ts.URL, "http://"), testToken)
+	s := New(f, ts.Listener.Addr().String(), testToken)
 	s.SetMobile()
-	page = s.Handler()
+	ts.Config.Handler = s.Handler()
+	ts.Start()
 	cmd := exec.CommandContext(t.Context(), "node", "testdata/android_comic_rendered.cjs", ts.URL+"/?t="+testToken)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

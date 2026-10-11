@@ -9,6 +9,14 @@ section at release; keep detailed verification and remaining work here.
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))
 was taken over by Claude and shipped as v0.8.17 below.
 
+## Active — v0.8.19 Android release integration
+
+Sergey requires the Android APK to ship through normal tag CI and GitHub release
+assets, with SHA256SUMS and a working Update action. Implementation is in
+`feat/native-android`, based on the published v0.8.18 core; not yet released.
+See [V0_8_19.md](plans/V0_8_19.md) for scope, ownership and remaining gates.
+The original preview signing key and package must be preserved for updates.
+
 ## Current published release — v0.8.18, October 10, 2026 (UTC)
 
 [Download v0.8.18](https://github.com/misunders2d/agentnet/releases/tag/v0.8.18).

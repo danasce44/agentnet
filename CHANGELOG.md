@@ -6,6 +6,13 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Include the native Android preview in tagged releases as a signed APK with
+  SHA256SUMS, using the same Comic interface and Go messaging core. Updates keep
+  the preview's existing identity and local data.
+- Android's Check for updates and Update actions use a native verified download
+  and Android's installation confirmation instead of a missing desktop API.
+  The APK must match the original signing key, package and exact newer release.
+
 ## [0.8.18] — 2026-10-10
 
 ### Changed

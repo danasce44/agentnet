@@ -1,4 +1,12 @@
-# AgentNet v0.8.18 — published; physical-phone verification remains
+# AgentNet v0.8.19 — Android release integration in progress
+
+Sergey requires the next Android APK to be built by tag CI, published with
+SHA256SUMS, and downloadable through a working native Update action. Root owns
+integration and release; the Android helpers own bounded native/UI changes.
+[V0_8_19.md](plans/V0_8_19.md) records the gates. Do not treat a local APK as
+completion. Preserve the original preview package/signing key and existing data.
+
+## v0.8.18 — published; physical-phone verification remains
 
 [v0.8.18](https://github.com/misunders2d/agentnet/releases/tag/v0.8.18) published
 October 10 at **21:29:14 UTC**, tag `35ce9190`, qualified source `484db3e7`.

@@ -45,6 +45,15 @@ class MainActivity : Activity() {
     private var resumed = false
     private var destroyed = false
     private var backPending = false
+    private val updater by lazy { NativeUpdater(this) }
+    private val updatePreferences by lazy { getSharedPreferences("native-update", MODE_PRIVATE) }
+    private val updateResultListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "result") runOnUiThread { if (resumed && !destroyed) applyVisibility() }
+    }
+    private val updates = Executors.newSingleThreadExecutor()
+    private val updateBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var pendingUpdate: NativeUpdater.Prepared? = null
+    private var updatePermissionReply: ((Boolean, String?) -> Unit)? = null
     private var scanReply: ((String?, String?) -> Unit)? = null
     private val files = Executors.newSingleThreadExecutor()
     private lateinit var exports: ExportTransfer
@@ -57,6 +66,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        updatePreferences.registerOnSharedPreferenceChangeListener(updateResultListener)
         if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(
             android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
@@ -79,9 +89,11 @@ class MainActivity : Activity() {
     override fun onPause() { resumed = false; applyVisibility(); web?.onPause(); super.onPause() }
     override fun onStop() { resumed = false; applyVisibility(); web?.visibility = View.INVISIBLE; host.foreground(false); super.onStop() }
     override fun onDestroy() {
-        destroyed = true; host.remove(observer)
+        destroyed = true; updatePreferences.unregisterOnSharedPreferenceChangeListener(updateResultListener); host.remove(observer)
         chosenFiles?.onReceiveValue(null); chosenFiles = null
         scanReply = null
+        pendingUpdate?.file?.delete(); pendingUpdate = null; updatePermissionReply = null
+        updates.shutdown()
         files.execute { exports.close() }; files.shutdown()
         web?.apply { stopLoading(); webChromeClient = null; removeAllViews(); destroy() }; web = null
         super.onDestroy()
@@ -216,6 +228,27 @@ class MainActivity : Activity() {
         }
         try {
             when (request.optString("type")) {
+                "app:status", "app:check", "app:update" -> {
+                    require(BuildConfig.SELF_UPDATE) { "This installation is updated through its app store." }
+                    require(request.keys().asSequence().all { it == "id" || it == "type" }) { "Update requests cannot select an installation source." }
+                    val action = request.getString("type")
+                    if (action == "app:status") { reply(JSONObject().put("result", updater.status())); return }
+                    require(resumed && updateBusy.compareAndSet(false, true)) { "An update operation is already active or the app is not visible." }
+                    updates.execute {
+                        try {
+                            if (action == "app:check") {
+                                reply(JSONObject().put("result", updater.check())); updateBusy.set(false)
+                            } else {
+                                val prepared = updater.prepare()
+                                runOnUiThread {
+                                    installPreparedUpdate(prepared) { result, error ->
+                                        reply(JSONObject().apply { if (result != null) put("result", result) }, error)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) { updateBusy.set(false); reply(error = e.message ?: "Could not check the official release. Try again.") }
+                    }
+                }
                 "qr:scan" -> {
                     require(resumed && scanReply == null)
                     if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
@@ -307,9 +340,48 @@ class MainActivity : Activity() {
             }
         } catch (_: Exception) { reply(error = "Invalid native request.") }
     }
+    /** Used only after the fixed-origin download passed checksum verification. */
+    private fun installPreparedUpdate(prepared: NativeUpdater.Prepared, done: (JSONObject?, String?) -> Unit) {
+        if (!BuildConfig.SELF_UPDATE || destroyed || !resumed) {
+            prepared.file.delete(); updateBusy.set(false); done(null, "Return to AgentNet and try the update again."); return
+        }
+        updateBusy.set(true)
+        fun install() {
+            updates.execute {
+                try {
+                    updater.install(prepared)
+                    done(JSONObject().put("state", "installer").put("message", "Confirm the update in Android’s package installer. Your messages and identity are kept."), null)
+                } catch (e: Exception) {
+                    prepared.file.delete(); done(null, e.message ?: "Android could not start the update. Try again.")
+                } finally { updateBusy.set(false) }
+            }
+        }
+        if (packageManager.canRequestPackageInstalls()) install()
+        else {
+            pendingUpdate = prepared
+            updatePermissionReply = { granted, error ->
+                pendingUpdate = null
+                if (granted) install()
+                else {
+                    prepared.file.delete(); updateBusy.set(false)
+                    done(null, error ?: "Installation permission was not granted. Your data was kept; you can try again.")
+                }
+            }
+            try { startActivityForResult(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")), INSTALL_PERMISSION) }
+            catch (_: Exception) {
+                val callback = updatePermissionReply; updatePermissionReply = null
+                callback?.invoke(false, "Android could not open installation permission settings.")
+            }
+        }
+    }
     @Deprecated("Platform result callback supports minSdk26")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == INSTALL_PERMISSION) {
+            val callback = updatePermissionReply; updatePermissionReply = null
+            callback?.invoke(packageManager.canRequestPackageInstalls(), null)
+            return
+        }
         if (requestCode == SCAN_QR) {
             val callback = scanReply; scanReply = null
             if (resultCode != RESULT_OK) {
@@ -347,5 +419,5 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, results)
         if (requestCode == NOTIFICATIONS) { val callback = permissionReply; permissionReply = null; callback?.invoke(permitted()) }
     }
-    companion object { private const val PICK_FILES = 10; private const val SAVE_FILE = 11; private const val NOTIFICATIONS = 12; private const val SCAN_QR = 13 }
+    companion object { private const val PICK_FILES = 10; private const val SAVE_FILE = 11; private const val NOTIFICATIONS = 12; private const val SCAN_QR = 13; private const val INSTALL_PERMISSION = 14 }
 }

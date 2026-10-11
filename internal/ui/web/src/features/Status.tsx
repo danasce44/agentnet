@@ -51,6 +51,21 @@ export function ConnectionBanner() {
 function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateRequiredView; app: boolean; reload: boolean; unsent: boolean }) {
   const store = useApp(), host = store.host;
   const [busy, setBusy] = useState(false), [note, setNote] = useState("");
+  useEffect(() => {
+    if (host.platform !== "android" || !host.appStatus) return;
+    let alive = true, generation = 0;
+    const visible = () => {
+      if ((window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible === false) return;
+      const request = ++generation;
+      host.appStatus!().then(result => {
+        if (alive && request === generation && store.isActive() && result.update_result) setNote(result.update_result);
+      }, error => {
+        if (alive && request === generation && store.isActive()) setNote(errorText(error));
+      });
+    };
+    document.addEventListener("agentnet-native-visibility", visible);
+    return () => { alive = false; generation++; document.removeEventListener("agentnet-native-visibility", visible); };
+  }, [host, store]);
   const browser = host.platform === "browser";
   const canUpdate = app && !browser && !!host.appUpdate;
   const update = async () => {

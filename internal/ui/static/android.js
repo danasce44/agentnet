@@ -22,6 +22,17 @@
     else pending.reject(new Error(reply.error || 'Android could not complete this action.'));
   };
   window.__agentnetPlatform = 'android';
+  // The shell alone chooses release, URL and installer file. This hook
+  // replaces the desktop-only HTTP route used by the shared loader.
+  window.__agentnetNativeAppJSON = async (action, body) => {
+    if (!['status', 'check', 'update'].includes(action)) throw new Error('Unsupported Android app action.');
+    if (body !== undefined && (body === null || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length)) {
+      throw new Error('Android updates do not accept caller-supplied installation options.');
+    }
+    const reply = await request('app:' + action);
+    if (!reply.result || typeof reply.result !== 'object' || Array.isArray(reply.result)) throw new Error('Android returned an invalid app result.');
+    return reply.result;
+  };
   window.__agentnetAndroid = Object.freeze({
     connection: () => request('connection:get'),
     setConnection: enabled => request('connection:set', { enabled: !!enabled }),
