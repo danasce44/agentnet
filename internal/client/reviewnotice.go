@@ -272,7 +272,7 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 		for _, it := range list {
 			listed[it.ID] = true
 			var n int
-			a.store.db.QueryRow(`SELECT count(*) FROM reported WHERE item = ? AND recipient = ?`, it.ID, to).Scan(&n)
+			a.store.db.QueryRow(`SELECT count(*) FROM reported WHERE item = ? AND recipient = ? AND sent_at>0`, it.ID, to).Scan(&n)
 			if n == 0 && current[to] && !a.reviewTried[to+"\x00"+it.ID] {
 				p.ids = append(p.ids, it.ID)
 			}
@@ -401,7 +401,7 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 			now := time.Now().Unix()
 			fresh := 0
 			for _, id := range ids {
-				res, err := tx.Exec(`INSERT OR IGNORE INTO reported(item, recipient, sent_at) VALUES(?, ?, ?)`, id, to, now)
+				res, err := tx.Exec(`INSERT INTO reported(item, recipient, sent_at) VALUES(?, ?, ?) ON CONFLICT(item,recipient) DO UPDATE SET sent_at=excluded.sent_at WHERE reported.sent_at=0`, id, to, now)
 				if err != nil {
 					return err
 				}

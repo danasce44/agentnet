@@ -74,6 +74,7 @@ func TestReviewAttentionCoalescesConcurrentRunWakes(t *testing.T) {
 }
 
 func TestReviewSnapshotRechecksChangeWhileSending(t *testing.T) {
+	t.Run("visibility_refresh_retains_settlement", testReviewVisibilityRefreshRetainsSettlement)
 	w := newWorld(t, "")
 	runWith(t, w, w.alice, RunOptions{})
 	waitHeadlessReviewCaps(t, w.alice)
@@ -260,5 +261,48 @@ func TestReviewNoticeCapabilitySelectsSettledReportFormat(t *testing.T) {
 	w.bob.sendReviewNotice(tctx(t))
 	if !noticeSettled(latest()) {
 		t.Fatal("signed capable reader did not get a structured empty snapshot")
+	}
+}
+
+func testReviewVisibilityRefreshRetainsSettlement(t *testing.T) {
+	w := newWorld(t, "")
+	runWith(t, w, w.alice, RunOptions{})
+	waitHeadlessReviewCaps(t, w.alice)
+	if err := w.bob.SetReviewTo(tctx(t), w.alice.Address); err != nil {
+		t.Fatal(err)
+	}
+	in := taskFrom(w.alice.Address, w.bob.Address)
+	in.Kind = envelope.KindQuestion
+	if err := w.bob.store.addInbox(in, w.alice.Self().Fingerprint()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.bob.store.db.Exec(`UPDATE inbox SET state='running',last_attempt_at=unixepoch() WHERE id=?`, in.ID); err != nil {
+		t.Fatal(err)
+	}
+	w.bob.sendReviewNotice(tctx(t))
+	var n int
+	if err := w.bob.store.db.QueryRow(`SELECT count(*) FROM reported WHERE item=? AND recipient=?`, in.ID, w.alice.Address).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("running recipient evidence %d %v", n, err)
+	}
+	if changed, err := w.bob.store.markRunVisibility(in.ID, false); err != nil || !changed {
+		t.Fatalf("visibility refresh %v %v", changed, err)
+	}
+	// Completion wins before the refresh pass: the prior recipient still needs
+	// a clear, even though no refreshed running snapshot is necessary anymore.
+	if _, err := w.bob.store.db.Exec(`UPDATE inbox SET state='answered' WHERE id=?`, in.ID); err != nil {
+		t.Fatal(err)
+	}
+	w.bob.NoteChange()
+	w.bob.sendReviewNotice(tctx(t))
+	var body string
+	if err := w.bob.store.db.QueryRow(`SELECT body FROM outbox WHERE status='review_notice' ORDER BY rowid DESC LIMIT 1`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !noticeSettled(body) {
+		t.Fatal("visibility refresh discarded recipient evidence; finished request left running report")
+	}
+	w.bob.sendReviewNotice(tctx(t))
+	if err := w.bob.store.db.QueryRow(`SELECT count(*) FROM outbox WHERE status='review_notice'`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("reports %d %v", n, err)
 	}
 }

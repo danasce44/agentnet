@@ -16,6 +16,8 @@ This record starts with v0.8.1; earlier releases remain on the
   already accepted from them. Stop recreating background history for removed devices,
   preserve proven receipts and original messages, and refuse unstarted requests
   from known revoked keys. Offline or outdated devices keep their resumable copies.
+- Clear a remote running card when the request finishes during a status
+  refresh. Keep the existing recipient record until its final snapshot is sent.
 - Remove obsolete Pending and Needs-you prompts for permanently removed hosts.
   Show **Host removed** and disable replies/proposal confirmation that cannot
   reach them, while retaining the original records and later accepted answers.

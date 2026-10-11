@@ -100,7 +100,9 @@ func (s *store) markRunVisibility(id string, stalled bool) (bool, error) {
 		return false, err
 	}
 	if n > 0 {
-		if _, err := tx.Exec(`DELETE FROM reported WHERE item=?`, id); err != nil {
+		// Keep who saw the running snapshot so completion can still settle it.
+		// Zero asks the next pass to refresh this recipient once.
+		if _, err := tx.Exec(`UPDATE reported SET sent_at=0 WHERE item=?`, id); err != nil {
 			return false, err
 		}
 	}
