@@ -81,9 +81,10 @@ func TestReviewNoticeReachesNamedAgentOnce(t *testing.T) {
 	// suppress it: bob tried it. Alice shows no banner: a report from another
 	// machine is not a decision here (owner decision 2026-09-30); it is
 	// listed as a report, apart from her own review items.
-	if bobNotes.count() == 0 {
-		t.Fatal("bob's desktop notification was not attempted")
-	}
+	// The report and desktop projection read separate snapshots. A question
+	// can arrive between them, so receiving the report does not join the next
+	// desktop attempt; wait for that independently required effect.
+	eventually(t, "bob's desktop notification attempt", func() bool { return bobNotes.count() > 0 })
 	quiet(t, w.alice, aliceNotes, 0)
 	if review, _ := w.alice.Review(); len(review) != 0 {
 		t.Fatalf("a report is listed as alice's decision: %+v", review)

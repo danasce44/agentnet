@@ -9,6 +9,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 
 /** Test APK only: the owned emulator fixture, never a production bridge or source override. */
@@ -22,7 +23,7 @@ class UpdaterInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
-            check(mode == "install" || mode == "snapshot" || mode == "cleanup" || mode == "interrupt") { "Unknown fixture operation." }
+            check(mode == "install" || mode == "snapshot" || mode == "network" || mode == "cleanup" || mode == "interrupt") { "Unknown fixture operation." }
             if (mode == "cleanup") {
                 val preferences=targetContext.applicationContext.getSharedPreferences("native-update",0)
                 val id=preferences.getInt("session",-1)
@@ -36,7 +37,26 @@ class UpdaterInstrumentation : Instrumentation() {
             }
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             waitForIdleSync()
-            if (mode == "snapshot") {
+            if (mode == "snapshot" || mode == "network") {
+                if (mode == "network") {
+                    snapshot(activity) // Wait for the real embedded host before changing routes.
+                    val host = (targetContext.applicationContext as AgentNetApp).host
+                    val monitor = NativeHost::class.java.getDeclaredField("networkMonitor").apply { isAccessible = true }.get(host)
+                    val route = monitor.javaClass.getDeclaredField("route").apply { isAccessible = true }.get(monitor)
+                    val current = route.javaClass.getDeclaredField("current").apply { isAccessible = true }
+                    fun handle(): Long? { var value: Long? = null; runOnMainSync { value = current.get(route) as Long? }; return value }
+                    val before = handle()
+                    sendStatus(0, Bundle().apply { putString("stream", "Waiting for owned-emulator network change; handle=$before\n") })
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+                    while (handle() == before && System.nanoTime() < deadline) Thread.sleep(100)
+                    val after = handle()
+                    check(after != before) { "Android did not report a default-route identity change." }
+                    val lane = NativeHost::class.java.getDeclaredField("lane").apply { isAccessible = true }.get(host) as ExecutorService
+                    val drained = CountDownLatch(1)
+                    lane.execute { drained.countDown() }
+                    check(drained.await(5, TimeUnit.SECONDS)) { "The native connection lane did not return." }
+                    sendStatus(0, Bundle().apply { putString("stream", "Native network route $before -> $after; connection lane returned.\n") })
+                }
                 val snapshot = snapshot(activity)
                 // Instrumentation runs as the target UID, including release targets.
                 // Export only this bounded synthetic fixture, never an entry token/key.

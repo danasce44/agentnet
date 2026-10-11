@@ -292,7 +292,9 @@ type hubConnections struct {
 	sync.Mutex
 	generation uint64
 	sockets    map[*hubSocket]struct{}
+	dials      map[*hubDial]struct{}
 }
+type hubDial struct{ cancel context.CancelFunc }
 type hubSocket struct {
 	net.Conn
 	owner *hubConnections
@@ -311,14 +313,23 @@ func (c *hubConn) trackDial(dial func(context.Context, string, string) (net.Conn
 	}
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		p := c.connections
+		ctx, cancel := context.WithCancel(ctx)
+		attempt := &hubDial{cancel: cancel}
 		p.Lock()
 		generation := p.generation
+		if p.dials == nil {
+			p.dials = map[*hubDial]struct{}{}
+		}
+		p.dials[attempt] = struct{}{}
 		p.Unlock()
 		conn, err := dial(ctx, network, address)
+		cancel()
+		p.Lock()
+		delete(p.dials, attempt)
 		if err != nil {
+			p.Unlock()
 			return nil, err
 		}
-		p.Lock()
 		if generation != p.generation {
 			p.Unlock()
 			conn.Close()
@@ -347,7 +358,12 @@ func (c *hubConn) resetConnectionsAt(expected *uint64) {
 	p.generation++
 	sockets := p.sockets
 	p.sockets = nil
+	dials := p.dials
+	p.dials = nil
 	p.Unlock()
+	for dial := range dials {
+		dial.cancel()
+	}
 	for socket := range sockets {
 		socket.Close()
 	}

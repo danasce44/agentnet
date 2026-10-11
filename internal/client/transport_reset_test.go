@@ -236,3 +236,38 @@ func TestHubConnectionCopiesShareResetTracking(t *testing.T) {
 		t.Fatal("nil tracker mutated")
 	}
 }
+
+// net/http detaches its dial context from the waiting request. A mobile route
+// change must cancel that attempt too, without waiting for the old TCP timeout.
+func TestHubConnectionResetCancelsPendingDial(t *testing.T) {
+	c := &hubConn{}
+	entered, release := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	tr := &http.Transport{}
+	tr.DialContext = c.trackDial(func(ctx context.Context, _, _ string) (net.Conn, error) {
+		close(entered)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+			return nil, net.ErrClosed
+		}
+	})
+	c.http = &http.Client{Transport: tr}
+	defer c.release()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://old-route.invalid/v1/stream", nil)
+	result := make(chan error, 1)
+	go func() { _, err := c.sendRequest(req); result <- err }()
+	<-entered
+	c.resetConnections()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("canceled dial succeeded")
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("network reset left the original TCP dial pending")
+	}
+}
