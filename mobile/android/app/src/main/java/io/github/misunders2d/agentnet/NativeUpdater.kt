@@ -14,9 +14,11 @@ import java.net.URL
 import java.security.MessageDigest
 
 /** One fixed-origin update, verified before entering Android's confirmation flow. */
+internal object UpdateState { val lock = Any() }
+
 class NativeUpdater(private val context: Context) {
     data class Prepared(val file: File, val version: String)
-    private val preferences get() = context.getSharedPreferences("native-update", Context.MODE_PRIVATE)
+    private val preferences get() = context.applicationContext.getSharedPreferences("native-update", Context.MODE_PRIVATE)
     private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     fun status() = JSONObject().put("version", BuildConfig.UPDATE_VERSION).put("app_update_supported", true)
         .put("cli_path", "").put("cli_state", "custom").put("update_result", preferences.getString("result", ""))
@@ -109,40 +111,69 @@ class NativeUpdater(private val context: Context) {
     fun install(prepared: Prepared) {
         verify(prepared.file, prepared.version)
         val installer=context.packageManager.packageInstaller
-        val active=preferences.getInt("session",-1)
-        require(active<0 || installer.getSessionInfo(active)==null) { "Finish or cancel Android’s current installation confirmation before trying again." }
-        val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            setAppPackageName(context.packageName)
-            setSize(prepared.file.length())
-            if(Build.VERSION.SDK_INT >=31)setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+        val id = synchronized(UpdateState.lock) {
+            val active=preferences.getInt("session",-1)
+            val previous=if(active<0) null else installer.getSessionInfo(active)
+            if(previous != null) {
+                require(UpdatePolicy.replacePendingSession(previous.installerPackageName, previous.appPackageName,
+                    context.packageName, preferences.getBoolean("pending_confirmation",false), previous.isActive)) {
+                    "Android is still working on this update. Finish its installation before trying again."
+                }
+                // Invalidate before abandonment: its delayed callback cannot own a retry.
+                check(preferences.edit().remove("session").remove("pending_confirmation").commit())
+                installer.abandonSession(active)
+            }
+            val params=PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                setAppPackageName(context.packageName)
+                setSize(prepared.file.length())
+                if(Build.VERSION.SDK_INT >=31)setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+            }
+            val created=installer.createSession(params)
+            try {
+                check(preferences.edit().putInt("session",created).putBoolean("pending_confirmation",false)
+                    .putString("result","Preparing Android installation confirmation.").commit())
+            } catch(e:Exception) {
+                installer.abandonSession(created)
+                prepared.file.delete()
+                throw e
+            }
+            created
         }
-        val id=installer.createSession(params)
         try {
             installer.openSession(id).use { session ->
+                // APK I/O is outside the callback state lock.
                 session.openWrite("AgentNet.apk",0,prepared.file.length()).use { out -> prepared.file.inputStream().use { it.copyTo(out) };session.fsync(out) }
-                check(preferences.edit().putInt("session",id).putString("result","Waiting for Android installation confirmation.").commit())
                 val callback=Intent(context,UpdateResultReceiver::class.java).setAction("${context.packageName}.UPDATE_RESULT")
                 val flags=PendingIntent.FLAG_UPDATE_CURRENT or if(Build.VERSION.SDK_INT >=31)PendingIntent.FLAG_MUTABLE else 0
                 val result=PendingIntent.getBroadcast(context,id,callback,flags)
                 session.commit(result.intentSender)
             }
-        } catch(e:Exception) { installer.abandonSession(id);preferences.edit().remove("session").apply();throw e }
-        finally { prepared.file.delete() }
+        } catch(e:Exception) {
+            synchronized(UpdateState.lock) {
+                if(preferences.getInt("session",-1)==id)
+                    check(preferences.edit().remove("session").remove("pending_confirmation").commit())
+            }
+            installer.abandonSession(id)
+            throw e
+        } finally { prepared.file.delete() }
     }
 }
 
 /** Explicit private receiver: web content and external apps cannot supply installer intents. */
 class UpdateResultReceiver: BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val preferences=context.getSharedPreferences("native-update",Context.MODE_PRIVATE)
+        val preferences=context.applicationContext.getSharedPreferences("native-update",Context.MODE_PRIVATE)
+        synchronized(UpdateState.lock) {
         val session=intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID,-1)
         if(session<0 || session!=preferences.getInt("session",-2))return
         val status=intent.getIntExtra(PackageInstaller.EXTRA_STATUS,PackageInstaller.STATUS_FAILURE)
         if(status==PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            check(preferences.edit().putBoolean("pending_confirmation",true)
+                .putString("result","Waiting for Android installation confirmation. If it was interrupted, return to AgentNet and try Update again.").commit())
             @Suppress("DEPRECATION") val confirmation=intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-            if(confirmation!=null)runCatching { context.startActivity(confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure {
+            if(confirmation!=null)runCatching { context.startActivity(confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)) }.onFailure {
                 context.packageManager.packageInstaller.abandonSession(session)
-                preferences.edit().remove("session").putString("result","Android could not open installation confirmation. Try again.").apply()
+                preferences.edit().remove("session").remove("pending_confirmation").putString("result","Android could not open installation confirmation. Try again.").apply()
             }
             return
         }
@@ -151,6 +182,7 @@ class UpdateResultReceiver: BroadcastReceiver() {
             PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation was canceled. Your messages and identity were kept. Try again when ready."
             else -> "Android did not install the update. Your data was kept. Check storage and installation permission, then try again."
         }
-        preferences.edit().remove("session").putString("result",result).commit()
+        preferences.edit().remove("session").remove("pending_confirmation").putString("result",result).commit()
+        }
     }
 }

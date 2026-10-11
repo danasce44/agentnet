@@ -27,6 +27,8 @@ object UpdatePolicy {
         require(matches.size == 1) { "The release checksum is missing or ambiguous." }
         return matches.single().lowercase()
     }
+    fun replacePendingSession(installer: String?, packageName: String?, ownPackage: String, pending: Boolean, active: Boolean): Boolean =
+        installer == ownPackage && packageName == ownPackage && pending && !active
     fun validateApk(packageName: String, installedPackage: String, signers: List<String>, installedSigners: List<String>,
                     versionCode: Long, installedCode: Long, versionName: String?, expected: String) {
         require(installedPackage == "io.github.misunders2d.agentnet.preview" && packageName == installedPackage) { "The release APK belongs to a different app." }

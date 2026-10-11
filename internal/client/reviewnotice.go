@@ -103,12 +103,19 @@ func reviewNoticeDetail(from string) string {
 // nothing waits, which clears its card (no timer). Desktop notifications
 // are tracked separately.
 func (a *Agent) sendReviewNotice(ctx context.Context) {
-	// The worker's pass and one during a run (worker.go) never overlap: a
-	// pass skipped here is covered by the worker's next one, after the run.
+	// Serialize snapshots. A completion wake can be consumed by a pass
+	// that skips this busy sender, so reawaken after unlocking if local
+	// state changed while this snapshot was prepared or sent.
 	if !a.reviewMu.TryLock() {
 		return
 	}
-	defer a.reviewMu.Unlock()
+	seq, _ := a.Changed()
+	defer func() {
+		a.reviewMu.Unlock()
+		if current, _ := a.Changed(); current != seq {
+			a.wakeWorker()
+		}
+	}()
 	gen, err := a.store.config(reviewToGenKey)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		a.Logf("review notice: %v", err)

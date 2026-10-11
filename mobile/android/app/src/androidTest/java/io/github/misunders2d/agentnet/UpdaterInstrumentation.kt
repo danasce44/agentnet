@@ -22,21 +22,39 @@ class UpdaterInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
-            check(mode == "install" || mode == "snapshot") { "Unknown fixture operation." }
+            check(mode == "install" || mode == "snapshot" || mode == "cleanup" || mode == "interrupt") { "Unknown fixture operation." }
+            if (mode == "cleanup") {
+                val preferences=targetContext.applicationContext.getSharedPreferences("native-update",0)
+                val id=preferences.getInt("session",-1)
+                val installer=targetContext.packageManager.packageInstaller
+                val info=installer.getSessionInfo(id)
+                check(info?.appPackageName == targetContext.packageName && info.installerPackageName == targetContext.packageName) { "No test-owned fixture session exists." }
+                installer.abandonSession(id)
+                preferences.edit().remove("session").remove("result").commit()
+                result.putString("stream","Discarded test-owned session blocked by harness teardown; this is setup cleanup, not cancellation evidence.\n")
+                finish(Activity.RESULT_OK,result); return
+            }
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             waitForIdleSync()
             if (mode == "snapshot") {
                 val snapshot = snapshot(activity)
-                // Test package remains debuggable even when the target update is not.
-                // The authenticated entry URL/token and private key are never exported.
-                File(context.cacheDir, "updater-snapshot.json").writeText(snapshot)
+                // Instrumentation runs as the target UID, including release targets.
+                // Export only this bounded synthetic fixture, never an entry token/key.
+                check(snapshot.toByteArray().size <= 256 * 1024) { "The synthetic snapshot exceeds its result bound." }
                 val value = JSONObject(snapshot)
                 val digest = MessageDigest.getInstance("SHA-256").digest(value.getJSONObject("preserved").toString().toByteArray()).joinToString("") { "%02x".format(it) }
-                result.putString("stream", "Snapshot stored in test private cache; version=${value.getString("version")}; messages=${value.getJSONObject("preserved").getJSONArray("messages").length()}; preserved_sha256=$digest\n")
+                result.putString("stream", "SNAPSHOT_JSON=$snapshot\nSnapshot version=${value.getString("version")}; messages=${value.getJSONObject("preserved").getJSONArray("messages").length()}; preserved_sha256=$digest\n")
             } else {
                 val fixture = File(targetContext.cacheDir, "updater-fixture.apk")
                 check(fixture.isFile) { "Stage the signed fixture APK in the owned target's private cache first." }
                 val complete = CountDownLatch(1)
+                val terminal = CountDownLatch(1)
+                val preferences=targetContext.applicationContext.getSharedPreferences("native-update",0)
+                val listener=android.content.SharedPreferences.OnSharedPreferenceChangeListener { p,key ->
+                    if(key == "result" && p.getInt("session",-1) < 0) terminal.countDown()
+                }
+                preferences.registerOnSharedPreferenceChangeListener(listener)
+                val diagnostic=Bundle().apply { putString("stream", "Before retry: session=${preferences.getInt("session",-1)}, pending=${preferences.getBoolean("pending_confirmation",false)}, target=${targetContext.dataDir}, activity=${activity.dataDir}\n") }; sendStatus(0,diagnostic)
                 var response: JSONObject? = null
                 var failure: String? = null
                 val callback: (JSONObject?, String?) -> Unit = { value, error -> response = value; failure = error; complete.countDown() }
@@ -46,7 +64,23 @@ class UpdaterInstrumentation : Instrumentation() {
                 check(complete.await(120, TimeUnit.SECONDS)) { "Permission/installer continuation did not complete." }
                 check(failure == null) { failure.orEmpty() }
                 check(response?.optString("state") == "installer") { "The real installer was not started." }
-                result.putString("stream", "Real PackageInstaller started; observe confirmation/cancellation and native result on the owned emulator.\n")
+                if(mode == "interrupt") {
+                    // Intentional process interruption only after the platform reported
+                    // real pending user action; no preference fabrication.
+                    val deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10)
+                    while(!preferences.getBoolean("pending_confirmation",false) && System.nanoTime()<deadline) Thread.sleep(50)
+                    check(preferences.getBoolean("pending_confirmation",false)) { "Android did not report pending confirmation." }
+                    val id=preferences.getInt("session",-1)
+                    val info=targetContext.packageManager.packageInstaller.getSessionInfo(id)
+                    check(info != null && !info.isActive) { "The fixture is not waiting for confirmation." }
+                    result.putString("stream","Interrupted real inactive confirmation session=$id; explicit visible retry must replace only this owned session.\n")
+                    finish(Activity.RESULT_OK,result); return
+                }
+                // Finishing instrumentation kills the target process. Keep it visible
+                // until Android's real callback, or normal package replacement.
+                check(terminal.await(120, TimeUnit.SECONDS)) { "Android installation confirmation did not reach a terminal result." }
+                preferences.unregisterOnSharedPreferenceChangeListener(listener)
+                result.putString("stream", "Real installer callback: ${preferences.getString("result", "")}\n")
             }
             finish(Activity.RESULT_OK, result)
         } catch (e: Exception) {

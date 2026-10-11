@@ -1,57 +1,30 @@
 # Installing and running AgentNet
 
 For everyday use, install **the AgentNet app** and open it from its icon.
-It installs the `agentnet` command as part of the app; there is no second
+On computers it installs the `agentnet` command as part of the app; there is no second
 command-line download to make before chatting. Terminal commands in the
 later sections are for coding agents, server operators and advanced users.
 People do not need Go, Rust, Docker or a database server on their computer.
 
 ## People: install and open the app
 
-The current published release is
-[v0.8.16](https://github.com/misunders2d/agentnet/releases/tag/v0.8.16), dated
-October 10, 2026, published at 00:37:52 UTC
-from `45e38feea7b7e7ae9454247b2fdda28b362ceea6`.
-Download the matching package below and verify `SHA256SUMS`. Existing app users
-can use **Settings → About → Update AgentNet** or `agentnet update v0.8.16`, then
-reload linked browser clients. If the registered old AppImage has already been
-removed, reinstall the official app once; the updater checks this before shutdown.
-Identity and history remain; no reset or relinking is required.
+Download from the [latest published release](https://github.com/misunders2d/agentnet/releases/latest)
+and verify the package against that release's `SHA256SUMS`. Existing desktop
+users can use **Settings → About → Update AgentNet** or `agentnet update`.
+Linked browser clients reload to update. Android installation and updates are
+covered below; the Android APK is included from v0.8.19.
 
-v0.8.16 opens saved chats before additional workspaces reconnect and lets fresh
-verified replies arrive while older messages wait for proof or files. Recovery
-continues in bounded batches without waiting for a heartbeat. Recovered ordinary
-messages keep their first receive time instead of moving after later arrivals.
-Late checks and exact verified answers no longer leave contradictory sending indicators; other
-copies retain their own delivery receipts.
+If the registered old AppImage has already been removed, reinstall the official
+app once; the updater checks this before shutdown. Identity and history remain;
+no reset or relinking is required. A v0.8.3/v0.8.4 AppImage may need one manual
+reopen after its first update. Open AgentNet from its launcher if it closes
+without returning.
 
-**Historical update recovery:** after the owner updated Zenbook himself,
-it reported “Could not connect 127.0.0.1: Connection refused.” v0.8.15
-repaired local-page readiness and shell reload after reattaching to an independent
-daemon. Its final shell checks and Linux AppImage replacement/restart passed;
-physical recovery of that report remains unconfirmed.
-
-Qualification: **composed UI races, affected Linux/macOS/Windows native checks, real browser storage and rendered checks passed, including the receive-time correction; unchanged core/platform evidence is retained**.
-Packaging and asset checks:
-**all five packaging jobs passed, all 12 asset digests and 11 manifest entries matched, and standalone/bundled Linux versions match the clean tag**. Exact CI results, source revisions,
-skips and relay deployment evidence are in the
-[release checklist](../plans/V0_8_16.md).
-
-Source computers and receiving clients need compatible versions for new
-own-device sync and proposal operations; topic-only invitations also require
-compatible participants. Keep a source online for history and files it retains.
-Physical phone convergence and timing, post-fix ThinkPad CPU and interactive
-Windows/macOS installation remain unverified. The focused reproductions do not
-prove recovery of the owner's exact phone session. The reported shutdown abort
-has no attributed fix; the historical Mac installation report is explicitly
-nonblocking and not claimed fixed. Installers remain unsigned. Exact evidence
-is in [the handoff](../HANDOFF.md) and the [release checklist](../plans/V0_8_16.md).
-
-**Upgrading a v0.8.3/v0.8.4 AppImage:** its old updater still needs one
-manual reopen after updating to v0.8.16. Open AgentNet from its launcher if it
-closes without returning. If v0.8.4's Update button is unavailable, run
-`agentnet update v0.8.16` for the registered desktop installation, then reopen
-once. Updates started by v0.8.5 include the restart fix.
+Keep a source device online for history and files it retains. Only the
+relay's current release may start new work after its update grace period;
+outdated devices retain their messages and receive them after updating.
+Release-specific verification, platform limits and deployment evidence are
+recorded in [the handoff](../HANDOFF.md) and its linked release checklists.
 
 | Device | Package to choose | How to open it |
 | --- | --- | --- |
@@ -60,7 +33,8 @@ once. Updates started by v0.8.5 include the restart fix.
 | Linux, Fedora | `AgentNet-linux-x86_64.rpm` | Open it with your system's package installer, then open the AgentNet icon. |
 | Windows | `AgentNet-windows-x64-setup.exe` | Run the installer for your own account, then open AgentNet from the Start menu. It adds the bundled `agentnet` command to your user PATH for new terminal/agent sessions. Administrator rights are not required. |
 | Mac, Intel or Apple silicon | `AgentNet-macos-universal.dmg` | Open the disk image, copy AgentNet to Applications, then open it there. Requires macOS 13.3 or later. **Installation and use are untested on a real Mac.** |
-| Android or iPhone | No desktop installer | Open your workspace link in the browser and add AgentNet to the home screen. On iPhone, paste the invitation into that home-screen app if it did not carry over. |
+| Android 8 or later, ARM64 | `AgentNet-android.apk` (from v0.8.19) | Download the signed preview from the release page and open it with Android's installer. Keep an existing native preview installed: install the new APK over it. |
+| iPhone or browser phone app | No desktop installer | Open your workspace link in the browser and add AgentNet to the home screen. On iPhone, paste the invitation into that home-screen app if it did not carry over. |
 
 **Unsigned installers:** the desktop builds are not signed. Windows and Mac
 may warn or block opening them. Check that the download comes from this
@@ -101,11 +75,25 @@ An identity created before Google enrollment is not converted automatically;
 a Google-enabled workspace requires joining afresh. Do not treat that as a
 promise that an old person's history moves to the new identity.
 
-Phones have no native desktop installer. Their browser/home-screen app uses
-its own device identity; adding it to an existing person still needs an
-existing device's approval.
+The native Android preview uses the same Comic interface with its database
+and messaging engine on the phone. Its APK is distributed through GitHub,
+not Google Play. Android may ask you to allow installation from the browser
+on the first install. Later, **You → About → Check for updates → Update
+AgentNet** downloads the official APK, verifies its checksum and original
+signing certificate, then opens Android's confirmation. Allow AgentNet to
+install updates if Android asks. Canceling keeps your installed app and data.
 
-The app includes the same `agentnet` program that coding agents use. On
+An older local preview whose Update action returns 404 needs one manual
+installation of the published APK. Do not uninstall it or create a new device:
+the same package and signing key preserve its existing identity, messages and
+drafts. The latest-only relay policy requires a matching APK with every release.
+
+The browser/home-screen app and native Android app have separate device
+identities. For a new native installation, open or scan a device link from an
+existing device and approve it there. Installing over an already linked native
+preview needs no new link or approval.
+
+The desktop app includes the same `agentnet` program that coding agents use. On
 Windows, the installer adds its folder to your user PATH and preserves
 existing entries. Open a new terminal or coding-agent session after installing
 so it can find `agentnet`; if an already running launcher still has the old

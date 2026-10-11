@@ -450,6 +450,11 @@ func TestNeedsHumanRerunOnAccept(t *testing.T) {
 func TestQuestionCounterQuestionRoundTrip(t *testing.T) {
 	st := installStub(t, "askback")
 	w := newWorld(t, "")
+	t.Cleanup(func() {
+		if t.Failed() {
+			logReviewSettlement(t, w.bob, w.alice)
+		}
+	})
 	n := fakeNotify(w.bob)
 	setResponder(t, w.bob, "stub", st.dir, time.Minute)
 	if err := w.bob.Approve(w.alice.Address); err != nil {
@@ -460,6 +465,7 @@ func TestQuestionCounterQuestionRoundTrip(t *testing.T) {
 	}
 	runWith(t, w, w.bob, RunOptions{})
 	runWith(t, w, w.alice, RunOptions{})
+	waitHeadlessReviewCaps(t, w.alice)
 	q, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: "What should I wear outside?", Kind: envelope.KindQuestion})
 	if err != nil {
 		t.Fatal(err)

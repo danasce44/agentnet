@@ -13,6 +13,10 @@ This record starts with v0.8.1; earlier releases remain on the
   and Android's installation confirmation instead of a missing desktop API.
   The APK must match the original signing key, package and exact newer release.
 
+- Keep a finished request's final review report from being lost when an earlier
+  snapshot is still sending. Reuse the existing change event without polling
+  or repeating work.
+
 ## [0.8.18] — 2026-10-10
 
 ### Changed

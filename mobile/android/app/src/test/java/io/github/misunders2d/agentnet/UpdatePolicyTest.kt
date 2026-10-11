@@ -52,4 +52,13 @@ class UpdatePolicyTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun retryReplacesOnlyAnOwnedInactiveConfirmation() {
+        val pkg="io.github.misunders2d.agentnet.preview"
+        assertTrue(UpdatePolicy.replacePendingSession(pkg,pkg,pkg,true,false))
+        assertFalse(UpdatePolicy.replacePendingSession(pkg,pkg,pkg,true,true))
+        assertFalse(UpdatePolicy.replacePendingSession(pkg,pkg,pkg,false,false))
+        assertFalse(UpdatePolicy.replacePendingSession("other",pkg,pkg,true,false))
+        assertFalse(UpdatePolicy.replacePendingSession(pkg,"other",pkg,true,false))
+    }
+
 }
