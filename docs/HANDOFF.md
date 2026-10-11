@@ -9,45 +9,68 @@ section at release; keep detailed verification and remaining work here.
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))
 was taken over by Claude and shipped as v0.8.17 below.
 
-## Active v0.8.18 work — not released
+## Current published release — v0.8.18, October 10, 2026 (UTC)
 
-Codex owns `fix/v0.8.18-send-starvation`. The implementation contract and
-remaining qualification are in [V0_8_18.md](plans/V0_8_18.md). Linked-device
-bootstrap is moving to bounded encrypted archives through the existing blob
-API; independent live delivery and existing admission remain required.
-Reviewed shared-core candidate `30deba56` follows `6ecd3849` and `b92c3dfe`.
-Claude independently cleared all five original blockers after reproducing the
-corrections: imported history stays cold on third devices; roster proof recovers
-in background; browser receipt windows recover after interruptions; offline
-capability discovery remains durable; live sends pass cold history. Packing uses
-the existing encrypted spool without an outer plaintext staging file.
+[Download v0.8.18](https://github.com/misunders2d/agentnet/releases/tag/v0.8.18).
+Published at **21:29:14 UTC** from tag
+`35ce9190ae52b4c23344e61cf4d914d11b392b8f`, a documentation-only record above
+qualified application source `484db3e7bb82fc4e6d3a34c3b8e25b845296ea02`.
+All five [packaging jobs](https://github.com/misunders2d/agentnet/actions/runs/38087201130)
+passed, including native shell checks and Linux AppImage replacement/restart.
+All 12 asset digests/sizes and 11 SHA256SUMS entries matched before and after
+publication. Standalone and bundled Linux programs report the exact clean tag.
+Linux amd64 SHA256:
+`b32d5adc79af18fb84ec82fd555bc2f9a0a9377e51ae4ca59576a2c55c941160`.
 
-All twelve client race partitions and both UI race partitions pass. The real
-mixed-version gate passes against v0.8.17, and Chromium's real IndexedDB gate
-passes. Native UI passes on Linux, macOS and Windows; Windows client H–Z passes.
-Final native client qualification exposed five asynchronous test-premise
-failures, now corrected without changing production code or raising deadlines.
-A separate guest-control invitation timeout reproduced under the race detector;
-profiling found idle SQL preparation competing with the invitation. Two indexed
-necessary-condition probes now avoid empty archive export and direct-job claim
-queries. They preserve the claim transaction, complete permission predicate and
-independent import wakes. The unchanged guest-control race passes; focused
-native requalification is next. Retain passing evidence and rerun these exact cases on the
-native platforms. Windows A–G finished with the same group-context fixture failure and the guest
-control timeout; the targeted rerun includes both.
-No release, live queue cleanup or installed-client change has happened.
+Linked-device bootstrap now uses bounded encrypted archives over the existing
+blob service, with newest-first background import and independent live delivery.
+Imported history stays cold when forwarded to a third device; proof and receipt
+recovery resume durably. Existing signatures, current roster/admission checks,
+original IDs and inert historical tasks remain intact. No reset or relink is
+needed. The full contract, failures and exact composed evidence are in
+[V0_8_18.md](plans/V0_8_18.md). Claude independently cleared the archive fixes;
+GPT-6.1-sol helpers reviewed the final probes, fixtures and release procedure.
 
-The Android preview stays on `feat/native-android` in its separate worktree.
-Merge `1e6ff57a` includes the reviewed shared core. Its final APK, SHA256
-`ee842a0fe14893a57ba43d0f6807061411c3b760dcb416e0f91a7c827195082b`,
-passes core race, 28 Android unit tests, lint, both ABI/16KiB packaging checks,
-and in-place x86_64 emulator upgrade preserving 203 exact messages, queued
-sends, file, draft and identity. Native camera opening/cancellation and denial
-fallback pass. Optical QR decoding, arm64 execution and actual owner-phone
-receive lifecycle/timings remain unverified. Artifact/evidence are in the plan. Rebuild the preview with the final idle-work
-corrections before handover; the checkpoint APK is not the final distribution.
+All twelve integrated client race partitions and both UI race partitions pass,
+with retained unchanged nonclient/native/container evidence and actual Chromium
+storage checks. Seven final affected cases each pass three repetitions on
+Linux, macOS and Windows (38086700142). Final archive/authority races pass;
+the real mixed-version gate passes against v0.8.17 (38086699221, 104.172s).
+Initial failed runs and opt-in/platform skips remain recorded, not relabeled as
+passes. No deadline was raised. The documentation-only main merge triggered a
+redundant full run, 38087199874, canceled in favor of these completed gates.
 
-## Current published release — v0.8.17, October 10, 2026 (UTC)
+The existing Contabo relay runs `agentnet-revived:v0.8.18-35ce9190`, image
+`sha256:241fc6ac780b955eb535b37ccd370460b7b19183ec88106f889080e7640dc246`,
+started **21:29:43 UTC**, verified **21:29:46 UTC**. Stopped-state backup:
+`/opt/agentnet-revived/backups/pre-v0.8.18-5u88NF7G`, SHA256
+`18965055d483027488827015bd34e313ceaaa72e219cacde3021d0ccc4d7716d`.
+Normal HTTPS from server and Zenbook confirms the original realm and all nine
+exact released browser assets with no-cache headers. Original volume, loopback
+port and neighboring service remain unchanged; zero restarts. One transient
+502 during startup recovered within the bounded health retry. Deployment
+changed only the relay; no client, grant, queue or desktop session was manually
+changed. The existing latest-only release/grace policy now follows v0.8.18.
+
+**Native Android preview:** separate branch `feat/native-android`, qualified
+code merge `179f8a8d`, documentation tip `9b291d80`. Local artifact:
+`dist/android-preview/AgentNet-v0.8.18-android-preview.apk`, SHA256
+`68d4b5446729ff424df11800603bba2fe8a63f5d94416b4c57d96ed343c98190`.
+Eighteen core race tests, 28 Android tests, lint and both ABI/16KiB packaging
+checks pass; the existing signing certificate is preserved. In-place x86_64
+emulator upgrade and cold start preserve all 203 exact messages, queued sends,
+attachment, draft, identity and origin. Native camera opening/cancellation
+passes; earlier denial fallback evidence remains valid. Optical QR decoding,
+physical arm64 execution and owner-phone timing remain unverified. The owned
+emulator is stopped. Android source remains separate and is not a Play release.
+
+**Next verification:** keep the existing identities and update clients normally;
+reload the browser phone or install the matching native preview in place.
+Keep a source online for retained history/files. Measure actual phone startup,
+foreground/background receive, fresh reply timing during catch-up and CPU.
+MEL-546/558 remain open until those user-visible outcomes are confirmed.
+
+## Previous release — v0.8.17, October 10, 2026 (UTC)
 
 [Download v0.8.17](https://github.com/misunders2d/agentnet/releases/tag/v0.8.17).
 Published at **16:37:32 UTC** from tag `4d6557ab96dbeb7ee0934e1872031e14f3ff4278`.

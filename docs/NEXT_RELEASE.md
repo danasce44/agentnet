@@ -1,4 +1,24 @@
-# AgentNet v0.8.16 — published; physical mobile verification next
+# AgentNet v0.8.18 — published; physical-phone verification remains
+
+[v0.8.18](https://github.com/misunders2d/agentnet/releases/tag/v0.8.18) published
+October 10 at **21:29:14 UTC**, tag `35ce9190`, qualified source `484db3e7`.
+All source gates and fresh package/hash/version checks are complete. The existing
+Contabo relay was verified at **21:29:46 UTC**, preserving its realm, volume,
+port and neighboring service. [HANDOFF.md](HANDOFF.md) records deployment and
+[V0_8_18.md](plans/V0_8_18.md) records full qualification and honest limits.
+
+The separately maintained Android preview includes the final shared core and
+passes in-place emulator upgrade/data preservation, core races, native unit,
+lint and packaging checks. Artifact and source references are in HANDOFF.
+Neither this preview nor synthetic relay tests establish physical-phone timing.
+
+Next: verify first useful messages, foreground/background receive, immediate
+fresh replies during retained history catch-up and resource usage on the real
+phone. MEL-546/558 stay open until confirmed. Preserve identities and existing
+messages: no reset, relink, purge or task replay. Clients update themselves;
+only the existing relay was deployed by Codex. No extra feature batch is started.
+
+# Previous release — v0.8.16
 
 [v0.8.16](https://github.com/misunders2d/agentnet/releases/tag/v0.8.16) published
 October 10 at **00:37:52 UTC**, tag
