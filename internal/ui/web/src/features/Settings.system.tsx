@@ -18,6 +18,7 @@ import { Card, Details, Fact, Failed, GroupLabel, Hint, PageHead, Skeleton, useL
 import { GoogleMembers } from "./GoogleMembers";
 import { AppControls } from "./AppControls";
 import { DriveSettings } from "./Drive";
+import { HeldBack } from "./Approvals.held";
 
 // ---- Storage -----------------------------------------------------------------
 
@@ -312,6 +313,7 @@ export function AboutSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingEle
               <Fact name="Runs as">{store.host.platform === "browser" ? "This browser" : store.host.platform === "android" ? "AgentNet on Android" : "AgentNet on this computer"}</Fact>
               {o.me.responder && <Fact name="Agent">{harnessName(o.me.responder) + " in " + o.me.responder_dir}</Fact>}
               {(paths || []).filter((h) => h.path).map((h) => <Fact key={h.name} name={harnessName(h.name)}>{h.path}</Fact>)}
+              <HeldBack o={o} diagnostics />
             </Details>
           </Card>
         )}

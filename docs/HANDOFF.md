@@ -15,6 +15,20 @@ recovery, with unchanged admission rules and no live purge.
 [NEXT_RELEASE.md](NEXT_RELEASE.md) records the evidence and remaining work.
 These changes are not published yet.
 
+October 11 follow-ups in the same branch: MEL-530 fixes whole-audience topic
+invite checks and browser reader-copy vetoes; MEL-502 keeps collective tags
+compact with a frozen exact-recipient snapshot; MEL-588 moves passive sync
+records from OKs to About's Technical details, retaining actual identity
+warnings. Focused native/browser and integrated rendered evidence is recorded
+in NEXT_RELEASE.md. No live client state has been changed.
+
+Local branch cleanup is complete: 24 obsolete branches and a stale missing
+Android worktree registration were removed after ancestry/patch review and a
+verified recovery bundle in `.git/cleanup-backups/20261011T102146Z.bundle`.
+The only local branches left are main, the active fix branch and
+`next/audience-prechecks` (real unmerged work). The root is the only registered
+worktree; no remote branches were deleted.
+
 ## Handoff to Claude — completed in v0.8.17
 
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))

@@ -3236,7 +3236,7 @@ export class Engine {
         if(item.group_history){const [ok,why]=await this.ctlSupport(rec.to,pin,wire.CapOwnSyncV2);if(!ok)throw Error(why);}
         if(item.pid && ![wire.SubGroupProof,wire.SubGroupContext].includes(rec.sub)) {
           const c=await this.groupRecord(rec.conv),events=await this.convEvents(rec.conv),info=this.resolveAgent(item.pid,events,await this.dmMembers(c,events));
-          if(info.role==="human") {await this.requireHumanSupport(rec.to,pin);await this.requireGroupHumanSupport(rec.to,pin);} else await this.requireAgentIdentity(rec.to,pin,info.external?wire.CapExternalParticipation:wire.CapAgentIdentity);
+          if(info.role==="human") {await this.requireHumanSupport(rec.to,pin);await this.requireGroupHumanSupport(rec.to,pin);} else await this.requireAgentIdentity(rec.to,pin,info.external&&rec.to===info.host.address?wire.CapExternalParticipation:wire.CapAgentIdentity);
         }
         if(rec.control || item.sub===wire.SubStatus || item.ref){const [ok,why]=await this.ctlSupport(rec.to,pin,item.sub===wire.SubStatus?wire.CapHeadless:wire.CapControl);if(!ok)throw Error(why);}
       }
@@ -3303,7 +3303,7 @@ export class Engine {
       if (rec.files) rec.files = rec.files.map((f) => ({ ...f, ct: null }));
     } catch (e) {
       if (e.code === "receiver_redacted") return; // keep the newer exact-scope retention transaction
-      if (e.code === "history_archive_unsupported" || e.code === "followup_unsupported" || e.code === "proposal_unsupported" || e.code === "receiver_unsupported" || e.code === "topic_organization_unsupported" || e.code === "model_sync_unsupported" || e.code === "read_sync_unsupported" || e.code === "invitation_sync_unsupported" || e.code === "topic_sync_unsupported" || e.code === "control_unsupported" || rec.conv && ["group_invitation_unsupported", "root_sync_unsupported", "agent_identity_unsupported", "human_unsupported", "group_unsupported", "clear_unsupported", "room_unsupported"].includes(e.code)) {
+      if (e.code === "history_archive_unsupported" || e.code === "followup_unsupported" || e.code === "proposal_unsupported" || e.code === "receiver_unsupported" || e.code === "topic_organization_unsupported" || e.code === "model_sync_unsupported" || e.code === "read_sync_unsupported" || e.code === "invitation_sync_unsupported" || e.code === "topic_sync_unsupported" || e.code === "control_unsupported" || rec.conv && ["group_invitation_unsupported", "root_sync_unsupported", "agent_identity_unsupported", "human_unsupported", "group_unsupported", "clear_unsupported", "room_unsupported", "topic_unsupported"].includes(e.code)) {
         rec.state = "waiting"; rec.detail = "peer_update: " + e.message;
       } else if(e.code==="device_history_authority") {
         rec.state="not_delivered";rec.detail=e.message;
@@ -8876,9 +8876,10 @@ export class Engine {
     if(!before || before.pending || before.fingerprint!==pin.fingerprint || !after || after.pending || after.fingerprint!==pin.fingerprint)throw Error("Topic participant key changed.");
     if(!await wire.profileSupports(profile||{},address,pub.sign_key,wire.CapTopicParticipation))throw Object.assign(Error(address+" needs an update for topic-only participation."),{code:"topic_unsupported"});
   }
-  async requireTopicParticipants(members,host) {
-    const addresses=new Set([...members.values()].flatMap(p=>p.devices.map(d=>d.address)).concat(host));
-    for(const address of addresses)if(address!==this.address)await this.requireTopicSupport(address,await this.sendKey(address));
+  // Only the selected host must enforce this scoped invitation now.
+  // Other readers keep the same sealed copy waiting at the handover gate.
+  async requireTopicHost(host) {
+    if(host!==this.address)await this.requireTopicSupport(host,await this.sendKey(host));
   }
   // Accepted originals only, exact ID before an unambiguous logical author.
   // Unknown parents and competing aliases wait; they never become Main.
@@ -9412,7 +9413,7 @@ export class Engine {
       if(members.group)await this.groupAgentSelection(conv,m,members);
       grant.push({ lid: m.lid, fingerprint: m.fp || this.fp });
     }
-    if(topic!=null){await this.requireTopicParticipants(members,host);await this.checkTopicGrants(conv,topic,grant);}
+    if(topic!=null){await this.requireTopicHost(host);await this.checkTopicGrants(conv,topic,grant);}
     const group=members.group?{seq:members.group.state.seq,hash:await wire.groupStateHash(members.group.state),host_role:"visitor"}:null;
     const e = await wire.signEvent(this.keys, { conv, pid: wire.newID(), type: "invite", role: "human", ...(topic!=null?{topic}:{}), ts: Math.floor(this.now() / 1000), author: {...this.author(),...(group?{group_admission:members.epochs.get(this.fp)}:{})}, host: { person: person.person, address: host, fingerprint: pin.fingerprint }, grant: grant.length ? grant : null, audience: group?"room":"conversation", note: String(note).trim(),...(group?{group}:{}) });
     await this.sendConv(c, { kind: "message", sub: "event", body: wire.eventJSON(e), pid: e.pid });
@@ -9824,10 +9825,25 @@ export class Engine {
     for (const dev of devices) {
       const pin = await this.groupRead(checks,"pins",dev.address);
       if (!pin || pin.pending || pin.fingerprint !== dev.fingerprint) throw new Error("Participation recipient key is no longer pinned.");
-      let ok = false, detail = "";
-      try { if (info.role === "human") await this.requireHumanSupport(dev.address, pin); else await this.requireAgentIdentity(dev.address, pin, info.external?wire.CapExternalParticipation:wire.agentRequirement(n)); if(members.group)await this.groupSupport(dev.address,pin); [ok, detail] = await this.supports(dev.address, pin); }
-      catch (e) { if(e.code==="human_unsupported"){ok=false;detail="peer_update: " + e.message;}else{if (!retryable(e)) throw e; detail = "server_unavailable: cannot reach your server";} }
-      if(prepared)await this.receiverSupport(dev.address,pin);
+      // Execution authority stays strict; other group copies are readers.
+      const executing=!n.sub&&["question","task"].includes(n.kind)&&!n.replica&&n.target?.address===dev.address&&n.target.fingerprint===dev.fingerprint;
+      const strict=dev.address===info.host.address||executing||!members.group;
+      const readers=async()=>{
+        if(info.role==="human")await this.requireHumanSupport(dev.address,pin);
+        else await this.requireAgentIdentity(dev.address,pin,info.external&&(!members.group||dev.address===info.host.address)?wire.CapExternalParticipation:members.group?wire.CapAgentIdentity:wire.agentRequirement(n));
+        if(members.group)await this.groupSupport(dev.address,pin);
+        if(prepared)await this.receiverSupport(dev.address,pin);
+        const [ok,detail]=await this.supports(dev.address,pin);
+        return {ok,detail};
+      };
+      let ok=false,detail="";
+      if(members.group&&!strict) {
+        const support=await this.groupDeviceSupport(dev.address,pin,async()=>{const result=await readers();if(!result.ok)throw Object.assign(Error(result.detail),{code:"group_unsupported"});return true;});
+        ok=!support.why;detail=support.why;
+      } else {
+        try {({ok,detail}=await readers());}
+        catch(e){if(info.role==="human"&&e.code==="human_unsupported"){detail="peer_update: "+e.message;}else {if(!retryable(e))throw e;detail="server_unavailable: cannot reach your server";}}
+      }
       const recipient = await this.pubOf(pin), sealed = [];
       for (const f of plain) sealed.push({ ...await wire.encryptFile(f.bytes, f.name, recipient), uploaded: false });
       const id = prepared && n.target?.address===dev.address && n.target.fingerprint===dev.fingerprint ? lid : recs.length ? wire.newID() : firstID;
@@ -9852,8 +9868,8 @@ export class Engine {
       }
       const g=await this.groupRead(checks,"kv","group/"+c.id), records=g.records.map(wire.parseGroupCommit),packet=wire.parseGroupContext(g.context);
       for(const dev of devices) {
-        for(const page of this.groupProofPages(records)){const last=page.at(-1);carriers.push(await this.groupCarrierCopy(packet.root,wire.SubGroupProof,{v:1,seq:last.seq,hash:last.hash},wire.groupJournalJSON({records:page,more:false}),dev,{pid:n.pid}));}
-        carriers.push(await this.groupCarrierCopy(packet.root,wire.SubGroupContext,{v:1,seq:packet.state.seq,hash:await wire.groupStateHash(packet.state)},wire.groupContextJSON(packet),dev,{pid:n.pid}));
+        for(const page of this.groupProofPages(records)){const last=page.at(-1);carriers.push(await this.groupCarrierCopy(packet.root,wire.SubGroupProof,{v:1,seq:last.seq,hash:last.hash},wire.groupJournalJSON({records:page,more:false}),dev,{pid:n.pid},false,true));}
+        carriers.push(await this.groupCarrierCopy(packet.root,wire.SubGroupContext,{v:1,seq:packet.state.seq,hash:await wire.groupStateHash(packet.state)},wire.groupContextJSON(packet),dev,{pid:n.pid},false,true));
       }
     }
     if(prepared && carriers.length)throw Error("Receiver setup does not belong on participation proof carriers.");
@@ -10282,7 +10298,7 @@ export class Engine {
       grant.push({ lid: x.lid, fingerprint: x.fp || this.fp });
     }
     for (const fp of tasks) if (![...m.values()].some((p) => p.devices.some((d) => d.fingerprint === fp))) throw new Error(fp + " is not the key of a member of that conversation.");
-    if(topic!=null){await this.requireTopicParticipants(m,host);await this.checkTopicGrants(conv,topic,grant);}
+    if(topic!=null){await this.requireTopicHost(host);await this.checkTopicGrants(conv,topic,grant);}
     const group=m.group?{seq:m.group.state.seq,hash:await wire.groupStateHash(m.group.state),host_role:external?"visitor":"member",...(external?{}:{host_admission:m.epochs.get(hp.fingerprint)}),...(tasks.length?{task_admissions:tasks.map(fp=>m.epochs.get(fp))}:{})}:null;
     const existing = m.group && (await this.agentsOf(c)).find(p=>["invited","active"].includes(p.state)&&p.host?.address===hp.address&&p.host.fingerprint===hp.fingerprint&&(p.agent_id||"")===agent_id && sameParticipationTopic(p.topic,topic));
     const e = await wire.signEvent(this.keys, { conv, pid: existing ? existing.pid : wire.newID(), type: existing ? "share" : "invite",...(topic!=null?{topic}:{}),...(existing?{prev:existing.invite}:{}), ts: Math.floor(this.now() / 1000), author: {...this.author(),...(m.group?{group_admission:m.epochs.get(this.fp)}:{})},

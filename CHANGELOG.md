@@ -6,6 +6,15 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Allow inviting an agent into a group topic when an unrelated member's app is
+  outdated. Check the selected agent host; keep other devices' exact copies
+  waiting independently until they can receive them.
+- Keep `@everyone` and shared team mentions as compact tags in drafts and
+  messages. Preserve their selected recipients and per-agent outcomes through
+  reloads and retries without expanding the text into everyone's name.
+- Move passive sync records out of **OKs** into **Settings → About → Technical
+  details**. Keep actionable identity warnings visible and retain all records
+  and verification checks.
 - Show the executing device and its recorded explanation on a remote **Needs
   you** card. Linked-device questions no longer name the viewing computer or
   claim the agent gave no reason when its exact owner report includes one.

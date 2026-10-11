@@ -3,15 +3,18 @@
 Owner decision, October 9, 2026: a named tag identifies an explicit set of
 people, agents, or both, and everyone in the workspace can use it. This
 supersedes the earlier undecided personal-versus-shared list question.
+Owner correction, October 11: keep one visible collective tag, including in
+large groups. This supersedes the earlier visible expansion into names.
 
 ## Behavior
 
 - The mention picker offers `@everyone` for eligible participants already in
   the current chat, excluding the sending human. Shared named lists appear
   when they have eligible recipients there.
-- Picking a tag expands it into ordinary visible person/agent mentions before
-  Send. Overlapping tags do not repeat mentions. Editing a shared list later
-  cannot rewrite an expanded draft or an already sent request.
+- Picking a tag captures its exact eligible recipients and keeps one visible
+  `@everyone` or `@team` token in the draft and message. Overlapping tags do
+  not repeat agent requests. Editing a shared list later cannot rewrite a
+  captured draft or an already sent request, including after reload or retry.
 - People receive ordinary attention references. Agent targets retain their
   exact participation IDs and existing concurrent dispatch, per-target
   permissions, attachments, cancellation, and failed-target retry behavior.
@@ -24,6 +27,11 @@ supersedes the earlier undecided personal-versus-shared list question.
 
 Comic exposes editing in Settings → People lists. Classic and Zoom expose it
 in People. All three use the existing signed directory and message routes.
+The captured references are encoded in an ordinary signed-text mention link,
+`agentnet:collective/v1/p.PERSON,g.GUEST,a.AGENT`, with bounded parsing and no
+new envelope field or authority. Removing the tag removes its selected targets;
+stopping asks removes agent references while keeping human references. Ambiguous
+text edits drop uncertain references rather than guessing an agent by name.
 
 ## Compatibility and identity
 

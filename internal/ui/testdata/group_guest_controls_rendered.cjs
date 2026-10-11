@@ -176,6 +176,16 @@ if(variant==='render-perf'){
 if(variant==='multi-agent'||variant==='team-tags'){
 fixture.thread.guests=[];fixture.overview.group_invitations=[];fixture.stages=[];fixture.failedOnce=false;
 fixture.thread.agents=['agent-a','agent-b'].map((pid,i)=>({pid,host:fixture.thread.members[1],agent_id:String(i+1).repeat(32),state:'active',state_text:'Active',host_here:false,shared:[],can_ask:true,inviter:fixture.overview.person,invited:'2026-10-05T10:00:00Z',tasks_from:[]}));
+if(variant==='multi-agent'&&${JSON.stringify(process.env.AGENTNET_COLLECTIVE_TAGS==='1')}){
+ // Real rendered composer candidates: 1,000 current humans, including self,
+ // plus two existing agents. Only those two agents create request jobs.
+ fixture.thread.members.push(...Array.from({length:998},(_,i)=>{
+  const person=(10000+i).toString(16).padStart(32,'0'),address='stress'+i+'/desktop',fingerprint='stress-key-'+i;
+  return {person,label:'Participant '+i,address,fingerprint,state:'pinned',devices:[{address,fingerprint}]};
+ }));
+ fixture.teamSnapshotEdited=localStorage.getItem('fixture-team-snapshot-edited')==='1';
+}
+
 }
 if(variant==='phone-rejoin'){
  fixture.thread.guests=[];fixture.overview.group_invitations=[];
@@ -305,7 +315,7 @@ if(variant==='team-tags'&&p==='/api/team'){
  if(body.op==='add')t.members.push(body.target);else if(body.op==='agent-add')t.agents.push(body.agent);else if(body.op==='agent-remove')t.agents=t.agents.filter(a=>a.id!==body.agent.id);else if(body.op==='rename')t.name=body.name;else throw Error('Unexpected tag change');
  return structuredClone(t);
 }
-if(p==='/api/teams')return {status:'available',current:true,tags:true,teams:variant==='multi-agent'?[{id:'f'.repeat(32),name:'Reviewers',version:2,members:[fixture.thread.members[1].person],agents:fixture.thread.agents.map(a=>({id:a.agent_id,host:a.host.address,host_key:a.host.fingerprint})),listed:true,conflict:false,archived:false,managers:[fixture.overview.person.person]}]:[]};
+if(p==='/api/teams')return {status:'available',current:true,tags:true,teams:variant==='multi-agent'?[{id:'f'.repeat(32),name:fixture.teamSnapshotEdited?'Changed reviewers':'Reviewers',version:2,members:fixture.teamSnapshotEdited?[]:[fixture.thread.members[1].person],agents:fixture.teamSnapshotEdited?[]:fixture.thread.agents.map(a=>({id:a.agent_id,host:a.host.address,host_key:a.host.fingerprint})),listed:true,conflict:false,archived:false,managers:[fixture.overview.person.person]}]:[]};
 if(p==='/api/get-app')return {version:'v0.8.5',detected:'linux',platforms:[{id:'linux',label:'Linux',url:'https://downloads.example/AgentNet.AppImage'},{id:'windows',label:'Windows',url:'https://downloads.example/AgentNet.exe'}]};
 if(p==='/api/device/link')return {url:'https://workspace.example/#agentnet-link-v2:fixture',app_url:'agentnet://open#agentnet-link-v2:fixture',expires:'2026-10-08T23:59:00Z'};
 if((variant==='direct-files'||variant==='device-oks'||variant.startsWith('delivery-'))&&p.startsWith('/api/thread?'))return structuredClone(new URL(p,location.origin).searchParams.get('id')==='8'.repeat(32)?fixture.otherDeviceThread:fixture.deviceThread);
@@ -665,16 +675,22 @@ if(process.env.AGENTNET_HELD_FLOOD_REGRESSION==='1'){
  try{
   if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
   await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();
-  const held=page.getByRole('region',{name:'Held back',exact:true});await held.waitFor();
-  await held.locator('summary').filter({hasText:'Chat sync needs attention'}).click();
-  assert.equal(await held.locator('li').count(),4,'326 copies render one line per sending device and cause, beside one trust-decision group');
+  const decisions=page.getByRole('region',{name:'Held back',exact:true});await decisions.waitFor();
   // Different messages from a changed key are never "one record re-sent".
-  const decision=held.locator('li').filter({hasText:'3 held messages · Cora’s Windows'});
+  const decision=decisions.locator('li').filter({hasText:'3 held messages · Cora’s Windows'});
   assert.match(await decision.locator('p').first().innerText(),/^3 held messages · Cora’s Windows · last /);
   assert.doesNotMatch(await decision.innerText(),/re-sent|record|cop(y|ies)/i,'a trust decision is a neutral count of messages');
   await decision.locator('summary').filter({hasText:'Show messages (3)'}).click();await decision.locator('li').first().waitFor();
   assert.equal(await decision.locator('li').count(),3,'each held message stays listed');
   await decision.locator('summary').filter({hasText:'Show messages (3)'}).click();
+  assert.equal(await decisions.getByText(/Your device Bezos re-sent/).count(),0,'passive sync records stay out of OKs');
+  const nav=page.getByRole('navigation',{name:'Main',exact:true});
+  await nav.getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();
+  await page.getByRole('button',{name:/^About/}).click();
+  await page.getByRole('button',{name:'Technical details',exact:true}).click();
+  const held=page.getByRole('region',{name:'Sync diagnostics',exact:true});await held.waitFor();
+  await held.locator('summary').filter({hasText:'Retained sync records'}).click();
+  assert.equal(await held.locator('li').count(),3,'326 passive copies render three device/cause groups; trust messages stay in OKs');
   // Own verified device: named, records not envelopes, and who acts.
   const own=held.locator('li').filter({hasText:'Your device Bezos re-sent 4 records 300 times'});
   assert.match(await own.locator('p').first().innerText(),/^Your device Bezos re-sent 4 records 300 times · last .+ · update AgentNet on Bezos$/);
@@ -911,26 +927,58 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   if(skin==='zoom')await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
   const field=skin==='comic'?page.locator('form[aria-label="Write a message"] textarea'):skin==='zoom'?page.locator('#write-body'):page.locator('#body');
   await field.waitFor({state:'visible'});
+  let firstAgentToken='';
   const pick=async index=>{
-   await field.press('End');await field.pressSequentially('@');
+   await field.press('Control+End');
+   if((await field.inputValue())&&!/\s$/.test(await field.inputValue()))await field.pressSequentially(' ');
+   const before=await field.inputValue();
+   await field.pressSequentially('@');
    // Two same-label agents on one host, distinct participation IDs, fixed DTO order.
    const options=skin==='comic'?page.getByRole('option').filter({hasText:'Analyst'}):page.locator('.mention-row').filter({hasText:'Analyst'});
    assert.equal(await options.count(),2,'both same-label agents must be offered');
    await options.nth(index).click();
+   return (await field.inputValue()).slice(before.length);
   };
   if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
+   // Removing the only collective must clear the legacy single-agent fallback.
+   await field.pressSequentially('@everyone');
+   const firstTag=skin==='comic'?page.getByRole('option').filter({hasText:'everyone'}):page.locator('.mention-row').filter({hasText:'everyone'});
+   await firstTag.click();assert.equal((await field.inputValue()).trimEnd(),'@everyone');
+   if(skin==='comic'){
+    await page.getByRole('button',{name:'Don’t ask 2 agents',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:/^Don’t ask /}).count(),0,'stopping a collective removes every exact agent target');
+    assert.equal(await field.inputValue(),'@everyone ','human attention tag remains compact when stopping agents');
+   }
+   await field.fill('');
+   if(skin==='comic')assert.equal(await page.getByRole('button',{name:/^Don’t ask /}).count(),0,'deleted collective leaves no fallback agent');
+   else assert.equal(await page.locator('#mentions .addressed-assistant').count(),0,'deleted collective leaves no fallback agent');
    for(const name of ['everyone','Reviewers']){
-    await field.press('End');await field.pressSequentially('@'+name);
+    await field.press('Control+End');
+    if((await field.inputValue())&&!/\s$/.test(await field.inputValue()))await field.pressSequentially(' ');
+    await field.pressSequentially('@'+name);
     const option=skin==='comic'?page.getByRole('option').filter({hasText:name}):page.locator('.mention-row').filter({hasText:name});
     await option.waitFor({state:'visible'});if(name==='everyone'){const shot=path.join(evidence,skin+'-tag-picker-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);}await option.click();
    }
-   assert.match(await field.inputValue(),/@Brin/,'mixed tag includes exact human attention');
-   assert.equal((await field.inputValue()).match(/@Brin/g).length,1,'overlapping tags do not repeat a person mention');
-   assert.equal((await field.inputValue()).match(/@Analyst/g).length,2,'overlapping tags retain two distinct agents exactly once');
-  }else{await pick(0);await pick(1);}
+   assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','collectives remain two compact tags');
+   assert(!/@Brin|@Analyst|Participant/.test(await field.inputValue()),'the 1000-member composer never expands tags into participant names');
+   assert.equal(await page.evaluate(()=>fixture.thread.members.length),1000,'actual rendered group has 1000 human members');
+   // An edited shared list, then a complete skin reload, must not rewrite
+   // either the tag label or its already selected exact recipient snapshot.
+   await page.evaluate(()=>{fixture.teamSnapshotEdited=true;localStorage.setItem('fixture-team-snapshot-edited','1');reloadFixture();});
+   await settle(page);assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers');
+   await page.reload();await page.waitForFunction(()=>window.ready);await page.evaluate(()=>openGroup());
+   await page.getByText('Selected warehouse context',{exact:skin!=='comic'}).first().waitFor();
+   if(skin==='zoom'&&!await field.isVisible())await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
+   await field.waitFor({state:'visible'});
+   assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','full reload restores both compact frozen tags after list edits');
+  }else{firstAgentToken=await pick(0);await pick(1);}
 
   // Edit the first mention away, preserving the second, then select it again.
-  const firstAgent=(await field.inputValue()).indexOf('@Analyst');await field.press('Home');for(let i=0;i<firstAgent;i++)await field.press('ArrowRight');for(let i=0;i<'@Analyst '.length;i++)await field.press('Delete');
+  if(process.env.AGENTNET_COLLECTIVE_TAGS!=='1'){
+   const remove=firstAgentToken,firstAgent=(await field.inputValue()).indexOf(remove);
+   assert(remove.startsWith('@')&&firstAgent>=0,'the exact first selected mention must remain before editing it');
+   await field.evaluate((el,range)=>{el.focus();el.setSelectionRange(range.start,range.end);},{start:firstAgent,end:firstAgent+remove.length});await field.press('Delete');
+  }
   await pick(0);await field.pressSequentially('Compare warehouse inventory');
   const file=skin==='comic'?page.locator('form[aria-label="Write a message"] input[type=file]'):skin==='zoom'?page.locator('#write-files'):page.locator('#file-input');
   await file.setInputFiles({name:'inventory.txt',mimeType:'text/plain',buffer:Buffer.from('synthetic inventory')});
@@ -946,8 +994,20 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   const visibleCopies=()=>page.locator('#skin').evaluate(e=>(e.shadowRoot.innerText||e.shadowRoot.textContent).split('Compare warehouse inventory').length-1);
   assert.equal(await visibleCopies(),1,'one human body with two independently retryable targets');
   assert(first.every(a=>a.kind==='question'&&a.body.includes('Compare warehouse inventory')));
+  if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
+   assert(first.every(a=>a.body.includes('[@Reviewers](agentnet:collective/v1/')),'signed requests retain compact frozen team snapshot');
+   assert(first.every(a=>!a.body.includes('[@Brin]')),'no hidden expanded human names');
+   for(const a of first){
+    const everyone=/\[@everyone\]\(agentnet:collective\/v1\/([^)]*)\)/.exec(a.body);
+    assert(everyone,'sent request retains compact everyone snapshot');
+    assert.equal(everyone[1].split(',').length,1001,'everyone captures 999 other humans and two existing agents');
+    const reviewers=/\[@Reviewers\]\(agentnet:collective\/v1\/([^)]*)\)/.exec(a.body);
+    assert.equal(reviewers[1].split(',').length,3,'renaming and emptying the shared team cannot rewrite its captured three references');
+    assert(reviewers[1].includes('a.agent-a')&&reviewers[1].includes('a.agent-b'),'team edits preserve both exact agent participation IDs');
+   }
+  }
   assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/send').length),0,'no ordinary-message fallback');
-  if(skin==='zoom')for(const pid of ['agent-a','agent-b'])await page.locator('.mini-chat [data-agent-recipient][title="'+pid+'"]').getByText('To @Analyst',{exact:true}).waitFor();
+  if(skin==='zoom')for(const pid of ['agent-a','agent-b'])await page.locator('.mini-chat [data-agent-recipient][title="'+pid+'"]').getByText(/^To @.*Analyst$/).waitFor();
   assert.equal(first[0].files.length,1);assert.equal(first[1].files.length,1);
   assert.notDeepEqual(first[0].files[0],first[1].files[0],'each request owns separately staged upload');
   assert.equal(await page.evaluate(()=>fixture.stages.length),2);
@@ -956,6 +1016,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   const after=await asks(),failed=first.find(a=>a.pid==='agent-b');
   assert.equal(after[2].pid,'agent-b');assert.equal(after[2].id,failed.id);
   assert.equal(after[2].send_group,failed.send_group,'retry retains the same durable group');
+  assert.equal(after[2].body,failed.body,'retry preserves exact collective recipient snapshot');
   assert.equal(after[2].files.length,1);assert.notDeepEqual(after[2].files,first.find(a=>a.pid==='agent-a').files,'failed retry never uses successful request upload');
   assert.equal(after.filter(a=>a.pid==='agent-a').length,1,'successful participation never resent');
   assert((await page.evaluate(()=>fixture.stages.length))<=3,'at most the failed request file restaged');
@@ -965,6 +1026,11 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    reloadFixture();
   });
   await settle(page);assert.equal(await visibleCopies(),1,'durable projection replaces previews without duplicating body');
+  if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
+   const rendered=skin==='comic'?await page.locator('[data-send-group]').innerText():(await Promise.all(first.map(a=>page.locator('#m-'+a.id).innerText()))).join(' ');
+   assert(rendered.includes('@everyone')&&rendered.includes('@Reviewers'),'1000-member sent/history projection shows compact original labels');
+   assert(!rendered.includes('Participant 0')&&!rendered.includes('agentnet:collective/'),'history never expands names or exposes frozen recipient metadata');
+  }
   if(skin==='comic'){
    const group=page.locator('[data-send-group]');assert.equal(await group.count(),1);
    assert.equal(await group.locator('[data-message-bubble]').count(),1,'No empty second bubble');
@@ -988,16 +1054,23 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
  try{
   if(skin==='comic'){
    if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
-   await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();
+   const nav=page.getByRole('navigation',{name:'Main',exact:true});
+   await nav.getByRole('button',{name:/^OKs/}).click();
+   const unknown=page.getByRole('region',{name:'Held back',exact:true}).locator('li').filter({hasText:'couldn’t be checked'});
+   assert.equal(await unknown.count(),1,'unknown classification stays unverified in OKs');
+   assert.equal(await unknown.getByRole('button',{name:'Archive notice'}).count(),0);
+   await nav.getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();
+   await page.getByRole('button',{name:/^About/}).click();
+   await page.getByRole('button',{name:'Technical details',exact:true}).click();
   }else{
    if(width===390){if(skin==='zoom')await page.getByRole('navigation',{name:'Zoom level',exact:true}).getByRole('button',{name:'Everyone',exact:true}).click();else await page.getByRole('button',{name:'Back to conversations',exact:true}).click();}
    await page.locator('#profile-btn').click();await page.locator('[data-settings="device"]').click();
    await page.locator('#quarantine-summary').click();
   }
-  const held=skin==='comic'?page.getByRole('region',{name:'Held back',exact:true}):page.locator('#quarantine');
+  const held=skin==='comic'?page.getByRole('region',{name:'Sync diagnostics',exact:true}):page.locator('#quarantine');
   await held.waitFor({state:'visible'});
-  if(skin==='comic')await held.locator('summary').filter({hasText:'Chat sync needs attention'}).click();
-  assert.equal(await held.locator('li').count(),4);
+  if(skin==='comic')await held.locator('summary').filter({hasText:'Retained sync records'}).click();
+  assert.equal(await held.locator('li').count(),skin==='comic'?3:4);
   const specific=held.locator('li').filter({hasText:'This invitation no longer matches the current group.'});
   await specific.getByText('If you still need to join, use the newer invitation or ask the inviter for a fresh one. You can archive this old notice.',{exact:true}).waitFor();
   assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),skin==='comic'?0:2);
@@ -1005,9 +1078,11 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
   assert(!/SECRET_HELD_BODY|SECRET_HELD_ATTACHMENT/.test(await held.innerText()),'encrypted contents never shown');
   // Old invalid DTO has no detail/recovery: safe generic fallback remains.
   await held.getByText('The original detailed reason was not recorded or is unavailable.',{exact:true}).waitFor();
-  const unknown=held.locator('li').filter({hasText:skin==='comic'?"couldn’t be checked":"couldn't be verified"});
-  assert.equal(await unknown.count(),1,'unknown old classification stays unverified');
-  assert.equal(await unknown.getByRole('button',{name:'Archive notice'}).count(),0);
+  if(skin!=='comic'){
+   const unknown=held.locator('li').filter({hasText:"couldn't be verified"});
+   assert.equal(await unknown.count(),1,'unknown old classification stays unverified');
+   assert.equal(await unknown.getByRole('button',{name:'Archive notice'}).count(),0);
+  }
   if(skin==='comic'){
    await held.getByRole('button',{name:'Archive all 2 notices',exact:true}).click();
    await page.waitForFunction(()=>fixture.overview.quarantine.length===2);

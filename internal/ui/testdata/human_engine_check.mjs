@@ -617,4 +617,72 @@ for (const ending of ['original', 'self']) {
  check((await a.store.all('outbox')).length===before&&JSON.stringify((await a.historyBook())[phone.address].pos)===position,'restart/reconnect preserves completed cursor and exact corrected copy: '+JSON.stringify({added:(await a.store.all('outbox')).filter(row=>!beforeRows.some(old=>old.id===row.id)).map(row=>({sub:row.sub,to:row.to,state:row.state})),position,after:JSON.stringify((await a.historyBook())[phone.address].pos)}));
  check((await a.overview()).history.find(j=>j.device===phone.address).blocked===0,'old quarantined transport tuple no longer falsely reports blocked history');
 }
+
+// Latest-only, CG-4: a topic-scoped invitation asks tps1 of the invited host
+// only. A member device without it, suspended until it updates or merely
+// older, stops nobody: its sealed copies of the scoped records wait at
+// handover (never handed over) and reach it once it reads tps1. The host is
+// asked, suspended or not.
+{
+ const w=await world(), {alice:a,bob:b,carol:c,conv}=w;
+ const base=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapHumanParticipation];
+ a.suspendedDevices=[b.address,c.address];
+ await refuses(()=>a.inviteHuman({conv,host:c.address,topic:wire.newID()}),/topic-only/);
+ check(!(await a.store.all('outbox')).some(r=>r.sub==='event'),'an older host gets no scoped invitation, suspended or not');
+ await w.caps(c,[...base,wire.CapTopicParticipation]);
+ const invited=[];
+ for(const [suspended,why] of [[[b.address],'suspended'],[[],'older']]){
+  a.suspendedDevices=suspended;
+  const topic=wire.newID(),p=await a.inviteHuman({conv,host:c.address,topic});
+  const held=(await a.store.all('outbox')).filter(r=>r.pid===p.pid&&r.to===b.address);
+  check(held.length===2&&held.every(r=>r.state==='waiting'&&r.detail.startsWith('peer_update: ')),why+' member device keeps its scoped records waiting, saying why');
+  check(!w.posts.some(raw=>held.some(r=>wire.parseEnvelope(raw).id===r.id)),why+' member device is handed nothing it cannot enforce');
+  await w.drain(c);
+  check((await c.agentConv(p.pid)).info.topic===topic,why+': the invited host has the scoped invitation');
+  invited.push([p.pid,topic]);
+ }
+ a.suspendedDevices=[];await w.caps(b,[...base,wire.CapTopicParticipation]);await w.drain(b);
+ for(const [pid,topic] of invited){
+  check((await a.store.all('outbox')).filter(r=>r.pid===pid&&r.to===b.address).every(r=>r.state==='custody'),'once updated, the same sealed records go');
+  check((await b.agentConv(pid)).info.topic===topic,'and the updated member enforces the topic');
+ }
+}
+
+
+// Named group participation: only its host executes; older readers retain
+// exact sealed lifecycle copies without stopping the invitation.
+{
+ const w=await world(),{alice:a,bob:b,carol:host}=w;
+ const current=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapGroup,wire.CapGroupInvitationControl,wire.CapRoom,wire.CapTopicParticipation];
+ for(const e of w.users){e.realm='f'.repeat(32);await w.caps(e,current);}
+ const conv=await a.createGroup('Named compatibility'),joined=await a.inviteGroup({conv,person:b.me.person});
+ await w.drain(b);await b.decideGroup({id:joined.id,accept:true});await w.drain(a);
+ if(a.recoveringGroups)await a.recoveringGroups;
+ await a.recoverGroupIntents();await w.drain(b);await b.retryHeld();
+ await w.caps(b,current.filter(cap=>cap!==wire.CapExternalParticipation&&cap!==wire.CapRoom));
+ await w.caps(host,current.filter(cap=>cap!==wire.CapExternalParticipation&&cap!==wire.CapRoom));
+ await refuses(()=>a.inviteAgent({conv,host:host.address,agent_id:w.agent.id}),/external participation/);
+ await w.caps(host,current);
+ const memberReader=await a.inviteAgent({conv,host:host.address,agent_id:w.agent.id});
+ const ordinary=(await a.store.all('outbox')).find(r=>r.pid===memberReader.pid&&r.to===b.address&&r.sub==='event');
+ check(ordinary?.state==='waiting'&&/room/i.test(ordinary.detail)&&!/named agents|external participation/.test(ordinary.detail),'aid1 reader copy waits only for actual rm1 room shape, not external-host apx1');
+ for(const suspended of [false,true]) {
+  await w.caps(b,current.filter(cap=>cap!==wire.CapAgentIdentity&&cap!==wire.CapExternalParticipation&&cap!==wire.CapTopicParticipation&&cap!==wire.CapRoom));
+  a.suspendedDevices=suspended?[b.address]:[];
+  const invited=await a.inviteAgent({conv,host:host.address,agent_id:w.agent.id,topic:wire.newID()});
+  const copy=(await a.store.all('outbox')).find(r=>r.pid===invited.pid&&r.to===b.address&&r.sub==='event');
+  check(copy?.state==='waiting'&&copy.detail.startsWith('peer_update: '),'older/suspended unrelated reader does not block named topic invite '+suspended);
+  check(!w.posts.some(raw=>wire.parseEnvelope(raw).id===copy.id),'unsupported reader is never posted '+suspended);
+  const exact=copy.envelope;
+  a.suspendedDevices=[];await w.caps(b,current);await w.drain(b);
+  const restored=await a.store.get('outbox',copy.id);
+  check(restored.state==='custody'&&restored.envelope===exact,'reader update releases same signed ID/envelope '+suspended);
+ }
+ await w.caps(host,current.filter(cap=>cap!==wire.CapTopicParticipation));
+ await refuses(()=>a.inviteAgent({conv,host:host.address,agent_id:w.agent.id,topic:wire.newID()}),/topic-only/);
+ await w.caps(host,current);const pin=await a.store.get('pins',host.address);
+ await a.store.write([{s:'pins',k:host.address,v:{...pin,pending:{fingerprint:'changed'}}}]);
+ await refuses(()=>a.inviteAgent({conv,host:host.address,agent_id:w.agent.id}),/key.*changed|trust|pinned/i);
+}
+
 console.log('human engine isolated lifecycle checks passed: ' + checks);

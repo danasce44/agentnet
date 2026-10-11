@@ -1,3 +1,4 @@
+import { collectivePlain } from './collective-mentions.mjs';
 // What the screens show, derived from the server's views. Nothing here
 // decides anything: names are what people call themselves, states are
 // what the server's records prove, and actions come from its can[] lists.
@@ -132,7 +133,7 @@ export function topicMark(t: Topic): null | { key: "needs" | "archived" | "done"
 
 /** plain removes mention markup: [@Name](agentnet:...) reads as @Name. */
 export const mentionRef = /\[@([^\[\]\r\n]{1,80})\]\(agentnet:(person|guest|agent)\/([A-Za-z0-9_-]{1,64})\)/g;
-export const plain = (s: string | undefined) => (s || "").replace(mentionRef, (_m, name) => "@" + name);
+export const plain = (s: string | undefined) => collectivePlain(s).replace(mentionRef, (_m, name) => "@" + name);
 export const firstLine = (s: string | undefined, n = 120) => {
   const l = plain(s).split("\n")[0].trim();
   return l.length > n ? l.slice(0, n - 1).trimEnd() + "…" : l;

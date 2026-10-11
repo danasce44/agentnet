@@ -1,5 +1,5 @@
 import { reactionChoices, recordReaction, humanReactionOrder } from "./reaction-preferences.mjs";
-import {collectiveOptions} from './collective-mentions.mjs';
+import {collectiveOptions, parseCollective, collectiveHref} from './collective-mentions.mjs';
 import { rawLinkParts } from "./link-text.mjs";
 function niceGoogleDevice(address) { const name = String(address || "").split("/").pop() || "device"; return name.charAt(0).toUpperCase() + name.slice(1); }
 import { avatarPicture, openPictureEditor, pastePictures } from "./pictures.mjs";
@@ -164,9 +164,9 @@ const when = (s) => {
 const size = (n) => n < 1024 ? n + " B" : n < 1 << 20 ? (n / 1024).toFixed(1) + " KB" : (n / (1 << 20)).toFixed(1) + " MB";
 // A person mention in text: [@Name](agentnet:person/ID) or agentnet:guest/PID
 // (see mentionWho). mentionPlain reads each as @Name.
-const mentionRef = /\[@([^\[\]\r\n]{1,80})\]\(agentnet:(person|guest|agent)\/([A-Za-z0-9_-]{1,64})\)/g;
+const mentionRef = /\[@([^\[\]\r\n]{1,80})\]\(agentnet:(person|guest|agent|collective)\/([A-Za-z0-9_.,/-]{1,280003})\)/g;
 const mentionName = (s) => String(s || "").replace(/[\[\]\r\n]/g, "").trim().slice(0, 80);
-const mentionPlain = (s) => typeof s === "string" ? s.replace(mentionRef, (_, name) => "@" + name) : s;
+const mentionPlain = (s) => typeof s === "string" ? s.replace(mentionRef, (all, name, kind, id) => kind!=="collective" || parseCollective("agentnet:collective/"+id)?"@"+name:all) : s;
 const firstLine = (s, n) => {
   const l = mentionPlain(s || "").split("\n")[0]; // a person mention reads as @Name
   return l.length > n ? l.slice(0, n - 1).trimEnd() + "…" : l;
@@ -2433,7 +2433,9 @@ function mentionNodes(text, t = state.dmData) {
   let last = 0;
   for (const m of text.matchAll(mentionRef)) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    const who = mentionWho(m[2], m[3], t);
+    const refs=m[2]==='collective'?parseCollective('agentnet:collective/'+m[3]):null;
+    if(m[2]==='collective'&&!refs){out.push(m[0]);last=m.index+m[0].length;continue;}
+    const who = refs?{label:m[1],title:refs.length+' exact recipients'}:mentionWho(m[2], m[3], t);
     out.push(who ? el("span", { class: "mention-chip" + (who.me ? " mention-me" : ""), title: who.title }, "@" + who.label) : "@" + m[1]);
     last = m.index + m[0].length;
   }
@@ -2445,13 +2447,14 @@ function messageNodes(text) {
 }
 // Previews are buttons that open the full message, where links become live.
 function messagePreview(text) {
-  return rawLinkParts(text).map(part => typeof part === "string" ? part : part.label).join("");
+  return rawLinkParts(text).map(part => typeof part === "string" ? mentionPlain(part) : part.label).join("");
 }
 // decodeMentions gives text as it is edited (@Name) and its exact mentions.
 function decodeMentions(text) {
   const s = String(text || ""), spans = [];
   let plain = "", last = 0;
   for (const m of s.matchAll(mentionRef)) {
+    if(m[2]==='collective'&&!parseCollective('agentnet:collective/'+m[3]))continue;
     plain += s.slice(last, m.index);
     spans.push({ start: plain.length, name: m[1], ref: { kind: m[2], id: m[3] } });
     plain += "@" + m[1];
@@ -2461,7 +2464,7 @@ function decodeMentions(text) {
 }
 const mentionAt = (text, s) => text.slice(s.start, s.start + s.name.length + 1) === "@" + s.name;
 const validMentions = (spans, text) => (Array.isArray(spans) ? spans : []).filter(s => s && Number.isInteger(s.start) && typeof s.name === "string" && /^[^\[\]\r\n]{1,80}$/.test(s.name) &&
-  ["person", "guest", "agent"].includes(s.ref?.kind) && /^[A-Za-z0-9_-]{1,64}$/.test(s.ref?.id || "") && mentionAt(text, s));
+  (s.ref?.kind==='collective'?!!parseCollective('agentnet:collective/'+s.ref.id):["person", "guest", "agent"].includes(s.ref?.kind) && /^[A-Za-z0-9_-]{1,64}$/.test(s.ref?.id || "")) && mentionAt(text, s));
 // encodeMentions writes each exact mention still intact in text as its reference.
 function encodeMentions(text, spans, plainAgents = true) {
   let out = text;
@@ -2470,18 +2473,30 @@ function encodeMentions(text, spans, plainAgents = true) {
   }
   return out;
 }
+const mentionAgentPIDs=s=>s.ref.kind==='agent'?[s.ref.id]:s.ref.kind==='collective'?(parseCollective('agentnet:collective/'+s.ref.id)||[]).filter(r=>r.kind==='agent').map(r=>r.id):[];
 // Only intact selected agent references route; names and incoming text never do.
 function selectedAgentPIDs(text = $("body").value, spans = state.mentions, fallback = state.dmAgent) {
-  const selected = [...new Set(validMentions(spans, text).filter(s => s.ref.kind === "agent").sort((a,b) => a.start-b.start).map(s => s.ref.id))];
+  const selected = [...new Set(validMentions(spans, text).sort((a,b) => a.start-b.start).flatMap(mentionAgentPIDs))];
   return selected.length ? selected : fallback ? [fallback] : [];
 }
 // shiftMentions follows one edit from prev to cur: mentions before or after
 // it move with the text; one the edit touched is dropped (it is plain text now).
-function shiftMentions(spans, prev, cur) {
+function shiftMentions(spans, prev, cur, caret) {
+  if (prev === cur) return { kept: spans || [], dropped: [] };
   const max = Math.min(prev.length, cur.length);
   let p = 0, s = 0;
   while (p < max && prev[p] === cur[p]) p++;
-  while (s < max - p && prev[prev.length - 1 - s] === cur[cur.length - 1 - s]) s++;
+  // The post-edit caret distinguishes equal labels with different exact PIDs.
+  const anchored = Number.isInteger(caret) && caret >= 0 && caret <= cur.length;
+  if (anchored) p = Math.min(p, Math.max(0, caret - Math.max(0, cur.length - prev.length)));
+  const suffixMax = anchored ? Math.min(max - p, cur.length - caret) : max;
+  while (s < suffixMax && prev[prev.length - 1 - s] === cur[cur.length - 1 - s]) s++;
+  if (!anchored && p + s > max) {
+    // IME or unknown edits may fit several equal labels. Keep only refs
+    // outside every possible edit, rather than guess a recipient identity.
+    const prefix = max - s, suffix = max - p;
+    p = prefix; s = suffix;
+  }
   const oldEnd = prev.length - s, delta = cur.length - prev.length, kept = [], dropped = [];
   for (const m of spans || []) {
     if (m.start + m.name.length + 1 <= p) kept.push(m);
@@ -2492,12 +2507,12 @@ function shiftMentions(spans, prev, cur) {
 }
 // trackMentions keeps the composer's exact mentions with its text; a mention
 // the person edits becomes plain text, and the page says so.
-function trackMentions() {
+function trackMentions(caret) {
   const cur = mentionInput().value, prev = state.mentionText ?? cur;
   if (cur !== prev && (state.mentions || []).length) {
-    const { kept, dropped } = shiftMentions(state.mentions, prev, cur);
+    const { kept, dropped } = shiftMentions(state.mentions, prev, cur, caret);
     state.mentions = kept;
-    if (dropped.some(s => s.ref.kind === "agent" && s.ref.id === state.dmAgent)) state.dmAgent = selectedAgentPIDs(cur, kept, null)[0] || null;
+    if (dropped.some(s => mentionAgentPIDs(s).length)) state.dmAgent = selectedAgentPIDs(cur, kept, null)[0] || null;
     if (dropped.length) { announce(dropped.map(m => "@" + m.name).join(", ") + (dropped.length > 1 ? " are" : " is") + " no longer an exact mention; the text stays."); renderAgentTarget(); }
   }
   state.mentionText = cur;
@@ -2586,16 +2601,18 @@ function pickMention(i) {
   if (!it || v.gen !== state.gen || v.conv !== state.dm || !t || it.kind === "assistant" && !agentOf(it.a.pid)?.can_ask) { closeMentions(); return; }
   if (it.kind === "collective") {
     trackMentions();
-    const targets=it.targets.filter(p=>!state.mentions.some(m=>m.ref.kind===(p.kind==='assistant'?'agent':p.ref.kind)&&m.ref.id===(p.kind==='assistant'?p.a.pid:p.ref.id)));
+    const targets=it.targets;
     if (targets.some(p=>p.kind==='assistant'&&!agentOf(p.a.pid)?.can_ask)) {closeMentions();announce('The participants changed. Choose the tag again.');return;}
-    const input=mentionInput(), at=v.start??v.end,token=targets.length?targets.map(p=>'@'+p.name).join(' ')+' ':'';
-    trackMentions();input.value=input.value.slice(0,at)+token+input.value.slice(v.end);$("body").value=input.value;trackMentions();
-    let start=at;
-    for(const p of targets){state.mentions.push({start,name:p.name,ref:p.kind==='assistant'?{kind:'agent',id:p.a.pid}:p.ref,role:p.role});start+=p.name.length+2;}
+    const refs=targets.map(p=>p.kind==='assistant'?{kind:'agent',id:p.a.pid}:p.ref),href=collectiveHref(refs);
+    if(!href){closeMentions();announce('This tag cannot be selected.');return;}
+    const input=$('body'),at=v.start??v.end,token='@'+it.name+' ';
+    trackMentions();input.value=input.value.slice(0,at)+token+input.value.slice(v.end);trackMentions(at+token.length);
+    state.mentions.push({start:at,name:it.name,ref:{kind:'collective',id:href.slice('agentnet:collective/'.length)}});
     const agent=targets.find(p=>p.kind==='assistant');if(agent)setDMAgent(agentOf(agent.a.pid));
     input.setSelectionRange?.(at+token.length,at+token.length);grow();keepDraft();closeMentions();renderAgentTarget();input.focus();
-    announce(targets.length?'@'+it.name+' expanded to '+targets.length+' recipients. Review their names before sending.':'Everyone from @'+it.name+' is already selected.');return;
+    announce('@'+it.name+' selects '+targets.length+' exact recipients.');return;
   }
+
   if (it.kind.startsWith("invite")) { // the existing consent dialog decides; nothing is granted here
     closeMentions();
     if (it.kind === "invite-assistant") inviteDialog(t); else inviteHumanDialog(t, it.address || "");
@@ -2607,7 +2624,7 @@ function pickMention(i) {
     input.value = input.value.slice(0, at) + token + input.value.slice(v.end);
     input.setSelectionRange?.(at + token.length, at + token.length);
     $("body").value = input.value;
-    trackMentions();
+    trackMentions(at + token.length);
     if (it.kind === "person" || it.kind === "assistant") state.mentions = [...(state.mentions || []), { start: at, name: it.name, ref: it.kind === "assistant" ? {kind:"agent",id:it.a.pid} : it.ref, role: it.role }];
     grow();
   }
@@ -2819,7 +2836,12 @@ function dismissDialog(a) {
 function setDMAgent(a) {
   const previous = state.dmAgent;
   state.dmAgent = a ? a.pid : null;
-  if (!a) state.mentions = (state.mentions || []).filter(s => s.ref.kind !== "agent");
+  if (!a) state.mentions = (state.mentions || []).flatMap(s=>{
+    if(s.ref.kind==='agent')return [];
+    if(s.ref.kind!=='collective')return [s];
+    const refs=(parseCollective('agentnet:collective/'+s.ref.id)||[]).filter(r=>r.kind!=='agent'),href=collectiveHref(refs);
+    return href?[{...s,ref:{kind:'collective',id:href.slice('agentnet:collective/'.length)}}]:[];
+  });
   if (a) {
     state.dmReply = null;
     $("replying").hidden = false;
@@ -3899,13 +3921,13 @@ function renderAgentTarget() {
   if (box.hidden) { fill(box); return; }
   if (state.dm) {
     const a = agentOf(state.dmAgent);
-    fill(box, state.dmAgent && !mentioned.some(s => s.ref.kind === "agent") && el("span", { class: "addressed-assistant", title: (a?.agent_id || state.dmAgent) + " · " + (a?.host.address || "unavailable") + " · participation " + state.dmAgent },
+    fill(box, state.dmAgent && !mentioned.some(s => mentionAgentPIDs(s).length) && el("span", { class: "addressed-assistant", title: (a?.agent_id || state.dmAgent) + " · " + (a?.host.address || "unavailable") + " · participation " + state.dmAgent },
       "@" + (a ? agentName(a) : "Selected assistant unavailable"),
       el("button", { type: "button", class: "text-btn", disabled: state.sending, "aria-label": "Remove addressed assistant", onclick: () => { setDMAgent(null); keepDraft(); } }, "×")),
       mentioned.map(s => el("span", { class: "addressed-assistant mentioned-person", title: "@" + s.name + (s.role ? " · " + s.role : "") },
         "@" + s.name,
         el("button", { type: "button", class: "text-btn", disabled: state.sending, "aria-label": "Make @" + s.name + " plain text", onclick: () => { state.mentions = (state.mentions || []).filter(x => x !== s);
-          if (s.ref.kind === "agent") state.dmAgent = selectedAgentPIDs($("body").value,state.mentions,null)[0] || null;
+          if (mentionAgentPIDs(s).length) state.dmAgent = selectedAgentPIDs($("body").value,state.mentions,null)[0] || null;
           keepDraft(); renderAgentTarget(); syncComposer(); } }, "×"))),
       el("button", { type: "button", class: "text-btn", disabled: state.sending, onclick: () => { showMentions(true); mentionInput().focus(); } }, "@ Mention"));
     return;
@@ -4267,7 +4289,11 @@ function restoreDraft(key, t) {
   setDMReply(r || null);
   // An agent target comes back as it was, even when that agent cannot be
   // asked any more: the person, not a dismissal, moves the text elsewhere.
-  const a = state.dm && d && d.agent && ((t.agents || []).find((x) => x.pid === d.agent) || { pid: d.agent });
+  // Reload snapshots retain exact mention refs even when the old single-
+  // agent fallback is absent. Reconstruct that fallback before setDMAgent:
+  // null means an explicit stop and would otherwise erase captured agents.
+  const selected = state.dm && d && selectedAgentPIDs($("body").value, state.mentions, d.agent)[0];
+  const a = selected && ((t.agents || []).find((x) => x.pid === selected) || { pid: selected });
   setDMAgent(a || null);
   if (a && d.kind === "task") setKind("task");
 }
@@ -5104,7 +5130,7 @@ function start() {
   $("composer").addEventListener("submit", send);
   $("body").addEventListener("input", grow);
   $("body").addEventListener("input", noteTyping);
-  $("body").addEventListener("input", () => { trackMentions(); showMentions(); });
+  $("body").addEventListener("input", e => { trackMentions(e.isComposing ? undefined : e.target.selectionStart); showMentions(); });
   $("body").addEventListener("keydown", mentionKey);
   $("mention-button").addEventListener("click", () => { showMentions(true); $("body").focus(); });
   $("routing-close").addEventListener("click", () => $("routing-settings").close());
@@ -5262,8 +5288,8 @@ function dmWriteDialog(d) {
   const host = currentHost, gen = state.gen;
   const body = el("textarea", { id: "write-body", rows: "4" });
   body.value = $("body").value;
-  body.addEventListener("input", () => {
-    $("body").value = body.value;trackMentions();keepDraft();renderAgentTarget();showMentions();
+  body.addEventListener("input", e => {
+    $("body").value = body.value;trackMentions(e.isComposing ? undefined : body.selectionStart);keepDraft();renderAgentTarget();showMentions();
   });
   body.addEventListener("keydown", mentionKey);
   const mentions = el("div", {id:"write-mentions",hidden:true});

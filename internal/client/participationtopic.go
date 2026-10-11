@@ -37,30 +37,36 @@ func (a *Agent) InviteAgentInScope(ctx context.Context, conv, host, agent string
 func (a *Agent) InviteHumanInScope(ctx context.Context, conv, host string, grant []string, note string, topic *string) (ParticipationInfo, error) {
 	return a.inviteParticipation(ctx, conv, host, "", grant, nil, note, protocol.RoleHuman, topic)
 }
-func (a *Agent) requireTopicParticipants(ctx context.Context, m dmMembers, host protocol.ParticipationHost) error {
-	seen := map[string]bool{}
+
+// requireTopicHost: the invited host must enforce topic-only participation
+// (tps1), suspended or not; it is the device that runs or speaks for the
+// participant. The members' devices are not asked here: one older or
+// suspended device must not stop a scoped invitation for everyone (CG-4).
+// Every copy carrying the scope (the invite and its records, the
+// participant's turns, proofs naming the topic) waits per device for tps1
+// at handover and release (copyNeeds.topicScoped), so such a device holds
+// no record of the participation and admits nothing from it until it
+// updates.
+func (a *Agent) requireTopicHost(ctx context.Context, m dmMembers, host protocol.ParticipationHost) error {
+	if host.Address == a.Address {
+		return nil
+	}
 	for _, p := range m.persons {
-		for _, d := range p.roster.Devices {
-			if d.Address == a.Address {
-				continue
+		if d, ok := p.device(host.Address); ok {
+			if d.Fingerprint() != host.Fingerprint {
+				return errors.New("participation host key changed")
 			}
-			seen[d.Address] = true
-			if err := a.requireParticipationCaps(ctx, d, protocol.CapTopicParticipation); err != nil {
-				return err
-			}
+			return a.requireParticipationCaps(ctx, d, protocol.CapTopicParticipation)
 		}
 	}
-	if host.Address != a.Address && !seen[host.Address] {
-		key, err := a.sendKey(ctx, host.Address)
-		if err != nil {
-			return err
-		}
-		if key.Fingerprint() != host.Fingerprint {
-			return errors.New("participation host key changed")
-		}
-		return a.requireParticipationCaps(ctx, key, protocol.CapTopicParticipation)
+	key, err := a.sendKey(ctx, host.Address)
+	if err != nil {
+		return err
 	}
-	return nil
+	if key.Fingerprint() != host.Fingerprint {
+		return errors.New("participation host key changed")
+	}
+	return a.requireParticipationCaps(ctx, key, protocol.CapTopicParticipation)
 }
 
 // topicReference resolves accepted originals by exact ID first, then one exact

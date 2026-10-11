@@ -79,9 +79,26 @@ const when = (s) => {
 const size = (n) => n < 1024 ? n + " B" : n < 1 << 20 ? (n / 1024).toFixed(1) + " KB" : (n / (1 << 20)).toFixed(1) + " MB";
 // A person mention in text: [@Name](agentnet:person/ID) or agentnet:guest/PID
 // (see mentionWho). mentionPlain reads each as @Name.
-const mentionRef = /\[@([^\[\]\r\n]{1,80})\]\(agentnet:(person|guest)\/([A-Za-z0-9_-]{1,64})\)/g;
+const collectivePrefix = 'agentnet:collective/v1/';
+const kinds = {p:'person',g:'guest',a:'agent'};
+const maxRefs = 4096, maxPayload = 280000;
+function parseCollective(value) {
+  if(typeof value!=='string'||!value.startsWith(collectivePrefix))return null;
+  const payload=value.slice(collectivePrefix.length);
+  if(!payload||payload.length>maxPayload)return null;
+  const parts=payload.split(',');if(parts.length>maxRefs)return null;
+  const refs=[],seen=new Set();
+  for(const part of parts){
+    const m=/^([pga])\.([A-Za-z0-9_-]{1,64})$/.exec(part);
+    if(!m)return null;
+    if(!seen.has(part)){seen.add(part);refs.push({kind:kinds[m[1]],id:m[2]});}
+  }
+  return refs;
+}
+
+const mentionRef = /\[@([^\[\]\r\n]{1,80})\]\(agentnet:(person|guest|collective)\/([A-Za-z0-9_.,/-]{1,280003})\)/g;
 const mentionName = (s) => String(s || "").replace(/[\[\]\r\n]/g, "").trim().slice(0, 80);
-const mentionPlain = (s) => typeof s === "string" ? s.replace(mentionRef, (_, name) => "@" + name) : s;
+const mentionPlain = (s) => typeof s === "string" ? s.replace(mentionRef, (all,name,kind,id)=>kind!=="collective"||parseCollective("agentnet:collective/"+id)?"@"+name:all) : s;
 const firstLine = (s, n) => {
   const l = mentionPlain(s || "").split("\n")[0]; // a person mention reads as @Name
   return l.length > n ? l.slice(0, n - 1).trimEnd() + "…" : l;
@@ -2292,7 +2309,9 @@ function mentionNodes(text, t = state.dmData) {
   let last = 0;
   for (const m of text.matchAll(mentionRef)) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    const who = mentionWho(m[2], m[3], t);
+    const refs=m[2]==='collective'?parseCollective('agentnet:collective/'+m[3]):null;
+    if(m[2]==='collective'&&!refs){out.push(m[0]);last=m.index+m[0].length;continue;}
+    const who=refs?{label:m[1],title:refs.length+' exact recipients'}:mentionWho(m[2],m[3],t);
     out.push(who ? el("span", { class: "mention-chip" + (who.me ? " mention-me" : ""), title: who.title }, "@" + who.label) : "@" + m[1]);
     last = m.index + m[0].length;
   }
@@ -2304,6 +2323,7 @@ function decodeMentions(text) {
   const s = String(text || ""), spans = [];
   let plain = "", last = 0;
   for (const m of s.matchAll(mentionRef)) {
+    if(m[2]==='collective'&&!parseCollective('agentnet:collective/'+m[3]))continue;
     plain += s.slice(last, m.index);
     spans.push({ start: plain.length, name: m[1], ref: { kind: m[2], id: m[3] } });
     plain += "@" + m[1];
@@ -2313,7 +2333,7 @@ function decodeMentions(text) {
 }
 const mentionAt = (text, s) => text.slice(s.start, s.start + s.name.length + 1) === "@" + s.name;
 const validMentions = (spans, text) => (Array.isArray(spans) ? spans : []).filter(s => s && Number.isInteger(s.start) && typeof s.name === "string" && /^[^\[\]\r\n]{1,80}$/.test(s.name) &&
-  ["person", "guest"].includes(s.ref?.kind) && /^[A-Za-z0-9_-]{1,64}$/.test(s.ref?.id || "") && mentionAt(text, s));
+  (s.ref?.kind==='collective'?!!parseCollective('agentnet:collective/'+s.ref.id):["person", "guest"].includes(s.ref?.kind) && /^[A-Za-z0-9_-]{1,64}$/.test(s.ref?.id || "")) && mentionAt(text, s));
 // encodeMentions writes each exact mention still intact in text as its reference.
 function encodeMentions(text, spans) {
   let out = text;

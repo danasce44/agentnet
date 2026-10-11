@@ -17,11 +17,11 @@ import { agentName, deviceTarget, deviceWho, firstLine, niceDevice, participants
 import { useStore, type Draft, type StagedFile } from "../store";
 import { EmojiPicker, useEmojiPreload } from "./Emoji";
 import { DropTarget, FilesTray, bytes, draftFiles, overLimit, releaseFiles, useFileDrop } from "./Composer.files";
-import { agentTargets, candidates, decode, encode, guestAuthor, matches, shift, trigger, type Candidate, type Span } from "./Composer.mentions";
+import { agentTargets, spanAgentTargets, withoutAgents, candidates, decode, encode, guestAuthor, matches, shift, trigger, type Candidate, type Span } from "./Composer.mentions";
 import { Field, IntentRow, PlusMenu, ReplyChip, SendButton, menuIcons, type MenuAction } from "./Composer.parts";
 import { MentionList, optionId } from "./Composer.picker";
 import { useTeams } from "./Teams";
-import { collectiveOptions } from "../collective-mentions.mjs";
+import { collectiveOptions, collectiveHref } from "../collective-mentions.mjs";
 import { useTypingSignal } from "./Composer.typing";
 import { coarse, useFieldFocus } from "./Composer.focus";
 import { usePortal } from "../owned";
@@ -114,7 +114,7 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
       const a = (dm.agents || []).find((x) => x.pid === selectedPIDs[0]);
       const p = participants(dm, overview, names).find((x) => x.pid === selectedPIDs[0]);
       const name = p?.name || "This agent";
-      return { kind: "agent", pid: selectedPIDs[0], name: selectedPIDs.length > 1 ? selectedPIDs.map(pid => participants(dm, overview, names).find(x => x.pid === pid)?.name || "Unavailable agent").join(", ") : name, seed: p?.seed || selectedPIDs[0], canAsk: selectedPIDs.some(pid => dm.agents?.some(x => x.pid === pid && x.can_ask && scopeMatches(x, draft.newTopic ? "__new__" : draft.topic || ""))), why: a ? scopeMatches(a, draft.newTopic ? "__new__" : draft.topic || "") ? a.state_text : "It is invited to a different topic." : "It is no longer in this chat." };
+      return { kind: "agent", pid: selectedPIDs[0], name: selectedPIDs.length > 1 ? selectedPIDs.length + " agents" : name, seed: p?.seed || selectedPIDs[0], canAsk: selectedPIDs.some(pid => dm.agents?.some(x => x.pid === pid && x.can_ask && scopeMatches(x, draft.newTopic ? "__new__" : draft.topic || ""))), why: a ? scopeMatches(a, draft.newTopic ? "__new__" : draft.topic || "") ? a.state_text : "It is invited to a different topic." : "It is no longer in this chat." };
     }
     return { kind: "conversation" };
   }, [dm, thread, draft.agent, draft.text, draft.topic, draft.newTopic, answerable?.id, answerable?.kind, overview, names]);
@@ -188,9 +188,9 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   function edit(cur: string, at?: number) {
     const d = latest();
     const was = decode(d.text);
-    const { kept, dropped } = shift(was.spans, was.text, cur);
+    const { kept, dropped } = shift(was.spans, was.text, cur, at);
     const next: Draft = { ...d, text: encode(cur, kept) };
-    if (dropped.some((s) => s.kind === "agent" && s.id === d.agent)) {
+    if (dropped.some((s) => spanAgentTargets(s).length > 0)) {
       next.agent = agentTargets(cur, kept)[0];
       announce(next.agent ? "That mention was removed; the remaining selected agents will still be asked." : "No agents are selected; this goes to everyone here.");
     }
@@ -202,27 +202,22 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   function pick(c: Candidate) {
     if (!trig || caret == null) return;
     const d = latest();
-    const selected = (c.targets || [c]).filter((p): p is Candidate & {kind: Span["kind"]} => p.kind !== "collective")
-      .filter(p => c.kind !== "collective" || !spans.some(s => s.kind === p.kind && s.id === p.id));
-    const token = selected.length ? selected.map(p => "@" + p.name).join(" ") + " " : "";
-    const cur = text.slice(0, trig.start) + token + text.slice(caret);
-    let { kept } = shift(spans, text, cur);
-    // Keep every exact selected agent mention; target extraction deduplicates PIDs.
-    let start = trig.start;
-    const added: Span[] = selected.map(p => {const s = {start, name:p.name,kind:p.kind,id:p.id}; start += p.name.length+2; return s;});
-    const agent = selected.find(p => p.kind === "agent");
-    write({
-      ...d, text: encode(cur, [...kept, ...added]),
-      ...(agent ? { agent: agent.id, replyTo: undefined } : {}),
-    }, trig.start + token.length);
-    if (c.kind === "collective") announce(selected.length ? "@"+c.name+" expanded to "+selected.length+" recipients. Review their names before sending." : "Everyone from @"+c.name+" is already selected.");
-    else if (agent) announce("Asking " + c.name + ".");
+    const selected=(c.targets||[c]).filter((p):p is Candidate & {kind: 'person'|'guest'|'agent'}=>p.kind!=='collective');
+    if(c.kind==='collective'&&!collectiveHref(selected.map(p=>({kind:p.kind,id:p.id})))){announce('This tag cannot be selected.');return;}
+    const token='@'+c.name+' ';
+    const cur=text.slice(0,trig.start)+token+text.slice(caret);
+    const {kept}=shift(spans,text,cur,trig.start+token.length);
+    const added:Span=c.kind==='collective'?{start:trig.start,name:c.name,kind:'collective',id:'',refs:selected.map(p=>({kind:p.kind,id:p.id}))}:{start:trig.start,name:c.name,kind:c.kind,id:c.id};
+    const agent=agentTargets(cur,[...kept,added],d.agent)[0];
+    write({...d,text:encode(cur,[...kept,added]),agent, ...(agent?{replyTo:undefined}:{})},trig.start+token.length);
+    if(c.kind==='collective')announce('@'+c.name+' selects '+selected.length+' exact recipients.');
+    else if(agent)announce('Asking '+c.name+'.');
   }
 
   function stopAsking() {
     const d = latest();
     const was = decode(d.text);
-    write({ ...d, text: encode(was.text, was.spans.filter((s) => s.kind !== "agent")), agent: undefined });
+    write({ ...d, text: encode(was.text, withoutAgents(was.spans)), agent: undefined });
   }
 
 
@@ -591,7 +586,7 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
           enterKeyHint={wide ? "send" : "enter"} autoComplete="off" spellCheck
           aria-autocomplete="list" aria-controls={open && offered.length ? listId : undefined}
           aria-activedescendant={open && offered.length ? optionId(listId, Math.min(active, offered.length - 1)) : undefined}
-          onChange={(e) => { edit(e.target.value); setCaret(e.target.selectionStart); setDismissed(-1); typing.typed(!!e.target.value.trim()); }}
+          onChange={(e) => { edit(e.target.value, (e.nativeEvent as InputEvent).isComposing ? undefined : e.target.selectionStart); setCaret(e.target.selectionStart); setDismissed(-1); typing.typed(!!e.target.value.trim()); }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart === e.currentTarget.selectionEnd ? e.currentTarget.selectionStart : null)}
           onBlur={() => { setCaret(null); typing.stop(); }}
           onScroll={(e) => { if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop; }}

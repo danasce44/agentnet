@@ -4,7 +4,9 @@
 // One held for a changed identity can be checked and trusted from here on
 // a computer, the same way as from the paused chat. One that didn't verify
 // proves nothing about who sent it: it only says who it claims to be from.
-// Background failures are one line per sending device and cause: how many
+// Background records belong in Settings' technical details, not OKs: there
+// is no decision to make while context arrives or a record fails validation.
+// They remain one line per sending device and cause: how many
 // records it sent how often (only where copies are known to repeat one),
 // and who can act; every notice stays listed, with how many exact re-sent
 // copies the provider folded into it (each still kept, blocked and found by
@@ -41,11 +43,11 @@ async function archiveHeld(store: Store, rows: T.QuarantineItem[]) {
   else if (sent) store.toast("Archived " + archived + " of " + plural(refs.length, "notice", "notices") + " before an error; the rest stay visible. Nothing was accepted or run.", "error");
 }
 
-export function HeldBack({ o }: { o: T.Overview }) {
+export function HeldBack({ o, diagnostics = false }: { o: T.Overview; diagnostics?: boolean }) {
   const store = useApp();
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(12);
-  const items = [...(o.quarantine || [])].sort((a, b) => b.at.localeCompare(a.at));
+  const items = (o.quarantine || []).filter(q => background(q.code) === diagnostics).sort((a, b) => b.at.localeCompare(a.at));
   const groups = new Map<string, T.QuarantineItem[]>();
   for (const q of items) {
     const key = JSON.stringify([q.code, q.detail_code || "", q.peer]);
@@ -63,12 +65,12 @@ export function HeldBack({ o }: { o: T.Overview }) {
   if (!items.length) return null;
   const copies = backgrounds.reduce((n, [, rows]) => n + heldCopies(rows), 0);
   return (
-    <section className="px-4 pt-6" aria-labelledby="oks-heldback">
-      <h2 id="oks-heldback" className="text-[12px] font-extrabold uppercase tracking-[.08em] text-muted">Held back</h2>
+    <section className={diagnostics ? "min-w-0 pt-3" : "px-4 pt-6"} aria-labelledby={diagnostics ? "sync-diagnostics" : "oks-heldback"}>
+      <h2 id={diagnostics ? "sync-diagnostics" : "oks-heldback"} className="text-[12px] font-extrabold uppercase tracking-[.08em] text-muted">{diagnostics ? "Sync diagnostics" : "Held back"}</h2>
       {decisions.length > 0 && <ul className="flex flex-col gap-3 pt-3">{decisions.slice(0, visible).map(([key, rows]) => rows.length === 1 ? <HeldRow key={key} q={rows[0]} o={o} /> : <HeldGroup key={key} rows={rows} o={o} />)}</ul>}
       {backgrounds.length > 0 && <details className="mt-3 rounded-2xl bg-surface p-3.5 stroke">
-        <summary className="cursor-pointer font-bold">Chat sync needs attention <span className="font-normal text-text-2">· {plural(backgrounds.length, "problem", "problems")}</span></summary>
-        <p className="pt-1 text-[14px] text-text-2">{plural(copies, "held copy", "held copies")} this device couldn’t let in. Each is kept and stays blocked; nothing in them runs. Each line says what it waits for or who can fix it.</p>
+        <summary className="cursor-pointer font-bold">Retained sync records <span className="font-normal text-text-2">· {plural(backgrounds.length, "group", "groups")}</span></summary>
+        <p className="pt-1 text-[14px] text-text-2">{plural(copies, "copy", "copies")} waiting for verification or blocked by a recorded check. These are diagnostic records, not approval requests. They stay retained; nothing in them runs.</p>
         {archiveable.length > 0 && <><Button size="sm" variant="outline" className="mt-2" disabled={busy} onClick={() => void archive(archiveable)}>{busy ? "Archiving…" : archiveable.length === 1 ? "Archive 1 notice" : "Archive all " + archiveable.length + " notices"}</Button><p className="mt-1 text-[13px] text-muted">Hides these notices here; it repairs nothing. Checks continue for pending context; nothing is accepted or run. New or changed notices remain visible.</p></>}
         <ul className="flex flex-col gap-3 pt-3">{backgrounds.slice(0, visible).map(([key, rows]) => <HeldGroup key={key} rows={rows} o={o} busy={busy} onArchive={archive} />)}</ul>
       </details>}

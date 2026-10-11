@@ -1,4 +1,79 @@
-# Next bug fix — MEL-595 remote Needs you card
+# Next bug fixes after v0.8.19
+
+## October 11 group invitations, compact tags and passive diagnostics
+
+Same active branch: `fix/mel-595-remote-needs-human`. All entries below are
+unreleased. No live queues, grants, devices or tasks were changed.
+
+**MEL-530:** Android's selected-topic own-agent invite failed because an
+unrelated member lacked topic support. Native and browser invitations now
+require that capability on the exact selected host. Every reader copy retains
+its existing per-device topic/capability, key and admission gate. The browser's
+group participation sender also retains unsupported reader copies instead of
+letting them veto the selected host. Proof carriers use the existing tolerant
+copy preparation; no new routing or authority model is introduced. Real host
+incompatibility, changed pins, invalid scope/grants and revoked hosts still fail.
+
+Native repro fails before the fix (0.524s); four focused races pass (61.264s).
+Browser signed lifecycle and peer-tolerance races pass (17.013s; 573 and 54
+checks). Regressions verify unrelated older/suspended readers, strict selected
+host checks and delivery of the same sealed copies after signed capability
+refresh. Independent cross-reviews are clear. Relevant topic-host hunks reuse
+Claude's unmerged `next/audience-prechecks`; other changes in that branch remain
+unmerged. This is not a claim that every human-invitation precheck was changed.
+
+**MEL-502:** `@everyone` and named team selections stay one visible tag each.
+The signed message text stores the captured exact references using the existing
+mention-link mechanism; no wire/schema/permission change. Reloads and failed
+target retries keep that snapshot, and agent targets deduplicate independently
+of the display label. Removing a tag clears its hidden fallback targets;
+stopping asks removes agent references without removing the human tag. Comic,
+Classic, Zoom and legacy parsing preserve compact display. Independent review,
+the locked Comic typecheck and bounded-parser/1,000-recipient checks pass.
+
+**MEL-588:** a passive missing-context record appeared as “Chat sync needs
+attention” below “Nothing needs you”. The rendered test fails on the previous
+bundle (1.640s). Comic now shows invalid/proof-pending diagnostics only under
+Settings → About → Technical details. Key-change and other identity warnings
+remain in OKs. Reading either page performs no archive or trust mutation;
+explicit archive retains its exact snapshot, failure and retry behavior. This
+relocation does not establish recovery of the screenshot's missing context.
+
+Integrated small UI races pass (28.893s), including actual Chromium at 390 and
+1280 px: passive notice location/archive failure/retry/reload, existing held
+turn actions across all three skins, device Details and remote Needs-you card.
+The remote-card fixture still logs its known unstubbed read-only 404 routes;
+its asserted card host, reason and exact action bindings pass. Combined Comic,
+Classic and Zoom assets were rebuilt. Passive-detail checks across all skins
+pass (6.65s), as do grouped flood/archive and topic-invite checks (13.384s).
+
+The actual 1,000-member rendered case then exposed a Classic/Zoom draft-restore
+bug: reload retained exact mentions but lacked the legacy single-agent field,
+so restoring “no agent” stripped the captured agent refs. Both now reconstruct
+the exact selected participation from intact saved mentions before restoring
+the composer. A removed participant stays an unavailable exact target, never
+a replacement selected by name. Independent follow-up review is clear. The
+ordinary multi-agent fixture also needed an exact text selection instead of
+visual-line Home/Delete after owner-qualified labels wrapped on phones.
+The next rendered run also exposed Zoom's durable preview showing the raw
+collective link and a pre-existing exact-recipient ambiguity when deleting one
+of two identical agent labels. Preview formatting now handles collective links;
+mention editing uses the caret to identify the actual edited range. Independent
+review required conservative handling of unknown/IME edits too: ambiguous
+references must become plain text rather than retain a guessed recipient.
+Final focused collective/ordinary multi-agent races pass (45.867s): actual
+1,000-member groups in Comic, Classic and Zoom at 390/1280 px; compact draft
+and durable history display; named-team edits followed by full reload; exact
+frozen references, overlapping picks, attachments, failed-target-only retry,
+deletion of equal labels and inert received mentions. Pure source-function
+checks cover unknown/IME ambiguity, unchanged edits and unavailable restored
+targets. All three final builds/typechecks, embedded asset checks (1.160s),
+`go vet ./...` and whitespace checks pass. Independent review cleared the final
+corrections. Earlier unaffected evidence is retained rather than rerunning
+complete suites. Full integrated release/platform qualification and the
+installed physical-phone journey remain before any published-release claim.
+
+## MEL-595 remote Needs you card and MEL-558 history source repair
 
 After v0.8.19, the owner reported a default-agent question to Bezos whose
 Needs you card named Zenbook and hid the explanation already present in the

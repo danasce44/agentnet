@@ -115,6 +115,10 @@ that person.
   object). Libraries must not inject `<style>` elements.
 - **Mentions:** `[@Name](agentnet:person/ID)` and `agentnet:guest/PID` stay the
   wire format in message text (see `app.js` `mentionRef`, `encodeMentions`).
+  Collective tags use one `[@everyone](agentnet:collective/v1/p.ID,g.PID,a.PID)`
+  link with frozen exact references; shared team names use the same form.
+  Display stays compact. Only the local explicit composer selection addresses
+  existing agent participations; received text and tag names grant nothing.
 - **Access:** every target at least 44px; visible focus; labels on icon
   buttons; `role="log"` for the timeline; works at 390px and 1440px, light
   and dark; reduced motion turns loops and slides into short fades.

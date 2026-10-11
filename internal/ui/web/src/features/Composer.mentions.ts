@@ -8,28 +8,31 @@
 // The draft keeps its text in this encoded form (agent mentions included, as
 // agentnet:agent/PID), so exact mentions survive switching conversations and
 // reloads; model.plain() reads it back as "@Name".
+import { collectiveRef, collectiveHref, parseCollective, type CollectiveRef } from '../collective-mentions.mjs';
 import type { T } from "../api";
 import { deviceKind, mentionRef, participants, personName, scopeMatches, type DeviceKind } from "../model";
 
 export type RefKind = "person" | "guest" | "agent";
 
 /** Span: one exact mention in the editable text, "@" + name at start. */
-export interface Span { start: number; name: string; kind: RefKind; id: string }
+export interface Span { start: number; name: string; kind: RefKind | 'collective'; id: string; refs?: CollectiveRef[] }
 
 export const mentionName = (s: string | undefined) => String(s || "").replace(/[\[\]\r\n]/g, "").trim().slice(0, 80);
 
 const intact = (text: string, s: Span) =>
-  /^[^\[\]\r\n]{1,80}$/.test(s.name) && /^[A-Za-z0-9_-]{1,64}$/.test(s.id) && text.slice(s.start, s.start + s.name.length + 1) === "@" + s.name;
+  /^[^\[\]\r\n]{1,80}$/.test(s.name) && (s.kind === 'collective' ? !!s.refs && !!collectiveHref(s.refs) : /^[A-Za-z0-9_-]{1,64}$/.test(s.id)) && text.slice(s.start, s.start + s.name.length + 1) === "@" + s.name;
 
 /** decode turns a draft's text into what is edited ("@Name") and its exact mentions. */
 export function decode(s: string): { text: string; spans: Span[] } {
   const spans: Span[] = [];
   let text = "", last = 0;
-  for (const m of s.matchAll(mentionRef)) {
+  const refs = [...s.matchAll(mentionRef)].map(m => ({m, span: {name:m[1],kind:m[2] as RefKind,id:m[3]}}));
+  const groups = [...s.matchAll(collectiveRef)].flatMap(m => {const targets=parseCollective(m[2]);return targets ? [{m,span:{name:m[1],kind:'collective' as const,id:'',refs:targets}}] : [];});
+  for (const {m,span} of [...refs,...groups].sort((a,b)=>a.m.index!-b.m.index!)) {
     text += s.slice(last, m.index);
-    spans.push({ start: text.length, name: m[1], kind: m[2] as RefKind, id: m[3] });
-    text += "@" + m[1];
-    last = m.index + m[0].length;
+    spans.push({start:text.length,...span});
+    text += '@'+span.name;
+    last=m.index!+m[0].length;
   }
   return { text: text + s.slice(last), spans };
 }
@@ -40,7 +43,8 @@ export function encode(text: string, spans: Span[], plainAgents = false): string
   let out = text;
   for (const s of spans.filter((s) => intact(text, s)).sort((a, b) => b.start - a.start)) {
     if (plainAgents && s.kind === "agent") continue;
-    out = out.slice(0, s.start) + "[@" + s.name + "](agentnet:" + s.kind + "/" + s.id + ")" + out.slice(s.start + s.name.length + 1);
+    const href=s.kind==='collective'?collectiveHref(s.refs!):'agentnet:'+s.kind+'/'+s.id;
+    out = out.slice(0, s.start) + "[@" + s.name + "](" + href + ")" + out.slice(s.start + s.name.length + 1);
   }
   return out;
 }
@@ -48,17 +52,34 @@ export function encode(text: string, spans: Span[], plainAgents = false): string
 /** Routing comes only from intact explicit agent references, never visible labels.
  *  Preserve first mention order and deduplicate exact participation IDs. */
 export function agentTargets(text: string, spans: Span[], legacy?: string): string[] {
-  const pids = [...new Set(spans.filter(s => s.kind === "agent" && intact(text, s)).sort((a, b) => a.start - b.start).map(s => s.id))];
+  const pids = [...new Set(spans.filter(s => intact(text, s)).sort((a, b) => a.start - b.start).flatMap(spanAgentTargets))];
   return pids.length ? pids : legacy ? [legacy] : [];
+}
+
+export const spanAgentTargets = (s: Span): string[] => s.kind==='agent'?[s.id]:s.kind==='collective'?(s.refs||[]).filter(r=>r.kind==='agent').map(r=>r.id):[];
+export function withoutAgents(spans: Span[]): Span[] {
+  return spans.flatMap(s=>s.kind==='agent'?[]:s.kind==='collective'?((s.refs||[]).some(r=>r.kind!=='agent')?[{...s,refs:s.refs!.filter(r=>r.kind!=='agent')}]:[]):[s]);
 }
 
 /** shift follows one edit from prev to cur: mentions before or after it move
  *  with the text; one the edit touched is dropped (it reads as plain text now). */
-export function shift(spans: Span[], prev: string, cur: string): { kept: Span[]; dropped: Span[] } {
+export function shift(spans: Span[], prev: string, cur: string, caret?: number): { kept: Span[]; dropped: Span[] } {
+  if (prev === cur) return { kept: spans, dropped: [] };
   const max = Math.min(prev.length, cur.length);
   let p = 0, s = 0;
   while (p < max && prev[p] === cur[p]) p++;
-  while (s < max - p && prev[prev.length - 1 - s] === cur[cur.length - 1 - s]) s++;
+  // The post-edit caret disambiguates deleting one of two identical labels.
+  // Without it, a common prefix can mistake the first exact PID for the last.
+  const anchored = Number.isInteger(caret) && caret! >= 0 && caret! <= cur.length;
+  if (anchored) p = Math.min(p, Math.max(0, caret! - Math.max(0, cur.length - prev.length)));
+  const suffixMax = anchored ? Math.min(max - p, cur.length - caret!) : max;
+  while (s < suffixMax && prev[prev.length - 1 - s] === cur[cur.length - 1 - s]) s++;
+  if (!anchored && p + s > max) {
+    // IME or unknown edits may fit several equal labels. Keep only refs
+    // outside every possible edit, rather than guess a recipient identity.
+    const prefix = max - s, suffix = max - p;
+    p = prefix; s = suffix;
+  }
   const oldEnd = prev.length - s, delta = cur.length - prev.length;
   const kept: Span[] = [], dropped: Span[] = [];
   for (const m of spans) {

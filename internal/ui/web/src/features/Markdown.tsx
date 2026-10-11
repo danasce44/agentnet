@@ -1,3 +1,4 @@
+import { parseCollective } from '../collective-mentions.mjs';
 // Markdown: a message's text as React elements, built from marked's lexer.
 // Nothing becomes an HTML string: raw HTML in a message reads as the text
 // it is, pictures stay links, and only web and mail links are live (they
@@ -7,7 +8,7 @@ import { Lexer, type Token, type Tokens } from "marked";
 import { createContext, Fragment, useContext, useMemo, type ReactNode } from "react";
 import { shortLinkLabel } from "../linkText";
 
-export type MentionKind = "person" | "guest" | "agent";
+export type MentionKind = "person" | "guest" | "agent" | "collective";
 export type RenderMention = (kind: MentionKind, id: string, name: string) => ReactNode;
 
 const mentionHref = /^agentnet:(person|guest|agent)\/([A-Za-z0-9_-]{1,64})$/;
@@ -114,6 +115,8 @@ function span(t: Tokens.Generic, mention?: RenderMention): ReactNode {
     case "checkbox": return <span aria-hidden="true">{t.checked ? "☑ " : "☐ "}</span>;
     case "link": {
       const l = t as Tokens.Link;
+      const collective=parseCollective(l.href);
+      if(collective && l.text.startsWith('@'))return mention?mention('collective',l.href,l.text.slice(1)):<strong>{l.text}</strong>;
       const ref = mentionHref.exec(l.href);
       if (ref && mention && l.text.startsWith("@")) return mention(ref[1] as MentionKind, ref[2], l.text.slice(1));
       const source = sourceHref.exec(l.href);

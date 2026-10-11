@@ -11,7 +11,7 @@ func TestCollectiveMentionSelection(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node required")
 	}
-	for _, script := range []string{"collective_mentions_check.mjs", "teams_check.mjs"} {
+	for _, script := range []string{"collective_mentions_check.mjs", "collective_draft_reload_check.mjs", "mention_edit_check.mjs", "teams_check.mjs"} {
 		out, err := exec.CommandContext(t.Context(), "node", "testdata/"+script).CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", script, err, out)

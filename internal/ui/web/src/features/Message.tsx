@@ -406,6 +406,7 @@ function askChip(text: string, m: AnyMsg, ctx: Ctx): string {
 
 function mentionFor(ctx: Ctx): RenderMention {
   return (kind, id, name) => {
+    if(kind==='collective')return <span className="rounded-md px-1 py-px font-semibold bg-ink/[.08] text-ink">@{name}</span>;
     const me = ctx.overview?.person;
     let label = "", agent = false, guest = false, self = false;
     if (kind === "guest") {

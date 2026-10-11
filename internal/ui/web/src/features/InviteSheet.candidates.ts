@@ -1,3 +1,4 @@
+import { collectiveRef, parseCollective } from '../collective-mentions.mjs';
 // Who can be brought into a conversation: people known here who are not in
 // it yet, and agents their owners publish (plus this computer's own default
 // agent). Nothing is suggested by guesswork: a person is marked only for a
@@ -172,6 +173,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function mentions(text: string | undefined, p: T.PersonView): boolean {
   if (!text) return false;
   if (text.includes("agentnet:person/" + p.person + ")")) return true;
+  if([...text.matchAll(collectiveRef)].some(m=>parseCollective(m[2])?.some(r=>r.kind==='person'&&r.id===p.person)))return true;
   const name = (p.label || "").trim();
   return name.length >= 2 && new RegExp("(?<![\\p{L}\\p{N}])" + escape(name) + "(?![\\p{L}\\p{N}])", "iu").test(text);
 }

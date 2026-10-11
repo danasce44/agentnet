@@ -677,7 +677,7 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 		}
 	}
 	if topic != nil {
-		if err := a.requireTopicParticipants(ctx, m, *host); err != nil {
+		if err := a.requireTopicHost(ctx, m, *host); err != nil {
 			return ParticipationInfo{}, err
 		}
 	}
