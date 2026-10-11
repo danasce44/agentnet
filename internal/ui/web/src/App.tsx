@@ -79,7 +79,7 @@ export function App() {
 function Card({ o, leaving, className }: { o: NonNullable<Open>; leaving: boolean; className: string }) {
   return (
     <div inert={leaving} aria-hidden={leaving || undefined} data-card className={"absolute inset-0 flex flex-col bg-canvas " + className}>
-      <Leaving.Provider value={leaving}><ConnectionBanner /><Conversation o={o} /></Leaving.Provider>
+      <Leaving.Provider value={leaving}><ConnectionBanner /><NativeRecovery /><Conversation o={o} /></Leaving.Provider>
     </div>
   );
 }

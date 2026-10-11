@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/protocol"
@@ -112,11 +113,12 @@ var wrapTransport func(http.RoundTripper) http.RoundTripper
 
 // hubConn talks to one Hub, pinning its certificate when the invite carried one.
 type hubConn struct {
-	base    string
-	agent   string
-	key     ed25519.PrivateKey
-	http    *http.Client
-	timeout time.Duration
+	base        string
+	agent       string
+	key         ed25519.PrivateKey
+	http        *http.Client
+	timeout     time.Duration
+	connections *hubConnections
 	// workspaceCheck, when set, gates every request except the version
 	// probe on the pinned workspace identity (workspaces_realmguard.go).
 	workspaceCheck func(context.Context, string) error
@@ -139,11 +141,14 @@ func newHubConn(base, certPEM, agent string, key ed25519.PrivateKey) (*hubConn, 
 	// Bounds waiting for response headers on every request, including the
 	// push stream, whose long-lived body is bounded by its ping watchdog.
 	tr.ResponseHeaderTimeout = requestTimeout
+	c := &hubConn{base: base, agent: agent, key: key, timeout: requestTimeout, connections: &hubConnections{}}
+	tr.DialContext = c.trackDial(tr.DialContext)
 	var rt http.RoundTripper = tr
 	if wrapTransport != nil {
 		rt = wrapTransport(rt)
 	}
-	return &hubConn{base: base, agent: agent, key: key, http: &http.Client{Transport: rt}, timeout: requestTimeout}, nil
+	c.http = &http.Client{Transport: rt}
+	return c, nil
 }
 
 // release closes the idle connections to the Hub and stops dials that no
@@ -152,6 +157,7 @@ func newHubConn(base, certPEM, agent string, key ed25519.PrivateKey) (*hubConn, 
 // after its owner was closed.
 func (c *hubConn) release() {
 	if c != nil {
+		c.resetConnections()
 		c.http.CloseIdleConnections()
 	}
 }
@@ -200,7 +206,8 @@ func (c *hubConn) doBytes(ctx context.Context, method, path string, body []byte,
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	generation := c.connectionGeneration()
+	resp, err := c.sendRequest(req)
 	if err != nil {
 		return err
 	}
@@ -211,7 +218,9 @@ func (c *hubConn) doBytes(ctx context.Context, method, path string, body []byte,
 	if out == nil {
 		return nil
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, protocol.MaxBody)).Decode(out)
+	err = json.NewDecoder(io.LimitReader(resp.Body, protocol.MaxBody)).Decode(out)
+	c.resetAfterTimeout(err, generation)
+	return err
 }
 
 // getRange copies bytes [from, to) of path into w within the request timeout.
@@ -223,7 +232,8 @@ func (c *hubConn) getRange(ctx context.Context, path string, from, to int64, w i
 		return err
 	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", from, to-1))
-	resp, err := c.http.Do(req)
+	generation := c.connectionGeneration()
+	resp, err := c.sendRequest(req)
 	if err != nil {
 		return err
 	}
@@ -235,6 +245,7 @@ func (c *hubConn) getRange(ctx context.Context, path string, from, to int64, w i
 		return fmt.Errorf("hub ignored range request (%s)", resp.Status)
 	}
 	n, err := io.Copy(w, io.LimitReader(resp.Body, to-from))
+	c.resetAfterTimeout(err, generation)
 	if err == nil && n != to-from {
 		err = io.ErrUnexpectedEOF
 	}
@@ -272,4 +283,93 @@ func decodeStrict(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	return dec.Decode(v)
+}
+
+// A route can disappear while HTTP/2 still has an active push stream. Reset
+// sockets, rather than just idle connections, without replacing Transport or
+// replaying any request. Generations fence dials and failures from old routes.
+type hubConnections struct {
+	sync.Mutex
+	generation uint64
+	sockets    map[*hubSocket]struct{}
+}
+type hubSocket struct {
+	net.Conn
+	owner *hubConnections
+}
+
+func (s *hubSocket) Close() error {
+	s.owner.Lock()
+	delete(s.owner.sockets, s)
+	s.owner.Unlock()
+	return s.Conn.Close()
+}
+func (c *hubConn) trackDial(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+	// Installed before the transport is used; never initialize concurrently.
+	if c.connections == nil {
+		c.connections = &hubConnections{}
+	}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		p := c.connections
+		p.Lock()
+		generation := p.generation
+		p.Unlock()
+		conn, err := dial(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		p.Lock()
+		if generation != p.generation {
+			p.Unlock()
+			conn.Close()
+			return nil, net.ErrClosed
+		}
+		socket := &hubSocket{Conn: conn, owner: p}
+		if p.sockets == nil {
+			p.sockets = map[*hubSocket]struct{}{}
+		}
+		p.sockets[socket] = struct{}{}
+		p.Unlock()
+		return socket, nil
+	}
+}
+func (c *hubConn) resetConnections() { c.resetConnectionsAt(nil) }
+func (c *hubConn) resetConnectionsAt(expected *uint64) {
+	p := c.connections
+	if p == nil {
+		return
+	}
+	p.Lock()
+	if expected != nil && *expected != p.generation {
+		p.Unlock()
+		return
+	}
+	p.generation++
+	sockets := p.sockets
+	p.sockets = nil
+	p.Unlock()
+	for socket := range sockets {
+		socket.Close()
+	}
+}
+func (c *hubConn) connectionGeneration() uint64 {
+	p := c.connections
+	if p == nil {
+		return 0
+	}
+	p.Lock()
+	defer p.Unlock()
+	return p.generation
+}
+func (c *hubConn) resetAfterTimeout(err error, generation uint64) {
+	var networkError net.Error
+	if err != nil && !errors.Is(err, context.Canceled) && errors.As(err, &networkError) && networkError.Timeout() {
+		c.resetConnectionsAt(&generation)
+	}
+}
+func (c *hubConn) sendRequest(req *http.Request) (*http.Response, error) {
+	generation := c.connectionGeneration()
+	resp, err := c.http.Do(req)
+	c.resetAfterTimeout(err, generation)
+	return resp, err
 }

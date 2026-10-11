@@ -191,6 +191,8 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) error {
 		select {
 		case <-ctx.Done():
 			return stopped()
+		case <-a.networkWake:
+			reconnect.Reset()
 		case <-time.After(wait):
 		}
 	}
@@ -211,7 +213,8 @@ func (a *Agent) streamOnce(ctx context.Context) (healthy bool, err error) {
 		return false, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := a.hub.http.Do(req)
+	generation := a.hub.connectionGeneration()
+	resp, err := a.hub.sendRequest(req)
 	if err != nil {
 		return false, err
 	}
@@ -231,8 +234,8 @@ func (a *Agent) streamOnce(ctx context.Context) (healthy bool, err error) {
 	a.groupWork.recover.Store(true)                                                             // and replay group journal records not yet published (groups.go)
 
 	// Three missed pings mean the connection is dead even if TCP has not noticed.
-	watchdog := time.AfterFunc(3*a.heartbeat, cancel)
-	defer watchdog.Stop()
+	touch, stopWatchdog := a.hub.streamWatchdog(generation, 3*a.heartbeat, cancel)
+	defer stopWatchdog()
 
 	// One worker retries queued sends and receipts, so a large upload never
 	// delays reading the stream (pings, acks, incoming messages).
@@ -262,7 +265,7 @@ func (a *Agent) streamOnce(ctx context.Context) (healthy bool, err error) {
 	a.kickMu.Unlock()
 	a.kick()
 
-	return readStream(resp.Body, func() { watchdog.Reset(3 * a.heartbeat) }, func(event, data string) error { return a.dispatch(ctx, event, data) })
+	return readStream(resp.Body, touch, func(event, data string) error { return a.dispatch(ctx, event, data) })
 }
 
 // readStream parses the push stream body with go-sse and hands each event

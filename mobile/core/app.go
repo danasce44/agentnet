@@ -129,6 +129,23 @@ func (a *App) Start() error {
 	}
 	return nil
 }
+
+// NetworkChanged refreshes wanted remote sessions without replacing the host.
+func (a *App) NetworkChanged() {
+	a.lifecycle.Lock()
+	defer a.lifecycle.Unlock()
+	a.mu.Lock()
+	if a.closed || !a.wanted {
+		a.mu.Unlock()
+		return
+	}
+	sessions := a.activeSessions()
+	a.mu.Unlock()
+	for _, s := range sessions {
+		s.NetworkChanged()
+	}
+}
+
 func (a *App) Stop() {
 	a.lifecycle.Lock()
 	defer a.lifecycle.Unlock()

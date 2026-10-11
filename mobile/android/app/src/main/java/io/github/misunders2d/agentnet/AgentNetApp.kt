@@ -16,6 +16,7 @@ import io.github.misunders2d.agentnet.core.core.Core
 import io.github.misunders2d.agentnet.core.core.Notifier
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AgentNetApp : Application() { val host by lazy { NativeHost(this) } }
 
@@ -31,12 +32,15 @@ class NativeHost(private val application: Application) {
     @Volatile private var background = false
     private var core: CoreApp? = null // lane only
     private var opening = false // main thread only
+    private var runningWanted = false // lane only
+    private val networkQueued = AtomicBoolean(false)
+    private val networkMonitor = NetworkMonitor(application, main) { networkChanged() }
     var state = HostState(); private set
     fun observe(observer: (HostState) -> Unit) { observers.add(observer); observer(state); open() }
     fun remove(observer: (HostState) -> Unit) { observers.remove(observer) }
     fun keepConnected() = options.getBoolean("keep-connected", false)
     fun setKeepConnected(value: Boolean) { options.edit().putBoolean("keep-connected", value).apply() }
-    fun foreground(value: Boolean) { foreground = value; if (value) open(); reconcile() }
+    fun foreground(value: Boolean) { val resumed = value && !foreground; foreground = value; if (value) open(); reconcile(resumed) }
     fun background(value: Boolean) { background = value; if (value) open(); reconcile() }
     private fun publish(next: HostState) = main.post { state = next; observers.toList().forEach { it(next) } }
     fun open() {
@@ -60,9 +64,23 @@ class NativeHost(private val application: Application) {
             } finally { main.post { opening = false } }
         }
     }
-    private fun reconcile() = lane.execute {
+    private fun networkChanged() {
+        if (!networkQueued.compareAndSet(false, true)) return
+        lane.execute {
+            networkQueued.set(false)
+            if (foreground || background) core?.networkChanged()
+        }
+    }
+    private fun reconcile(resumed: Boolean = false) = lane.execute {
         val app = core ?: return@execute
-        try { if (foreground || background) app.start() else app.stop() }
+        try {
+            val wanted = foreground || background
+            if (wanted) {
+                if (resumed && runningWanted) app.networkChanged()
+                app.start()
+            } else app.stop()
+            runningWanted = wanted
+        }
         catch (_: Exception) { /* The page's existing connection state reports transport failures. */ }
     }
     private fun notifyActivity(workspace: String, fragment: String) {

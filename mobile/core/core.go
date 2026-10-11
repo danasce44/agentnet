@@ -183,6 +183,8 @@ func (s *Session) Start() error {
 		s.a.NoteChange()
 		return err
 	}
+	// A stopped session may retain sockets from an obsolete Android route.
+	s.a.NetworkChanged()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	s.cancel, s.done, s.lastError = cancel, done, ""
@@ -217,6 +219,26 @@ func (s *Session) stop() {
 	s.mu.Unlock()
 	if done != nil {
 		s.signal()
+	}
+}
+
+// NetworkChanged retires remote sockets only while this session is wanted.
+// Offline data and the authenticated local page remain available.
+func (s *Session) NetworkChanged() {
+	s.lifecycle.Lock()
+	defer s.lifecycle.Unlock()
+	s.mu.Lock()
+	running := !s.closed && s.done != nil
+	if running {
+		select {
+		case <-s.done:
+			running = false
+		default:
+		}
+	}
+	s.mu.Unlock()
+	if running {
+		s.a.NetworkChanged()
 	}
 }
 

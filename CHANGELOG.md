@@ -6,6 +6,14 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Reconnect Android after resume or a default-network change without reopening
+  its saved chats. Retire dead HTTP/2 connections after request or stream
+  timeouts so sends and incoming messages can recover together. Preserve
+  queued message IDs, TLS verification and existing permissions.
+- Keep Android's saved-message retry action available inside the open chat.
+  Show a short recovery message and put long connection errors in expandable
+  details that fit a narrow phone screen.
+
 ## [0.8.20] — 2026-10-11
 
 - Answer questions from your verified personal devices without another AgentNet

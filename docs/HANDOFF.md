@@ -6,6 +6,14 @@ section at release; keep detailed verification and remaining work here.
 
 ## Current release — v0.8.20, October 11, 2026 (UTC)
 
+**Active follow-up v0.8.21:** MEL-602 fixes native Android dead-connection
+recovery and an inaccessible saved-send retry action. Root owns
+`fix/v0.8.21-mobile-reconnect`, the sole worktree; no release yet. Real TLS/HTTP2
+and mobile-core fault tests reproduce the old failure and pass with the fix;
+physical phone timing remains unverified. Source/native qualification is in
+progress. See [V0_8_21.md](plans/V0_8_21.md). Preserve original queues, identities
+and user sessions; no purge, relink, grant changes or task replays.
+
 [Download v0.8.20](https://github.com/misunders2d/agentnet/releases/tag/v0.8.20).
 Published **14:27:24 UTC**, tag `123de827a760f6726d749e7decba1074d7ea2f28`,
 above qualified application source `23de6ae0`. All thirteen assets and checksum

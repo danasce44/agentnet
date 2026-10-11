@@ -570,6 +570,8 @@ func (a *Agent) awaitLink(ctx context.Context, query, session string) (LinkStatu
 		select {
 		case <-ctx.Done():
 			return s, ctx.Err()
+		case <-a.networkWake:
+			reconnect.Reset()
 		case <-time.After(reconnect.NextBackOff()):
 		}
 	}
@@ -578,12 +580,15 @@ func (a *Agent) awaitLink(ctx context.Context, query, session string) (LinkStatu
 // pendingStream holds the pending device's stream: pings answered, until
 // "linked" (true) or the stream ends.
 func (a *Agent) pendingStream(ctx context.Context, query, session string) (linked bool, err error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	req, err := a.hub.request(ctx, "GET", "/v1/stream"+query, nil)
 	if err != nil {
 		return false, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := a.hub.http.Do(req)
+	generation := a.hub.connectionGeneration()
+	resp, err := a.hub.sendRequest(req)
 	if err != nil {
 		return false, err
 	}
@@ -600,9 +605,12 @@ func (a *Agent) pendingStream(ctx context.Context, query, session string) (linke
 		}
 		return true, nil
 	}
+	touch, stopWatchdog := a.hub.streamWatchdog(generation, 3*a.heartbeat, cancel)
+	defer stopWatchdog()
 	sc := bufio.NewScanner(resp.Body)
 	var event, data string
 	for sc.Scan() {
+		touch()
 		line := sc.Text()
 		switch {
 		case line == "":

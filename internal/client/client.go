@@ -67,6 +67,7 @@ type Agent struct {
 	typing           typingRuntime // live typing signals, memory only (typing.go)
 	groupWork        groupWork     // group journal upkeep due on the next sync (convgroup.go)
 	hub              *hubConn
+	networkWake      chan struct{} // a platform network change interrupts reconnect backoff
 	heartbeat        time.Duration
 	adQuery          string                     // this run's signed session ad, for the push stream
 	kick             func()                     // wakes the current stream's retry worker
@@ -265,7 +266,7 @@ func Open(home string) (*Agent, error) {
 		default:
 		}
 	}, notify: desktopNotify,
-		changes: newChangeFeed(), alertWake: make(chan struct{}, 1), statusWake: make(chan struct{}, 1)}
+		changes: newChangeFeed(), alertWake: make(chan struct{}, 1), statusWake: make(chan struct{}, 1), networkWake: make(chan struct{}, 1)}
 	st.onChange = a.changes.bump
 	st.onJobReady = func() { a.wakeWorker(); a.notifyOwnWork() }
 	var hubURL, cert string

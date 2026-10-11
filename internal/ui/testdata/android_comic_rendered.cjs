@@ -72,6 +72,30 @@ const fs = require('node:fs');
       await page.getByRole('menuitem',{name:/Delete (topic|conversation)/}).click();
       await page.getByRole('alertdialog').waitFor(); await snap('dialog'); await fits('dialog');
       await back(); await page.getByRole('alertdialog').waitFor({state:'hidden'}); await composer.waitFor();
+      // A relay lookup timeout keeps one exact saved request and gives the
+      // phone a readable recovery action, not an overflowing raw URL toast.
+      const attempts=[];
+      const failure='Get "https://relay.example/v1/agents/owner/'+ 'x'.repeat(180) + '/profile": context deadline exceeded';
+      await context.route('**/api/dm/send',async route=>{
+        attempts.push(route.request().postDataJSON());
+        if(attempts.length===1) await route.fulfill({status:500,contentType:'text/plain',body:failure});
+        else await route.continue();
+      });
+      await field.fill('Keep this exact mobile send');
+      await composer.getByRole('button',{name:'Send',exact:true}).click();
+      await page.getByText('Message saved on this phone. Open Saved messages at the top to retry.',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'Saved messages (1) · Review',exact:true}).click();
+      await page.getByRole('heading',{name:'Saved messages',exact:true}).waitFor();
+      const why=page.getByText('Why sending wasn’t confirmed',{exact:true});
+      await why.click();
+      await page.getByText(failure,{exact:true}).waitFor();
+      await fits('saved send and long failure detail');await snap('saved-send');
+      assert.equal(attempts.length,1,'opening recovery must not replay');
+      await page.getByRole('button',{name:'Retry saved send',exact:true}).click();
+      await page.getByRole('heading',{name:'Saved messages',exact:true}).waitFor({state:'hidden'});
+      assert.equal(attempts.length,2);assert.deepEqual(attempts[1],attempts[0],'retry must retain exact recipient, body and ID');
+      await context.unroute('**/api/dm/send');
+      await composer.waitFor();
       await back(); await page.locator('section[aria-label="Chats"]').waitFor();
 
       // The actual mobile tab navigation, without a replacement Kotlin menu.

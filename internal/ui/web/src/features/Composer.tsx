@@ -441,7 +441,7 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
       } catch(e) {
         const why=errorText(e);
         try {recordFailure(localStorage,workspace,entry.id,why);} catch(_) { /* original exact request stays retained */ }
-        store.toast("Send needs attention. Its exact request is kept for explicit retry: "+why,"error");
+        store.toast("Message saved on this phone. Open Saved messages at the top to retry.","error");
         return;
       }
       // The successful native result proves admission. Presentation/storage

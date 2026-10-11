@@ -59,9 +59,9 @@ export function NativeRecovery() {
   };
   return <>
     <button className="w-full shrink-0 border-b border-hairline bg-surface px-4 py-2 text-left text-[13px] font-semibold" onClick={()=>setOpen(true)}>
-      {problem ? "Saved messages need attention" : `${legacy.length+pending.length} saved ${legacy.length+pending.length===1?"message":"messages"} to recover`} · Review
+      {problem ? "Saved messages need attention" : `Saved messages (${legacy.length+pending.length})`} · Review
     </button>
-    <Sheet open={open} onOpenChange={setOpen} title="Saved messages" description="Drafts and sends kept on this phone before the app closed. Review them here; nothing sends automatically.">
+    <Sheet open={open} onOpenChange={setOpen} title="Saved messages" description="These messages are saved on this phone, but sending is not confirmed. Retry keeps the original message; you don’t need to type it again.">
       {problem && <p role="alert" className="mb-3 text-danger">{problem}</p>}
       {legacy.map(record=>{
         let d;try{d=legacyDraft(record);}catch{}
@@ -70,7 +70,7 @@ export function NativeRecovery() {
           <p className="my-2 whitespace-pre-wrap break-words">{d?.body || "This saved record could not be read. The original remains on this phone."}</p>
           {d?.request && <p className="mb-2 text-[13px] text-muted">Retry uses the same message ID and recipient. A message already in the outbox is not sent again.</p>}
           {d && <Button size="sm" variant="outline" disabled={!!busy} onClick={()=>void run(record.key,()=>restore(record))}>{busy===record.key?"Restoring…":d.request?"Retry saved send":"Restore draft"}</Button>}
-          {errors[record.key] && <p role="alert" className="mt-2 text-danger">{errors[record.key]}</p>}
+          {errors[record.key] && <p role="alert" className="mt-2 text-danger [overflow-wrap:anywhere]">{errors[record.key]}</p>}
         </section>;
       })}
       {pending.map(entry=><section key={entry.id} className="mb-3 rounded-2xl border border-hairline bg-surface p-4">
@@ -82,7 +82,10 @@ export function NativeRecovery() {
           catch(e){recordFailure(localStorage,workspace,entry.id,errorText(e));throw e;}
         })}>{busy===entry.id?"Retrying…":"Retry saved send"}</Button>
         <Button size="sm" variant="ghost" onClick={()=>void copyText(String(entry.request.body||"")).then(ok=>store.toast(ok?"Copied":"Couldn’t copy here",ok?"ok":"error"))}>Copy text</Button></div>
-        {(errors[entry.id]||entry.error) && <p role="alert" className="mt-2 text-danger">{errors[entry.id]||entry.error}</p>}
+        {(errors[entry.id]||entry.error) && <details className="mt-2 min-w-0 text-[13px] text-muted">
+          <summary className="min-h-11 cursor-pointer py-3">Why sending wasn’t confirmed</summary>
+          <p role="alert" className="[overflow-wrap:anywhere]">{errors[entry.id]||entry.error}</p>
+        </details>}
       </section>)}
       {!legacy.length&&!pending.length&&!problem&&<p>All saved messages have been recovered.</p>}
     </Sheet>

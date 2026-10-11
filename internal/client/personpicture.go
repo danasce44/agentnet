@@ -43,7 +43,8 @@ func (a *Agent) PersonPicture(ctx context.Context, hash string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	resp, err := a.hub.http.Do(req)
+	generation := a.hub.connectionGeneration()
+	resp, err := a.hub.sendRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +54,7 @@ func (a *Agent) PersonPicture(ctx context.Context, hash string) ([]byte, error) 
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, protocol.MaxPictureBytes+1))
 	if err != nil {
+		a.hub.resetAfterTimeout(err, generation)
 		return nil, err
 	}
 	if !good(b) {
