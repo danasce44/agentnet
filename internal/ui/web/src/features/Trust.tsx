@@ -127,7 +127,7 @@ export function DeviceGrantConfirm({ change, onClose, peer, inherited = false }:
     unapprove: {
       title: "Stop answering " + possessive + " questions automatically?", ok: "Stop automatic answers", danger: true,
       done: "This automatic question permission ended. Separate permissions are unchanged.",
-      body: <p>This removes the automatic question permission on {host}. Questions need your OK unless a separate device permission or chat already allows them. An answer already being written may still finish unless you stop it.</p>,
+      body: <p>This removes the automatic question permission on {host}. Questions you send from your verified personal devices still need no approval. Other questions need your OK unless a separate permission or chat allows them. An answer already being written may still finish unless you stop it.</p>,
     },
     revoke_tasks: {
       title: "Remove " + (own ? "your devices’" : who + "’s") + " task permission here?", ok: "Remove permission", danger: true,
@@ -143,7 +143,7 @@ export function DeviceGrantConfirm({ change, onClose, peer, inherited = false }:
   const w = inherited && (shown === "unapprove" || shown === "revoke_tasks") ? {
     title:"Remove the separate permission for " + who + "?", ok:"Remove separate permission", danger:true,
     done:"Separate permission removed. My devices still allows this device.",
-    body:<><p>My devices still allows {who} on {host}. Removing this separate permission does not turn off that broader permission.</p><p>To change what all your devices may do here, use the My devices controls. Running tasks and other receiving computers are unchanged.</p></>,
+    body:<><p>My devices still allows {who} on {host}. Removing this separate permission does not turn off that broader permission.</p><p>Questions from your personal devices need no second approval. Task permissions are managed in My devices. Running tasks and other receiving computers are unchanged.</p></>,
   } : text[shown];
   return (
     <Confirm open={!!change} onOpenChange={(v) => { if (!v) onClose(); }} title={capital(w.title)} ok={w.ok} danger={w.danger}

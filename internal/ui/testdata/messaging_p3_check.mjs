@@ -97,8 +97,10 @@ for(const skin of ["classic","zoom","comic"]) {
   [{delivery_known:true,delivered:7},"7 history copies delivered · nothing waiting to send here"],
   [{delivery_known:true,queued:2},"2 waiting to send"],
   [{delivery_known:true,custody:3},"3 on the server, waiting for the device"],
-  [{delivery_known:true,blocked:1},"1 history copies need attention"],
-  [{deferred:2},"2 history items waiting for context"],
+  [{delivery_known:true,blocked:1},skin==="comic"?"1 blocked history copies":"1 history copies need attention"],
+  [{deferred:2},skin==="comic"?"2 pending history items":"2 history items waiting for context"],
+  [{delivery_known:true,retained:5},skin==="comic"?"5 history items accepted for background import":"5 history records stored on the device"],
+  [{delivery_known:true,queued:2,retained:5},"2 waiting to send · "+(skin==="comic"?"5 history items accepted for background import":"5 history records stored on the device")],
  ]) assert.equal(words({...done,...patch}),want,skin+" producer and receipt evidence stay distinct");
  assert.equal(words({state:"running",name:"phone",done:0,total:0}),"Preparing history on this device",skin+" unknown producer progress is not phone delivery");
  assert(/stopped/.test(words({state:"ended",name:"phone",done:4,total:4})),skin+" ended stays stopped");

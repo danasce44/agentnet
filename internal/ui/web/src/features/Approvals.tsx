@@ -11,10 +11,10 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { IconDeviceMobile, IconUsersGroup } from "@tabler/icons-react";
 import type { T } from "../api";
 import { useAgentNames, useApp } from "../context";
-import { agentName, firstLine, isRunningElsewhere, isWorkingItem, isWorkingReview, when } from "../model";
+import { agentName, askerWords, firstLine, isRunningElsewhere, isWorkingItem, isWorkingReview, when } from "../model";
 import { focusedIn } from "../owned";
 import { useStore } from "../store";
-import { AgentAvatar } from "../ui/Avatar";
+import { AgentAvatar, PersonAvatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Tag } from "../ui/Tag";
 import { ScreenTitle } from "./Approvals.title";
@@ -23,7 +23,7 @@ import { Reports } from "./Approvals.reports";
 import { Body, Card, OpenCard, Landing, kindTag, useLand, useOpen } from "./Approvals.parts";
 import { ConvRow, SelfConsentRow } from "./Approvals.conv";
 import { HeldBack } from "./Approvals.held";
-import { capital, decidable, inSentence, isSelfConsent, nameOf, peerAgent, whyWords } from "./Approvals.words";
+import { capital, decidable, inSentence, isSelfConsent, nameOf, whyWords } from "./Approvals.words";
 
 export { ApprovalCard } from "./Approvals.card";
 
@@ -210,14 +210,34 @@ function DeviceAdminRow({ r }: { r: T.ReviewItem }) {
 
 function ReviewRow({ r, o, names }: { r: T.ReviewItem; o: T.Overview; names: Record<string, string> }) {
   const { isOpen, go } = useOpen();
-  const from = capital(peerAgent(r.peer, o, names).name);
+  const store = useApp(), land = useLand();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const asker = askerWords(r.peer, o, names);
+  const from = capital(asker.name);
   const mine = o.person ? agentName(r.agent_id, names, o.person, o.person) : (r.agent_id && names[r.agent_id]) || "Your agent";
   const working = isWorkingReview(r);
   const title = working ? mine + " is working on " + inSentence(from) + "’s " + (r.kind === "task" ? "task" : "question")
     : r.kind === "task" ? from + " gave " + inSentence(mine) + " a task" : r.kind === "question" ? from + " asked " + inSentence(mine) + " something"
     : mine + " needs you about " + from + "’s message";
+  const allow = async () => {
+    if (pending.current) return;
+    pending.current = true; setBusy(true);
+    try {
+      await store.run(async api => {
+        const thread = await api.thread(r.id);
+        const request = thread.messages?.find(m => m.id === r.id);
+        if (request?.dir !== "in" || request.kind !== "question" || request.state !== "held" || !request.actions?.includes("accept")) {
+          go("thread", r.id, r.id);
+          return;
+        }
+        await api.act({ do: "accept", id: request.id });
+        store.toast("Allowed this question once.");
+      });
+    } finally { pending.current = false; setBusy(false); land(); }
+  };
   return (
-    <OpenCard onOpen={() => go("thread", r.id, r.id)} current={isOpen(r.id)} label={title + (working ? ". Open running request." : ". Review it.")} face={<AgentAvatar seed={r.peer} size={40} mood={working ? "working" : "waiting"} />} detail={<details><summary className="cursor-pointer font-semibold">Read the whole message</summary><p className="pt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{whyWords(r.why, r.peer, o)}</p></details>}>
+    <OpenCard onOpen={() => go("thread", r.id, r.id)} current={isOpen(r.id)} label={title + (working ? ". Open running request." : ". Review it.")} face={asker.agent ? <AgentAvatar seed={r.peer} size={40} mood={working ? "working" : "waiting"} /> : <PersonAvatar name={asker.you ? "Me" : from} seed={r.peer} size={40} me={asker.you} />} actions={r.reason === "held" && r.kind === "question" ? <Button variant="act" disabled={busy} onClick={() => void allow()}>{busy ? "Checking…" : "Allow once"}</Button> : undefined} detail={<details><summary className="cursor-pointer font-semibold">Read the whole message</summary><p className="pt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{whyWords(r.why, r.peer, o)}</p></details>}>
       <Body tag={working ? <Tag tone="agent">Working</Tag> : kindTag(r.kind)} at={r.at} title={title} quote={firstLine(r.excerpt, 160)} meta={working ? "Already running" : undefined} />
     </OpenCard>
   );

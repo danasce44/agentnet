@@ -73,7 +73,7 @@ func TestLiveDirectReviewSeparatesRunningFromDecisions(t *testing.T) {
 			t.Fatalf("%s topic counts: %+v", state, o.Threads)
 		}
 	}
-	check("held", "", 1, 0)
+	check("held", "held", 1, 0)
 	res, err := db.Exec(`UPDATE inbox SET state='running' WHERE id=? AND state='held'`, sent.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestFixtureDirectReviewRunningMetadata(t *testing.T) {
 		}
 		return ReviewItem{}, false
 	}
-	if item, ok := find(); !ok || item.Reason == "agent_running" {
+	if item, ok := find(); !ok || item.Reason != "held" {
 		t.Fatalf("held demo request is working: %+v", item)
 	}
 	if _, err := f.Act(Action{ID: id, Do: DoAccept}); err != nil {

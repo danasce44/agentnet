@@ -178,6 +178,9 @@ func (l *Live) Approvals() (ApprovalsView, error) {
 				if pq {
 					row.Questions = "person"
 				}
+				if q && d.Human {
+					row.Questions = "own"
+				}
 				if pt {
 					row.Tasks = "person"
 				}
@@ -249,7 +252,7 @@ func (l *Live) RevokeApproval(r ApprovalRevoke) (string, error) {
 			}
 		}
 		l.a.NoteChange()
-		return gs[i].Label + "'s " + r.Kind + "s wait for you again.", nil
+		return "Standing " + r.Kind + " permission removed. Other permissions and your own human devices' automatic questions are unchanged.", nil
 	}
 	switch r.Kind {
 	case "question":
@@ -264,7 +267,7 @@ func (l *Live) RevokeApproval(r ApprovalRevoke) (string, error) {
 			return "", Refuse(sentence(err))
 		}
 		l.a.NoteChange()
-		return r.Address + "'s questions wait for you again.", nil
+		return "Separate question permission removed. Other permissions and your own human devices' automatic questions are unchanged.", nil
 	case "task":
 		ts, err := l.a.TaskGrants()
 		if err != nil {

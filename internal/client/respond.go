@@ -380,7 +380,7 @@ func (a *Agent) Approvals() (int, error) {
 }
 
 // NoApprovals is what a responder does with no agent approved.
-const NoApprovals = "no agent approved yet, so every question waits for you (agentnet inbox --review); approve one with agentnet approve PERSON-or-ADDRESS only if the person asks"
+const NoApprovals = "no saved question approvals for other devices; your verified personal devices need none (agentnet inbox --review lists any requests waiting for you)"
 
 // Unapprove stops automatic answers for address. Its questions still
 // waiting for the worker go back to held (the worker also re-checks approval

@@ -27,6 +27,11 @@ program, `agentnet`, that is both the laptop client and the Hub.
 - **Questions** are answered automatically only for approved senders, by the
   recipient's chosen harness with the recipient's own setup: their skills,
   plugins, MCP servers and permissions unchanged (see docs/revival/M4.md).
+  Questions from this host’s own verified human devices need no additional
+  AgentNet approval: those devices are the same person. Current signed roster,
+  human role, exact pinned key and revocation checks still apply. Pending
+  never-run own questions may proceed after upgrade; history replicas and
+  completed, failed or interrupted work never restart.
   AgentNet injects no tool exclusions, sandbox or approval overrides and no
   blanket CLI command restrictions on background runs. The recipient's own
   permission grants stay the authority: tools they already allow keep their

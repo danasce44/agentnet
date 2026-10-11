@@ -6,6 +6,11 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Answer questions from your verified personal devices without another AgentNet
+  approval. Already-delivered questions that never ran can proceed after update;
+  completed work and copied history never run again. Human requesters appear as
+  people, and genuine held questions have an **Allow once** action in OKs.
+
 - End undelivered copies addressed to a device or person permanently removed
   from the relay. Keep delivering ordinary messages and replies the relay had
   already accepted from them. Stop recreating background history for removed devices,

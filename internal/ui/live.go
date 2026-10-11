@@ -539,7 +539,7 @@ func (l *Live) Act(x Action) (string, error) {
 		note = l.a.PermissionLabel(x.ID) + "'s future questions are answered automatically."
 	case DoUnapprove:
 		err = l.a.Unapprove(x.ID)
-		note = l.a.PermissionLabel(x.ID) + "'s questions wait for you again."
+		note = "Question permission removed. Other permissions and your own human devices' automatic questions are unchanged."
 	case DoTrust:
 		if x.Key == "" {
 			return "", Refuse("Compare the fingerprint first: trust names the key you compared.")

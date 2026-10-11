@@ -1459,6 +1459,9 @@ func ReviewWhy(kind, state, peer, detail string) string {
 // reviewReason exposes the local workflow state separately from human text.
 // Details may come from a responder; their wording never decides the badge.
 func reviewReason(kind, state string) string {
+	if kind == KindQuestion && state == "held" {
+		return "held"
+	}
 	if (kind == KindQuestion || kind == KindTask) && (state == "running" || state == "cancel_requested") {
 		return client.ReviewRunning
 	}

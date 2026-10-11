@@ -84,19 +84,19 @@ func TestOwnPermissionInventory(t *testing.T) {
 		}
 		t.Fatal("phone missing from current roster")
 	}
-	check("person", "person")
+	check("own", "person")
 	for _, kind := range []string{"question", "task"} {
 		if _, err = live.RevokeApproval(ApprovalRevoke{Kind: kind, Address: phone.Address}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check("person", "person")
+	check("own", "person")
 	for _, kind := range []string{"question", "task"} {
 		if _, err = live.RevokeApproval(ApprovalRevoke{Kind: kind, Person: me.Person}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	check("approval", "approval")
+	check("own", "approval")
 	if _, err = live.RemoveDevice(phone.Address); err != nil {
 		t.Fatal(err)
 	}

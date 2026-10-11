@@ -30,11 +30,26 @@ func personGrantHolds(kind, address, key string) string {
 
 const deviceQuestionFor = `EXISTS (SELECT 1 FROM approvals qa WHERE qa.address=%s AND NOT EXISTS (SELECT 1 FROM person_devices fd JOIN persons fs ON fs.person=fd.person WHERE fd.address=qa.address AND fs.state='conflict'))`
 
-var questionApprovalHolds = `(` + fmt.Sprintf(deviceQuestionFor, "inbox.sender") + ` OR ` + personGrantHolds("questions", "inbox.sender", "inbox.verified_by") + `)`
+// Own human questions follow the current verified roster, not a redundant grant.
+// Match the pinned public key to that roster as well as the human fingerprint.
+const ownHumanQuestionFor = `(` + ownHumanDeviceHoldsFor + ` AND EXISTS (
+ SELECT 1 FROM person_devices qd JOIN persons qp ON qp.person=qd.person
+ JOIN peers qk ON qk.address=qd.address AND qk.pending IS NULL
+ JOIN json_each(qp.record,'$.devices') qr ON json_extract(qr.value,'$.address')=qd.address
+ WHERE qp.state='self' AND qd.address=%s AND qd.fingerprint=%s
+ AND NOT EXISTS (SELECT 1 FROM config qc WHERE qc.k='revoked-exact-device/'||qd.address||'/'||qd.fingerprint AND qc.v=qd.address)
+ AND json_extract(qk.public,'$.sign_key')=json_extract(qr.value,'$.sign_key')
+ AND json_extract(qk.public,'$.box_recipient')=json_extract(qr.value,'$.box_recipient')))`
+
+func ownHumanQuestionHolds(address, key string) string {
+	return fmt.Sprintf(ownHumanQuestionFor, address, key, address, key)
+}
+
+var questionApprovalHolds = `(` + fmt.Sprintf(deviceQuestionFor, "inbox.sender") + ` OR ` + personGrantHolds("questions", "inbox.sender", "inbox.verified_by") + ` OR ` + ownHumanQuestionHolds("inbox.sender", "inbox.verified_by") + `)`
 
 func questionApproved(q querier, address, key string) (bool, error) {
 	var ok bool
-	err := q.QueryRow(`SELECT `+fmt.Sprintf(deviceQuestionFor, "?")+` OR `+personGrantHolds("questions", "?", "?"), address, address, key).Scan(&ok)
+	err := q.QueryRow(`SELECT `+fmt.Sprintf(deviceQuestionFor, "?")+` OR `+personGrantHolds("questions", "?", "?")+` OR `+ownHumanQuestionHolds("?", "?"), address, address, key, address, key, address, key).Scan(&ok)
 	return ok, err
 }
 
@@ -155,6 +170,13 @@ func permissionPersonIn(q querier, address, key string) (string, error) {
 func (a *Agent) personGrantStop(j job) string {
 	if j.PermissionPerson == "" {
 		return ""
+	}
+	if j.OwnHumanQuestion {
+		var holds bool
+		err := a.store.db.QueryRow(`SELECT `+ownHumanQuestionHolds("?", "?"), j.From, j.Key, j.From, j.Key).Scan(&holds)
+		if err != nil || !holds {
+			return "requester's current verified own-human device changed"
+		}
 	}
 	person, err := permissionPersonIn(a.store.db, j.From, j.Key)
 	if err != nil || person != j.PermissionPerson {

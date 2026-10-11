@@ -114,11 +114,11 @@ if(variant==='device-oks'){
  window.setDeviceState=state=>{
   message.state=state;message.actions=state==='held'?['reply','accept','decline','approve']:state==='running'?['cancel']:[];
   fixture.overview.threads[0].review=state==='held'?1:0;fixture.overview.threads[0].running=['running','cancel_requested'].includes(state)?1:0;
-  fixture.overview.review=state==='done'?[]:[{id:request,peer:'brin/desktop',kind:'question',excerpt:body,why:state==='held'?'Not approved for automatic answers':state==='cancel_requested'?'Cancellation requested; stopping':'Already running',reason:['running','cancel_requested'].includes(state)?'agent_running':'',at:'2026-10-05T10:00:00Z'}];
+  fixture.overview.review=state==='done'?[]:[{id:request,peer:'brin/desktop',kind:'question',excerpt:body,why:state==='held'?'Not approved for automatic answers':state==='cancel_requested'?'Cancellation requested; stopping':'Already running',reason:['running','cancel_requested'].includes(state)?'agent_running':state==='held'?'held':'',at:'2026-10-05T10:00:00Z'}];
   changed?.({type:'change',seq:++fixture.overview.seq});
  };
  // The initial overview carries review[], never a needs_you substitute.
- fixture.overview.threads[0].review=1;fixture.overview.review=[{id:request,peer:'brin/desktop',kind:'question',excerpt:body,why:'Not approved for automatic answers',at:'2026-10-05T10:00:00Z'}];
+ fixture.overview.threads[0].review=1;fixture.overview.review=[{id:request,peer:'brin/desktop',kind:'question',excerpt:body,why:'Not approved for automatic answers',reason:'held',at:'2026-10-05T10:00:00Z'}];
  window.openOtherDevice=()=>open(other,'message');
 }
 if(variant==='notifications'){
@@ -1179,7 +1179,34 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     await activity();await waiting.getByRole('button').filter({hasText:body}).waitFor();
     if(skin==='comic'){await page.getByText('1 thing needs you',{exact:true}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).getByText('1',{exact:true}).count(),1,'Direct held request counts in OK badge');}
     else{assert.equal(await page.locator('#review-count').innerText(),'1');assert(await page.locator('#review-count').isVisible());}
+    if(skin==='comic'){
+     await waiting.getByRole('button',{name:'Brin asked your agent something. Review it.',exact:true}).waitFor();
+     await waiting.getByRole('button',{name:'Allow once',exact:true}).waitFor();
+     for(const state of ['needs_human','interrupted']){
+      await page.evaluate(state=>setDeviceState(state),state);
+      await waiting.getByRole('button',{name:'Allow once',exact:true}).waitFor({state:'hidden'});
+      assert.equal(await waiting.locator('[data-open]').count(),1,'Nonrunning attention still opens the exact request');
+     }
+     await page.evaluate(()=>setDeviceState('held'));
+     await waiting.getByRole('button',{name:'Allow once',exact:true}).waitFor();
+     // Same actual human request, now from a verified own phone. It is a person,
+     // even if an old server still holds it; no agent is advertised there.
+     await page.evaluate(()=>{const phone={address:'aster/android-phone-3',fingerprint:'phone-key'};fixture.overview.person.devices.push(phone);fixture.deviceThread.peer=phone.address;fixture.deviceThread.messages[0].from=phone.address;setDeviceState('held');fixture.overview.review[0].peer=phone.address;reloadFixture();});
+     await waiting.getByRole('button',{name:'You asked your agent something. Review it.',exact:true}).waitFor();
+     assert.equal(await waiting.getByText(/Your agent on Android phone 3/).count(),0,'Human own phone is not relabeled an agent');
+     assert.equal(await waiting.locator('[data-me]').count(),1,'Own human uses person avatar');
+     // A stale list can never approve a now-answered request.
+     await page.evaluate(()=>{fixture.deviceThread.messages[0].state='answered';fixture.deviceThread.messages[0].actions=[];});
+     await waiting.getByRole('button',{name:'Allow once',exact:true}).click();
+     await page.locator('[data-mid="'+request+'"]').waitFor();
+     assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act'&&r.body?.do==='accept').length),0,'Stale review does not accept an answered request');
+     await page.evaluate(()=>{fixture.deviceThread.peer='brin/desktop';fixture.deviceThread.messages[0].from='brin/desktop';setDeviceState('held');});await activity();
+     await waiting.getByRole('button',{name:'Allow once',exact:true}).click();
+     await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='accept'));
+     assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act'&&r.body?.do==='accept').map(r=>r.body)),[{do:'accept',id:request}],'List approval binds the exact currently held request');
+    }
     await page.evaluate(()=>setDeviceState('running'));await working.getByRole('button').filter({hasText:body}).waitFor();assert.equal(await waiting.getByRole('button').filter({hasText:body}).count(),0,'Running review[] request leaves decision list');
+    if(skin==='comic')assert.equal(await working.getByRole('button',{name:'Allow once',exact:true}).count(),0,'Running requests offer no approval');
     if(skin==='comic'){assert.equal(await page.getByText('1 thing needs you',{exact:true}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).getByText('1',{exact:true}).count(),0,'Working review[] request clears OK badge');}
     else{assert.equal(await page.locator('#review-count').innerText(),'0');assert(!await page.locator('#review-count').isVisible(),'Working review[] request clears activity badge');}
     assert(!/needs your (OK|decision)|Waiting for approval/.test(await working.innerText()),'Working row uses no approval claim');assert(!/\[object HTML/.test(await working.innerText()),'Working row renders peer name rather than DOM string');assert(!/Already running\s*·\s*Already running/.test(await working.innerText()),'Working status is not duplicated');assert.match(await working.innerText(),/Working|Already running/);await settle(page);const listShot=path.join(evidence,skin+'-direct-review-working-'+width+'.png');await page.screenshot({path:listShot});shots.push(listShot);

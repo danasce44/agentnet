@@ -8,7 +8,9 @@ section at release; keep detailed verification and remaining work here.
 
 The owner made **MEL-600** a v0.8.20 publication blocker: permanent relay
 offboarding must settle impossible delivery, not merely remove a group member.
-Native, browser and Hub changes are under independent review. Exact-device and
+Native, browser and Hub lifecycle changes pass composed client, Hub and itest
+qualification. Final UI corrections and the owner-reported own-human question
+approval fix are in qualification. Exact-device and
 whole-person revocation, retained authoritative receipts, admission races,
 obsolete sync producers and restart recovery are covered; offline/outdated
 devices retain resumable copies. [V0_8_20.md](plans/V0_8_20.md) is the current

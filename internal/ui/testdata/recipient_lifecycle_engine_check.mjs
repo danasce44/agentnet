@@ -53,7 +53,9 @@ async function fixture(linked=false) {
   check(outText('expired','Bob')==='Not delivered','expired receipt does not invent a session-ended reason');
 }
 {
-  const {e,pub,fp,row}=await fixture();
+  const {e,pub,fp,row}=await fixture(true);
+  const linked=await wire.parseRoster(e.me.json),removed=await wire.nextRoster(e.keys,e.address,linked,[e.pub],null);
+  await wire.verifyNext(removed,linked);e.me=await e.personRecord([linked,removed],'self',e.me);await e.store.write([{s:'kv',k:'person',v:e.me}]);
   await e.store.write([{s:'kv',k:'history',v:{[pub.address]:{device:pub.address,fingerprint:fp,state:'running',pos:17}}},...['history',wire.SubDeviceHistory,wire.SubRootSync].map((sub,i)=>({s:'outbox',k:'sync'+i,v:row('sync'+i,'queued',{sub,fresh_live:true})})),{s:'outbox',k:'ordinary',v:row('ordinary')},{s:'outbox',k:'custody',v:row('custody','custody',{sub:'history'})}]);
   await e.reconcileDepartedRecipients();
   for(let i=0;i<3;i++)check((await e.store.get('outbox','sync'+i)).state==='not_delivered','departed own device loses replication including live mirror '+i);

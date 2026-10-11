@@ -71,6 +71,7 @@ func p7Stored(t *testing.T, at *Agent, from, fp, kind, want string) string {
 }
 
 func TestP7PersonGrantsCurrentFutureAndRemoval(t *testing.T) {
+	t.Run("own_human_questions", testOwnHumanQuestionApproval)
 	w, r := p7Person(t)
 	p7Stored(t, w.bob, w.alice.Address, w.alice.Self().Fingerprint(), envelope.KindQuestion, stateHeld)
 	if e := w.bob.Approve(r.Person); e != nil {
@@ -394,5 +395,144 @@ func TestP7DeviceRevokeUnderPersonGrantRefused(t *testing.T) {
 	}
 	if _, e := w.bob.RevokeTasks(r.Person); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func testOwnHumanQuestionApproval(t *testing.T) {
+	w, r := p7Person(t)
+	r, phone := p7Added(t, w, r, "alice/phone", true)
+	p7PinStep(t, w.alice, r)
+	pub := phone.Public("alice/phone")
+	if err := w.alice.store.pin(pub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.alice.store.db.Exec(`INSERT OR REPLACE INTO person_grants(person,questions,tasks,added_at) VALUES(?,0,1,0)`, r.Person); err != nil {
+		t.Fatal(err)
+	}
+	q, _, err := w.alice.PermissionState(pub.Address, pub.Fingerprint())
+	if err != nil || !q {
+		t.Fatalf("own human effective questions=%v err=%v", q, err)
+	}
+	id := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), envelope.KindQuestion, statePending)
+	tx, err := w.alice.store.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = demotePersonJobs(tx); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := w.alice.store.jobState(id); got != statePending {
+		t.Fatalf("own question demoted: %s", got)
+	}
+	// An existing never-run hold is claimed once, with the own-person running fence.
+	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateHeld, id); err != nil {
+		t.Fatal(err)
+	}
+	j, ok, err := w.alice.store.claimJob("stub")
+	if err != nil || !ok || j.ID != id || j.PermissionPerson != r.Person || !j.OwnHumanQuestion {
+		t.Fatalf("held own claim: %+v %v %v", j, ok, err)
+	}
+	if _, ok, err = w.alice.store.claimJob("stub"); err != nil || ok {
+		t.Fatalf("repeated own claim %v %v", ok, err)
+	}
+	if q, err = questionApproved(w.alice.store.db, pub.Address, "wrong-key"); err != nil || q {
+		t.Fatalf("wrong key allowed=%v %v", q, err)
+	}
+	// Each negative changes only the synthetic current authority view.
+	raw, _ := json.Marshal(r)
+	for _, mode := range []string{"agent_host", "removed", "conflict", "pinned_public_mismatch", "revoked"} {
+		t.Run(mode, func(t *testing.T) {
+			rr := r
+			switch mode {
+			case "agent_host":
+				rr.HumanKeys = []string{w.alice.Self().Fingerprint()}
+			case "removed":
+				rr.Devices = []identity.Public{w.alice.Self()}
+				rr.HumanKeys = []string{w.alice.Self().Fingerprint()}
+			}
+			changed, _ := json.Marshal(rr)
+			if _, err := w.alice.store.db.Exec(`UPDATE persons SET record=? WHERE person=?`, string(changed), r.Person); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "conflict":
+				_, err = w.alice.store.db.Exec(`UPDATE persons SET state='conflict' WHERE person=?`, r.Person)
+			case "removed":
+				_, err = w.alice.store.db.Exec(`DELETE FROM person_devices WHERE address=?`, pub.Address)
+			case "pinned_public_mismatch":
+				b, _ := json.Marshal(w.bob.Self())
+				_, err = w.alice.store.db.Exec(`UPDATE peers SET public=? WHERE address=?`, string(b), pub.Address)
+			case "revoked":
+				_, err = w.alice.store.db.Exec(`INSERT INTO config(k,v) VALUES(?,?)`, "revoked-exact-device/"+pub.Address+"/"+pub.Fingerprint(), pub.Address)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if w.alice.personGrantStop(j) == "" {
+				t.Fatalf("%s did not stop implicit own-human run", mode)
+			}
+			if ok, e := questionApproved(w.alice.store.db, pub.Address, pub.Fingerprint()); e != nil || ok {
+				t.Fatalf("%s allowed=%v %v", mode, ok, e)
+			}
+			if _, err = w.alice.store.db.Exec(`UPDATE persons SET record=?,state='self' WHERE person=?`, string(raw), r.Person); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "removed" {
+				if _, err = w.alice.store.db.Exec(`INSERT INTO person_devices(person,address,fingerprint,added) VALUES(?,?,?,0)`, r.Person, pub.Address, pub.Fingerprint()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b, _ := json.Marshal(pub)
+			if _, err = w.alice.store.db.Exec(`UPDATE peers SET public=? WHERE address=?`, string(b), pub.Address); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = w.alice.store.db.Exec(`DELETE FROM config WHERE k=?`, "revoked-exact-device/"+pub.Address+"/"+pub.Fingerprint()); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	// Independent device approval and one-time acceptance retain their own
+	// may-finish semantics rather than inheriting the implicit human-role fence.
+	for _, accepted := range []bool{false, true} {
+		if !accepted {
+			if err = w.alice.Approve(pub.Address); err != nil {
+				t.Fatal(err)
+			}
+		}
+		next := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), envelope.KindQuestion, statePending)
+		if accepted {
+			if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateAccepted, next); err != nil {
+				t.Fatal(err)
+			}
+		}
+		explicit, ok, e := w.alice.store.claimJob("stub")
+		if e != nil || !ok || explicit.ID != next || explicit.OwnHumanQuestion {
+			t.Fatalf("explicit own claim %+v %v %v", explicit, ok, e)
+		}
+		rr := r
+		rr.HumanKeys = []string{w.alice.Self().Fingerprint()}
+		b, _ := json.Marshal(rr)
+		if _, err = w.alice.store.db.Exec(`UPDATE persons SET record=? WHERE person=?`, string(b), r.Person); err != nil {
+			t.Fatal(err)
+		}
+		if why := w.alice.personGrantStop(explicit); why != "" {
+			t.Fatalf("explicit authority stopped on role loss: %s", why)
+		}
+		if _, err = w.alice.store.db.Exec(`UPDATE persons SET record=? WHERE person=?`, string(raw), r.Person); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.alice.store.db.Exec(`DELETE FROM approvals WHERE address=?`, pub.Address); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = w.alice.store.db.Exec(`UPDATE peers SET pending=public WHERE address=?`, pub.Address); err != nil {
+		t.Fatal(err)
+	}
+	if q, err = questionApproved(w.alice.store.db, pub.Address, pub.Fingerprint()); err != nil || q {
+		t.Fatalf("pending key allowed=%v %v", q, err)
 	}
 }

@@ -1692,7 +1692,7 @@ export class Engine {
   async endRecipient(address, fingerprint, revoked = false) {
     return this.withHistoryProduction(async () => {
       const own = await this.store.get("kv", "person");
-      if (!revoked && (own?.state !== "self" || own.devices.some(d => d.address === address && d.fingerprint === fingerprint))) return;
+      if (!revoked && (own?.state !== "self" || own.devices.some(d => d.address === address && d.fingerprint === fingerprint) || !(own.known || []).some(d => d.address === address && d.fingerprint === fingerprint))) return;
       const checks = [{s:"kv",k:"person",v:own}], ops = [];
       const book = await this.store.get("kv", "history"), next = structuredClone(book || {});
       const jobs = await this.store.prefix("kv", "history-archive/out/");

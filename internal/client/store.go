@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
@@ -1168,6 +1169,7 @@ type job struct {
 	Receiver *ReplyReceiverBinding // explicit local continuation, separate from wire author
 
 	// A request to this device's agent in a DM (agentjob.go).
+	OwnHumanQuestion bool   // implicit current own-human approval, captured only for this run
 	PermissionPerson string // a person grant's exact origin, for running membership fences
 	Conv, PID, Key   string // Key: the fingerprint that verified it
 	Target           *envelope.Target
@@ -1200,7 +1202,7 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 	// Idle wakes need no approval/grant query unless a non-replica direct
 	// candidate exists. Keep this probe and the exact claim in one snapshot.
 	var candidate bool
-	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox WHERE conv IS NULL AND replica=0 AND state IN (?,?) LIMIT 1)`, stateAccepted, statePending).Scan(&candidate); err != nil {
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM inbox WHERE conv IS NULL AND replica=0 AND (state IN (?,?) OR (state=? AND kind='question' AND `+ownHumanQuestionHolds("inbox.sender", "inbox.verified_by")+` )) LIMIT 1)`, stateAccepted, statePending, stateHeld).Scan(&candidate); err != nil {
 		return job{}, false, err
 	}
 	if !candidate {
@@ -1220,12 +1222,13 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 		var followup sql.NullString
 		err = tx.QueryRow(`SELECT id,sender,kind,body,coalesce(reply_to,''),coalesce(status,''),coalesce(target,''),coalesce(quote,''),coalesce(verified_by,''),state,received_at,request_followup
    FROM inbox WHERE conv IS NULL AND replica = 0 AND (receiver_route IS NULL OR json_extract(receiver_route,'$.op')='request') AND NOT EXISTS (SELECT 1 FROM reply_receiver_inputs x WHERE x.inbox_id=inbox.id) AND (state = ?
+    OR (state = ? AND kind='question' AND `+ownHumanQuestionHolds("inbox.sender", "inbox.verified_by")+`)
     OR (state = ? AND (kind NOT IN (?, ?) OR (kind = ? AND `+questionApprovalHolds+`)
      OR (kind = ? AND (`+taskGrantHolds+` OR `+ownTaskHolds+` OR `+ownProposalHolds+`)))))
     AND (? != '' OR coalesce(json_extract(target, '$.agent_id'),'') != '')
     AND (? = '' OR received_at > ? OR (received_at = ? AND id > ?))
     ORDER BY received_at, id LIMIT 1`,
-			stateAccepted, statePending, envelope.KindQuestion, envelope.KindTask,
+			stateAccepted, stateHeld, statePending, envelope.KindQuestion, envelope.KindTask,
 			envelope.KindQuestion, envelope.KindTask, responder, afterID, afterAt, afterAt, afterID).Scan(&j.ID, &j.From, &j.Kind, &j.Body, &j.ReplyTo, &j.Status, &target, &j.Quote, &j.Key, &previousState, &receivedAt, &followup)
 		if errors.Is(err, sql.ErrNoRows) {
 			if err = tx.Commit(); err != nil {
@@ -1263,6 +1266,20 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 				e = tx.QueryRow(`SELECT `+kind+` FROM person_grants WHERE person=?`, person).Scan(&granted)
 				if e != nil && !errors.Is(e, sql.ErrNoRows) {
 					return job{}, false, e
+				}
+				var deviceApproved bool
+				if !granted && j.Kind == envelope.KindQuestion {
+					e = tx.QueryRow(`SELECT `+fmt.Sprintf(deviceQuestionFor, "?"), j.From).Scan(&deviceApproved)
+					if e != nil {
+						return job{}, false, e
+					}
+				}
+				if !granted && !deviceApproved && previousState != stateAccepted && j.Kind == envelope.KindQuestion {
+					e = tx.QueryRow(`SELECT `+ownHumanQuestionHolds("?", "?"), j.From, j.Key, j.From, j.Key).Scan(&granted)
+					if e != nil {
+						return job{}, false, e
+					}
+					j.OwnHumanQuestion = granted
 				}
 				if granted {
 					j.PermissionPerson = person
