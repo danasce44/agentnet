@@ -66,7 +66,7 @@ func groupEngineVectors(t *testing.T, setup map[string]any) (map[string]any, fun
 	slices.SortFunc(root.Members, func(a, b protocol.ConvMember) int { return strings.Compare(a.Person, b.Person) })
 	root.Sign(alice.Sign)
 	key, _ := x509.MarshalPKCS8PrivateKey(alice.Sign)
-	challenge := map[string]any{"root": root, "rosters": rosters, "alice_private": base64.StdEncoding.EncodeToString(key)}
+	challenge := map[string]any{"root": root, "rosters": rosters, "alice_private": base64.StdEncoding.EncodeToString(key), "alice_box": alice.Box.String()}
 	return challenge, func(consent string) map[string]any {
 		s0 := protocol.GroupState{V: 1, Conv: root.ID(), Realm: root.Realm, Title: root.Title, Actor: ar.Person, ActorRoster: ar.Hash(), By: ap.Fingerprint()}
 		var ba protocol.GroupAdmission
@@ -479,8 +479,8 @@ func testBrowserGroupCarrierIndexedDB(t *testing.T, controlOnly bool, background
 			if controlOnly {
 				mode = "true"
 			}
-			io.WriteString(w, `<script type="module">let out;try {const {setup,consent,checks}=await import('/testdata/group_engine_check.mjs');const post=async(path,body)=>{const r=await fetch(path,{method:'POST',body:JSON.stringify(body)});return r.json()};const challenge=await post('/setup',await setup());const v=await post('/consent',{consent:await consent(challenge)});out=await checks(v,true,false,`+mode+`,`+strconv.FormatBool(len(background) > 0 && background[0])+`,`+strconv.FormatBool(len(background) > 1 && background[1])+`,`+strconv.FormatBool(len(background) > 2 && background[2])+`,`+strconv.FormatBool(len(background) > 3 && background[3])+`,`+strconv.FormatBool(len(background) > 4 && background[4])+`,`+strconv.FormatBool(len(background) > 5 && background[5])+`);}catch(e){out={error:e.stack}}await fetch('/result',{method:'POST',body:JSON.stringify(out)});</script>`)
-		case "/testdata/group_engine_check.mjs", "/testdata/group_control_history_check.mjs", "/testdata/group_receiver_profile.mjs", "/testdata/carrier_receipt_repair_check.mjs", "/testdata/participation_topic_check.mjs":
+			io.WriteString(w, `<script type="module">let out;try {const {setup,consent,checks}=await import('/testdata/group_engine_check.mjs');const post=async(path,body)=>{const r=await fetch(path,{method:'POST',body:JSON.stringify(body)});return r.json()};const challenge=await post('/setup',await setup());const v=await post('/consent',{consent:await consent(challenge)});out=await checks(v,true,false,`+mode+`,`+strconv.FormatBool(len(background) > 0 && background[0])+`,`+strconv.FormatBool(len(background) > 1 && background[1])+`,`+strconv.FormatBool(len(background) > 2 && background[2])+`,`+strconv.FormatBool(len(background) > 3 && background[3])+`,`+strconv.FormatBool(len(background) > 4 && background[4])+`,`+strconv.FormatBool(len(background) > 5 && background[5])+`,`+strconv.FormatBool(len(background) > 6 && background[6])+`);}catch(e){out={error:e.stack}}await fetch('/result',{method:'POST',body:JSON.stringify(out)});</script>`)
+		case "/testdata/dismissal_canonical_check.mjs", "/testdata/group_engine_check.mjs", "/testdata/group_control_history_check.mjs", "/testdata/group_receiver_profile.mjs", "/testdata/carrier_receipt_repair_check.mjs", "/testdata/participation_topic_check.mjs":
 			w.Header().Set("Content-Type", "text/javascript")
 			http.ServeFile(w, r, strings.TrimPrefix(r.URL.Path, "/"))
 		case "/setup":

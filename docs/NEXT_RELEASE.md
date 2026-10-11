@@ -25,13 +25,13 @@ without the owner's specific instruction.
 
 Device presentation is implemented and reviewed: Comic build/typecheck, combined
 card/device rendered race tests (7.359 s), final device-only rendered race
-(4.721 s), and all fourteen Comic asset checksums pass. Actual Chromium checks
+(4.470 s), and all fourteen Comic asset checksums pass. Actual Chromium checks
 390/1280 px, collapsed/expanded diagnostics, progress, address/key, Remove and
 no overflow. This is not a claim that pending history has been repaired.
 
 The private audit found 101 conversation-history deferred references: 3 already
-original on their target, 28 blocked directly by eight distinct historical
-group-dismissal forwarding checks, 45 blocked through those dependencies, and
+original on their target, 28 blocked directly by eight carrier records for two
+signed historical group dismissals, 45 blocked through those dependencies, and
 25 source-valid but still uncovered. The old browser phone's background window
 is full; the other windows are empty. All originals remain present. The 23
 quarantined phone-browser copies and six laptop copies have exact equivalent
@@ -39,6 +39,44 @@ source/hash copies delivered to the current APK, which does not prove recovery
 on the original targets. No queues, receipts, grants or devices were changed.
 Repair the source policy only with preserved signed event, historical membership
 and admission proof, then test recovery through the normal bounded queue.
+The two events have valid original-author carriers already retained. The repair
+uses those verified equivalents instead of expanding historical forwarding
+authority: compare the entire signed event including its signature, keep every
+original row, and clear redundant deferred bookkeeping only with exact-recipient
+durable coverage in the same transaction. Browser and native source paths must
+agree, and unmatched/forged events must remain held.
+
+**Implemented and independently reviewed, not released:** Go and browser use a
+bounded page-local fallback only for the existing rejected dismissal-transport
+case. Pure event payload, exact signature, current own-device authority, source
+admission, canonical history authority and durable recipient coverage are
+rechecked atomically. No schema, wire format, receipt or live-permission change.
+Original rows stay intact. Conflicts, unmatched events and extra payload remain
+deferred. Source changes during verification roll back the page.
+
+Verification: the new native regression fails on the original source with
+“exact signed dismissal duplicate stayed deferred” (1.634 s). The corrected
+regression plus three adjacent historical-witness/restart cases pass under race
+(123.068 s). Browser race checks pass (18.135 s): 22 signed memory checks,
+22 actual IndexedDB checks including a second-connection mutation/rollback and
+restart, and 776 adjacent signed compatibility checks. `go vet ./...` and
+whitespace checks pass. The final Comic build/typecheck and fourteen asset hashes
+pass; the Details wording now says archive items were accepted for background
+import, without claiming each message was imported.
+
+One normal bounded history page on isolated writable copies of the read-only
+snapshot resolves Phone 3's 25 deferred refs, Linux's 7 and Bezos's 25 (to zero),
+queuing 17, 4 and 19 needed history carriers respectively. The old browser phone
+retains its 44 refs because its window is full at 228; no pacing or receipt was
+changed. All attempted HTTP lookups were denied, no replies fabricated, and no
+live store was written. This establishes source/queue recovery, not delivery or
+rendering on the real devices; the artificial capability lookup failure used
+the existing legacy transport fallback. Writable diagnostic copies were removed.
+
+Remaining: publish only after the integrated release gates, then verify actual
+device delivery/import. The old offline browser backlog and the 29 quarantined
+copies on their original targets have not been purged or declared recovered.
+MEL-558 stays open; removing an old device remains an explicit owner choice.
 
 ## AgentNet v0.8.19 — published; physical-phone verification remains
 

@@ -11,6 +11,8 @@ import (
 	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
+var errGroupHistoricalEndTransport = errors.New("group: only verified original members forward historical participation ends")
+
 var errGroupParticipationHistoryEpoch = errors.New("group: historical participation original admission changed")
 
 func groupParticipationHistoryItem(item HistoryItem) bool {
@@ -129,7 +131,7 @@ func (a *Agent) groupParticipationHistoryCheck(q dbq, root protocol.ConvRoot, fo
 			}
 		}
 		if forwarded && (candidate.Type != protocol.EventDismiss || !m.device(item.From, item.FromKey) && !retiredOwnEnd) {
-			return nil, errors.New("group: only verified original members forward historical participation ends")
+			return nil, errGroupHistoricalEndTransport
 		}
 		p, found, e := scanPersonIn(q, "person IN (SELECT person FROM person_devices WHERE address=?)", author.Address)
 		if e != nil {

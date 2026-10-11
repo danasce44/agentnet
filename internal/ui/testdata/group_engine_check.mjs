@@ -1,3 +1,4 @@
+import {dismissalCanonical} from './dismissal_canonical_check.mjs';
 // Native-produced sealed carrier vectors through actual Engine. Synthetic
 // signed-request fetch only; Chrome mode uses real IndexedDB, Node memory is unit-only.
 import * as wire from '../static/wire.mjs';
@@ -19,7 +20,7 @@ export async function consent(challenge) {
  const a = await wire.signGroupAdmission(keys,{conv:await wire.rootID(root),realm:root.realm,person:roster.person,roster:await wire.rosterHash(roster),seq:0,prev:'',history:null,by:await wire.fingerprint(pub)});
  return wire.groupAdmissionJSON(a);
 }
-export async function checks(v, realIDB=false, requireWarmRecovery=false, controlHistoryOnly=false, backgroundOnly=false,receiverOnly=false,receiptRepairOnly=false,topicOnly=false,statusReorderOnly=false,receivePriorityOnly=false) {
+export async function checks(v, realIDB=false, requireWarmRecovery=false, controlHistoryOnly=false, backgroundOnly=false,receiverOnly=false,receiptRepairOnly=false,topicOnly=false,statusReorderOnly=false,receivePriorityOnly=false,dismissalCanonicalOnly=false) {
  if(receiptRepairOnly)return carrierReceiptRepair(realIDB);
  const labels=[], check=(ok,label)=>{assert(ok,label);labels.push(label);};
  const root=wire.parseGroupRoot(v.challenge.root), conv=await wire.rootID(root), states=v.states.map(wire.parseGroupState), records=v.commits.map(wire.parseGroupCommit), c=v.carriers;
@@ -69,6 +70,7 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
    async reload(){await drain();st.close();st=realIDB?await openIDB(name):st;e=new Engine({store:st,base:'http://127.0.0.1:1',fetch});track(e);await e.load();e.realm=root.realm;this.st=st;},
    async close(){await drain();st.close();if(realIDB)await new Promise((res,rej)=>{const r=indexedDB.deleteDatabase(name);r.onsuccess=res;r.onerror=()=>rej(r.error);/* close is pending until active read transactions finish; onsuccess proves deletion. */});}};
  };
+ if(dismissalCanonicalOnly){await dismissalCanonical({world,check,c,root,conv,keys,address,roster,pub,alicePub,aliceKeys,v});return {ok:true,storage:realIDB?"real IndexedDB":"memory unit only",checks:labels.length,labels};}
  const quiet=async(w)=>{for(const s of ['inbox','outbox','convs','lids'])check((await w.st.all(s)).length===0,'quiet '+s);check((await w.e.overview()).threads.length===0,'no visible threads');for(const x of await w.st.all('held'))check(!('body'in x)&&!('plaintext'in x),'held has ciphertext only');for(const x of await w.st.all('files'))check(x.ct instanceof Uint8Array&&!('body'in x),'files ciphertext only');};
  if(receiverOnly){const profile=await receiverProfile({world,check,realIDB,c,root,conv,keys,address,roster,pub});return {ok:true,storage:profile.storage,checks:labels.length,labels,profile};}
  if(topicOnly){await participationTopics({world,check,c,root,conv,keys,address,pub,alicePub,aliceKeys,v});return {ok:true,storage:realIDB?"real IndexedDB":"memory unit only",checks:labels.length,labels};}
@@ -1503,4 +1505,4 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
   return {ok:true,storage:realIDB?'real IndexedDB':'memory unit only',checks:labels.length,labels};
  }catch(e){if(w)await w.close().catch(()=>{});throw e;}
 }
-if(globalThis.process?.versions?.node){const {createInterface}=await import('node:readline');for await(const line of createInterface({input:process.stdin})){let out;try{const r=JSON.parse(line);out=r.op==='setup'?await setup():r.op==='consent'?{consent:await consent(r.challenge)}:await checks(r.vectors,false,r.op==='warm-regression',r.op==='control-history',r.op==='background-regression',r.op==='receiver-regression',r.op==='receipt-repair',r.op==='topic-participation',r.op==='status-reorder',r.op==='receive-priority');}catch(e){out={error:e.stack};}process.stdout.write(JSON.stringify(out)+'\n');}}
+if(globalThis.process?.versions?.node){const {createInterface}=await import('node:readline');for await(const line of createInterface({input:process.stdin})){let out;try{const r=JSON.parse(line);out=r.op==='setup'?await setup():r.op==='consent'?{consent:await consent(r.challenge)}:await checks(r.vectors,false,r.op==='warm-regression',r.op==='control-history',r.op==='background-regression',r.op==='receiver-regression',r.op==='receipt-repair',r.op==='topic-participation',r.op==='status-reorder',r.op==='receive-priority',r.op==='dismiss-canonical');}catch(e){out={error:e.stack};}process.stdout.write(JSON.stringify(out)+'\n');}}

@@ -22,7 +22,7 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
   await details.click();
   await card.getByText('phone-key',{exact:true}).waitFor();
   const text=await card.innerText();
-  for(const value of ['owner/phone','7 pending history items','6 blocked history copies','8 waiting to send','212 on the server, waiting for the device','19 history records stored on the device']) assert.ok(text.includes(value),value+' retained under Details');
+  for(const value of ['owner/phone','7 pending history items','6 blocked history copies','8 waiting to send','212 on the server, waiting for the device','19 history items accepted for background import']) assert.ok(text.includes(value),value+' retained under Details');
   assert.ok(!text.includes('waiting for context')&&!text.includes('need attention'),'no invented reason or approval claim');
   const progress=card.getByRole('progressbar',{name:'Copying your chats to Phone',exact:true});
   assert.equal(await progress.getAttribute('aria-valuenow'),'3');

@@ -4,6 +4,17 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Current work after v0.8.19
+
+`fix/mel-595-remote-needs-human` contains the tested remote Needs you card and
+quiet device Details fixes (`3be6b6f4`). The owner also asked to verify and repair
+remaining history counters. A private audit identified redundant transport
+copies of two signed group dismissals blocking linked-device history; the
+source/queue repair passes focused native/browser tests and private snapshot
+recovery, with unchanged admission rules and no live purge.
+[NEXT_RELEASE.md](NEXT_RELEASE.md) records the evidence and remaining work.
+These changes are not published yet.
+
 ## Handoff to Claude — completed in v0.8.17
 
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))

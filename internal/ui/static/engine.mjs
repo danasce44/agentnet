@@ -2258,6 +2258,68 @@ export class Engine {
       if(fresh)for(const carrier of carriers)carrier.fresh_live=true;
       copies.push(...carriers);contexts.add(c.id);
     };
+    // Several envelopes may carry one independently signed end. A rejected
+    // transport can retire only its redundant bookkeeping, after the unchanged
+    // canonical source policy has produced exact-recipient durable coverage.
+    const dismissalRows=new Map(),dismissalChoices=new Map(),dismissalAliases=[],dismissalConflicts=new Map();
+    const dismissalKey=(c,item)=>{
+      if(c?.kind!=="group"||item.sub!=="event"||item.kind!=="message"||item.status||(item.origin&&item.origin!=="ui")||item.emotion||item.agent_id||item.attachments.length||item.ref||item.target||item.human||item.receiver_route||item.followup||item.reply_to||item.quote||item.topic||item.topic_event||item.topic_done||item.send_group)return "";
+      const event=wire.parseEvent(item.body);
+      return event.type==="dismiss"&&event.conv===c.id&&event.pid===item.pid?wire.eventJSON(event):""; // includes signature
+    };
+    const dismissalCoverage=async(c,item,signed)=>{
+      const key=copyPrefix+c.id+"/"+item.from_key+"/"+item.lid;
+      const ledger=[...ops].reverse().find(op=>op.s==="kv"&&op.k===key)?.v||await this.groupRead(checks,"kv",key);
+      if(!ledger?.copy)return false;
+      const rec=copies.find(row=>row.id===ledger.copy)||await this.groupRead(checks,"outbox",ledger.copy);
+      if(rec?.to!==dev.address||rec.recipient_fp!==dev.fingerprint||rec.conv!==c.id||rec.sub!=="history"||!["queued","waiting","custody","delivered","quarantined","archive_staged","archive_accepted"].includes(rec.state))return false;
+      const hash=await wire.groupHistoryContentHash(c.id,item);
+      if(ledger.hash!==hash)throw new Hold("conflicting_duplicate","Historical original conflicts with its queued copy.");
+      const envelope=wire.parseEnvelope(rec.envelope);
+      if(envelope.id!==rec.id||envelope.from!==this.address||envelope.to!==dev.address||envelope.v!==2||envelope.kind!=="message")return false;
+      if(!rec.body)return true; // retained ciphertext and exact immutable content ledger
+      const sent=wire.parseHistory(rec.body);
+      if(sent.from_key!==item.from_key||sent.lid!==item.lid||await wire.groupHistoryContentHash(c.id,sent)!==hash||dismissalKey(c,sent)!==signed)throw new Hold("conflicting_duplicate","Historical copy ledger differs from its durable envelope.");
+      return true;
+    };
+    const canonicalDismissal=async(source,here,fresh,c,item)=>{
+      let signed;try{signed=dismissalKey(c,item);}catch{return false;}
+      if(!signed)return false;
+      const chosen=dismissalChoices.get(signed);
+      if(chosen) {
+        if(!await queue(chosen.row,!!chosen.row.to,fresh)||!await dismissalCoverage(c,chosen.item,signed))return false;
+        dismissalAliases.push({source,here,canonical:chosen.row,item:chosen.item,signed});return true;
+      }
+      const scope=c.id+"/"+item.pid;
+      let rows=dismissalRows.get(scope);
+      if(!rows) {
+        rows=(await this.authorityRows({conv:c.id,pid:item.pid,sub:"event"},checks)).filter(row=>historySource(row)&&!this.erasedRow(row));
+        if(rows.length>256)return false;
+        rows.sort((a,b)=>a.at-b.at||a.id.localeCompare(b.id));
+        const original=row=>{try{const event=wire.parseEvent(row.body),h=this.itemOf(row,!!row.to);return h.from===event.author.address&&h.from_key===event.author.fingerprint;}catch{return false;}};
+        rows.sort((a,b)=>Number(original(b))-Number(original(a)));
+        dismissalRows.set(scope,rows);
+      }
+      for(const row of rows) {
+        if(row.id===source.id&&!!row.to===here)continue;
+        const canonical=await this.groupRead(checks,row.to?"outbox":"inbox",row.id);
+        if(!canonical||!historySource(canonical)||this.erasedRow(canonical))continue;
+        const original=this.itemOf(canonical,!!canonical.to);
+        try {
+          if(dismissalKey(c,original)!==signed)continue;
+          await this.historyCopy(dev,c,original,checks); // unchanged authority; no rewrite
+          if(!await queue(canonical,!!canonical.to,fresh)) {
+            const conflict=dismissalConflicts.get(c.id+"/"+original.from_key+"/"+original.lid);
+            if(conflict)throw conflict;
+            continue;
+          }
+          if(!await dismissalCoverage(c,original,signed))continue;
+        } catch(error) {if(error instanceof StoreConflict||["conflicting_duplicate","identity_conflict"].includes(error.reason))throw error;continue;}
+        dismissalChoices.set(signed,{row:canonical,item:original});
+        dismissalAliases.push({source,here,canonical,item:original,signed});return true;
+      }
+      return false;
+    };
     const queue=async(row,here=false,fresh=false)=>{
       const s=here?"outbox":"inbox",m=await this.groupRead(checks,s,row.id);
       if(!m||!historySource(m)||this.erasedRow(m))return;
@@ -2287,6 +2349,13 @@ export class Engine {
         if(saved?.copy) {
           const sent=await this.groupRead(checks,"outbox",saved.copy);
           if(sent?.to===dev.address&&sent.recipient_fp===dev.fingerprint&&sent.sub==="history"&&["queued","waiting","custody","delivered","quarantined","archive_staged","archive_accepted"].includes(sent.state)) {
+            if(!sent.body) {
+              const c=convs.get(m.conv),signed=dismissalKey(c,item);
+              if(signed) {
+                await this.historyCopy(dev,c,item,checks);
+                if(await dismissalCoverage(c,item,signed)){await clearSource();attempted.set(tuple,true);return true;}
+              }
+            }
             const h=wire.parseHistory(sent.body),actual=h.ref?await this.groupControlHash(m.conv,h):await wire.groupHistoryContentHash(m.conv,h);
             if(h.from_key!==item.from_key||h.lid!==item.lid||actual!==hash)throw new Hold("conflicting_duplicate","Historical copy ledger differs from its durable envelope.");
             await clearSource();attempted.set(tuple,true);return true;
@@ -2311,6 +2380,12 @@ export class Engine {
         copies.push(rec);ops.push({s:"kv",k:key,v:{hash,copy:rec.id}});await clearSource();attempted.set(tuple,true);return true;
       } catch(e) {
         if(e instanceof StoreConflict)throw e;
+        if(e.historicalEndTransport) {
+          try {
+            if(await canonicalDismissal(m,here,fresh,convs.get(m.conv),item)) {await clearSource();attempted.set(tuple,true);return true;}
+          } catch(error) {if(error instanceof StoreConflict)throw error;e=error;}
+        }
+        if(["conflicting_duplicate","identity_conflict"].includes(e.reason))dismissalConflicts.set(tuple,e);
         await pending(ref,e instanceof Hold?e.reason:"proof_pending");return false;
       } finally {visiting.delete(tuple);}
     };
@@ -2387,6 +2462,14 @@ export class Engine {
     book[dev.address]=next;
     if(JSON.stringify(next)!==JSON.stringify(j))ops.push({s:"kv",k:"history",v:book});
     if(ops.length||copies.length) {
+      for(const alias of dismissalAliases) {
+        const c=convs.get(alias.source.conv);
+        for(const row of [alias.source,alias.canonical]) {
+          const current=await this.groupRead(checks,row.to?"outbox":"inbox",row.id);
+          if(!current||JSON.stringify(current)!==JSON.stringify(row)||dismissalKey(c,this.itemOf(current,!!current.to))!==alias.signed)throw new StoreConflict();
+        }
+        if(!await dismissalCoverage(c,alias.item,alias.signed))throw new StoreConflict();
+      }
       await this.store.write(await this.archives().prepare(copies,ops,checks,dev),checks);
       this.archives().wake().catch(()=>{});
       this.changed();if(this.connected)this.queueOutbox();
@@ -5119,7 +5202,8 @@ export class Engine {
       candidate=await this.eventRecord(h.body);const e=candidate.e,author=e.author,p=[...members.values(),...members.hosts.values()].find(p=>p.devices.some(d=>d.address===author.address&&d.fingerprint===author.fingerprint));
       const forwarded=author.address!==h.from||author.fingerprint!==h.from_key;
       if(forwarded&&(e.type!=="dismiss"||![...members.values()].some(p=>p.devices.some(d=>d.address===h.from&&d.fingerprint===h.from_key)))){
-        if(e.type!=="dismiss"||!await this.groupHistoryOwnTransport(c,h,historyPacket||packet,checks, admission))throw new Hold("invalid","Only current members forward historical participation ends.");
+        if(e.type!=="dismiss")throw new Hold("invalid","Only current members forward historical participation ends.");
+        if(!await this.groupHistoryOwnTransport(c,h,historyPacket||packet,checks, admission))throw Object.assign(new Hold("invalid","Only current members forward historical participation ends."),{historicalEndTransport:true});
         if(!historyPacket)throw Object.assign(new Hold("invalid","Retired own transport needs original historical proof."),{historicalEpoch:true});
         retiredEnd=true;
       }

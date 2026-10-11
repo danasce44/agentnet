@@ -228,6 +228,35 @@ func (a *Agent) historyDependencies(it historySourceRow, prepared HistoryItem) (
 	return deps, nil
 }
 
+// Dismissals can have several transport carriers but one independently signed
+// lifecycle event. Only pure carriers can be substituted; extra payload stays
+// attached to its original source and cannot be silently discarded.
+func (a *Agent) historyDismissalKey(q dbq, it historySourceRow) (string, error) {
+	if it.in.Sub != envelope.SubEvent {
+		return "", nil
+	}
+	ev, err := protocol.ParseParticipationEvent([]byte(it.in.Body))
+	if err != nil || ev.Type != protocol.EventDismiss || ev.Conv != it.conv || ev.PID != it.in.PID {
+		return "", err
+	}
+	item, err := a.historySourceItem(q, it)
+	if err != nil {
+		return "", err
+	}
+	if item.Kind != envelope.KindMessage || item.Status != "" || (item.Origin != "" && item.Origin != envelope.OriginUI) || item.Emotion != "" || item.AgentID != "" || len(item.Attachments) != 0 || item.Ref != nil || item.Target != nil || item.Human != nil || item.ReceiverRoute != nil || item.Followup != nil || item.ReplyTo != "" || item.Quote != "" || item.Topic != "" || item.TopicEvent != nil || item.TopicDone || item.SendGroup != "" {
+		return "", nil
+	}
+	signed, err := json.Marshal(ev) // includes Sig: event.Hash alone does not.
+	return string(signed), err
+}
+
+type historyDismissalAlias struct {
+	source, canonical historySourceRow
+	copy              outCopy
+	signed            string
+	sourceAdmission   string
+}
+
 // One source page, one independent arrival tail page, and one deferred page.
 // Deferred refs are swept once per existing external proof/reconnect wake;
 // their mere presence never causes immediate retries of unchanged evidence.
@@ -425,6 +454,31 @@ func (a *Agent) historyCatchupPage(ctx context.Context, dev identity.Public) (mo
 	done := map[string]bool{}
 	logical := map[string]string{}
 	visiting := map[string]bool{}
+	var aliases []historyDismissalAlias
+	// One bounded read per participation per page, not a scan per carrier.
+	dismissalRows := map[string][]historySourceRow{}
+	dismissalKeys := map[string]string{}
+	dismissalChoices := map[string]historyDismissalAlias{}
+	keyFor := func(row historySourceRow) (string, error) {
+		id := row.dir + "/" + row.in.ID
+		if key, found := dismissalKeys[id]; found {
+			return key, nil
+		}
+		key, err := a.historyDismissalKey(a.store.db, row)
+		if err == nil {
+			dismissalKeys[id] = key
+		}
+		return key, err
+	}
+	admissionFor := func(q dbq, row historySourceRow) (string, error) {
+		table := "inbox"
+		if row.dir == "out" {
+			table = "outbox"
+		}
+		var stamp string
+		err := q.QueryRow("SELECT coalesce(group_admission,'') FROM "+table+" WHERE id=?", row.in.ID).Scan(&stamp)
+		return stamp, err
+	}
 	var queue func(historySourceRow) error
 	queue = func(it historySourceRow) error {
 		id := it.dir + "/" + it.in.ID
@@ -446,7 +500,119 @@ func (a *Agent) historyCatchupPage(ctx context.Context, dev identity.Public) (mo
 		}
 		visiting[id] = true
 		defer delete(visiting, id)
+		var sourceAdmission string
+		if it.in.Sub == envelope.SubEvent {
+			var err error
+			sourceAdmission, err = admissionFor(a.store.db, it)
+			if err != nil {
+				return err
+			}
+		}
 		c, e := a.prepareHistorySource(dev, it)
+		if errors.Is(e, errGroupHistoricalEndTransport) {
+			signed, keyErr := keyFor(it)
+			if keyErr != nil {
+				return keyErr
+			}
+			if signed != "" {
+				if chosen, found := dismissalChoices[signed]; found {
+					if err := queue(chosen.canonical); err != nil {
+						return err
+					}
+					chosen.source = it
+					chosen.sourceAdmission = sourceAdmission
+					aliases = append(aliases, chosen)
+					done[id] = true
+					return nil
+				}
+				scope := it.conv + "/" + it.in.PID
+				rows, known := dismissalRows[scope]
+				if !known {
+					rows, keyErr = a.historySourceRows(a.store.db, "conv=? AND pid=? AND sub='event'", "ms,id", maxPendingPerConversation+1, it.conv, it.in.PID)
+					if keyErr != nil {
+						return keyErr
+					}
+					if len(rows) > maxPendingPerConversation {
+						return errTooManyEvents
+					}
+					// Original author first; retained valid forwarders remain
+					// a fallback under exactly the same existing source policy.
+					var original, forwarded []historySourceRow
+					for _, row := range rows {
+						ev, parseErr := protocol.ParseParticipationEvent([]byte(row.in.Body))
+						if parseErr == nil && row.in.From == ev.Author.Address && row.key == ev.Author.Fingerprint {
+							original = append(original, row)
+						} else {
+							forwarded = append(forwarded, row)
+						}
+					}
+					rows = append(original, forwarded...)
+					dismissalRows[scope] = rows
+				}
+				for _, row := range rows {
+					if row.dir == it.dir && row.in.ID == it.in.ID {
+						continue
+					}
+					key, keyErr := keyFor(row)
+					if keyErr != nil || key != signed {
+						continue
+					}
+					canonical, prepareErr := a.prepareHistorySource(dev, row)
+					if prepareErr != nil || canonical == nil {
+						continue
+					}
+					canonical.recipientFP = dev.Fingerprint()
+					if queueErr := queue(row); queueErr != nil {
+						if errors.Is(queueErr, errHistoryCatchupConflict) {
+							return queueErr
+						}
+						continue
+					}
+					covered, coverageErr := historyCopyPresent(a.store.db, dev, *canonical)
+					if coverageErr != nil {
+						return coverageErr
+					}
+					if !covered {
+						var canonicalItem HistoryItem
+						if err := decodeStrict([]byte(canonical.in.Body), &canonicalItem); err != nil {
+							return err
+						}
+						canonicalHash, err := historyCopyHash(*canonical)
+						if err != nil {
+							return err
+						}
+						for _, queued := range copies {
+							if queued.env.To != dev.Address || queued.recipientFP != dev.Fingerprint() || queued.in.Conv != canonical.in.Conv {
+								continue
+							}
+							var queuedItem HistoryItem
+							if err := decodeStrict([]byte(queued.in.Body), &queuedItem); err != nil {
+								return err
+							}
+							if queuedItem.FromKey != canonicalItem.FromKey || queuedItem.LID != canonicalItem.LID {
+								continue
+							}
+							queuedHash, err := historyCopyHash(queued)
+							if err != nil {
+								return err
+							}
+							if queuedHash == canonicalHash {
+								covered = true
+								break
+							}
+						}
+					}
+					if !covered {
+						continue
+					}
+					choice := historyDismissalAlias{source: it, canonical: row, copy: *canonical, signed: signed, sourceAdmission: sourceAdmission}
+					dismissalChoices[signed] = choice
+					aliases = append(aliases, choice)
+					done[id] = true
+					return nil
+				}
+			}
+		}
 		if e != nil {
 			return e
 		}
@@ -559,7 +725,7 @@ func (a *Agent) historyCatchupPage(ctx context.Context, dev identity.Public) (mo
 			}
 		}
 	}
-	if len(copies) == 0 && len(prepared) == 0 && len(deferred) == 0 && len(deferredContexts) == 0 && before == p && (sweep.done || full) {
+	if len(aliases) == 0 && len(copies) == 0 && len(prepared) == 0 && len(deferred) == 0 && len(deferredContexts) == 0 && before == p && (sweep.done || full) {
 		a.convWork.mu.Lock()
 		a.convWork.historyDeferred[dev.Fingerprint()] = sweep
 		a.convWork.mu.Unlock()
@@ -680,6 +846,48 @@ func (a *Agent) historyCatchupPage(ctx context.Context, dev identity.Public) (mo
 			if _, err = tx.Exec(`INSERT INTO uploads(blob_id,message_id,state) VALUES(?,?,?)`, blob.ID, c.env.ID, protocol.BlobUploading); err != nil {
 				return false, err
 			}
+		}
+	}
+	for _, alias := range aliases {
+		stamp, err := admissionFor(tx, alias.source)
+		if err != nil {
+			return false, err
+		}
+		if stamp != alias.sourceAdmission {
+			return false, errHistoryCatchupConflict
+		}
+		// Recheck both immutable sources and current canonical authority in
+		// the same transaction that creates coverage and retires this ref.
+		for _, prior := range []historySourceRow{alias.source, alias.canonical} {
+			current, e := a.historySourceRows(tx, "dir=? AND id=?", "conv,ms,id", 1, prior.dir, prior.in.ID)
+			if e != nil {
+				return false, e
+			}
+			if len(current) != 1 {
+				return false, ErrGroupHistoryUnavailable
+			}
+			before, _ := json.Marshal(prior.in)
+			after, _ := json.Marshal(current[0].in)
+			if prior.key != current[0].key || !bytes.Equal(before, after) {
+				return false, errHistoryCatchupConflict
+			}
+			signed, e := a.historyDismissalKey(tx, current[0])
+			if e != nil {
+				return false, e
+			}
+			if signed != alias.signed {
+				return false, errHistoryCatchupConflict
+			}
+		}
+		if e := a.checkHistoryCopies(tx, []outCopy{alias.copy}); e != nil {
+			return false, e
+		}
+		present, e := historyCopyPresent(tx, dev, alias.copy)
+		if e != nil {
+			return false, e
+		}
+		if !present {
+			return false, ErrGroupContextPending
 		}
 	}
 	for _, it := range items {

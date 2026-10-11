@@ -12,6 +12,9 @@ This record starts with v0.8.1; earlier releases remain on the
 - Keep background history counts and progress inside device **Details**. Pending
   transfers no longer claim they need missing context or ask for attention
   without an action the person can take.
+- Recover linked history blocked by duplicate deliveries of a membership end.
+  Reuse an independently verified copy of the exact signed event for the same
+  device; preserve original messages, receipts and admission checks.
 
 ## [0.8.19] — 2026-10-11
 
