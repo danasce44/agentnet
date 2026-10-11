@@ -1,9 +1,11 @@
-# Next bug fixes after v0.8.19
+# v0.8.20 fixes and remaining verification
 
 ## October 11 group invitations, compact tags and passive diagnostics
 
-Same active branch: `fix/mel-595-remote-needs-human`. All entries below are
-unreleased. No live queues, grants, devices or tasks were changed.
+The fixes below shipped in [v0.8.20](https://github.com/misunders2d/agentnet/releases/tag/v0.8.20) and are integrated into main.
+[The release record](plans/V0_8_20.md) contains final qualification, publication
+and existing-relay deployment evidence. No live grants or original tasks were
+manually changed. Physical-phone latency and broad history recovery remain open.
 
 **MEL-530:** Android's selected-topic own-agent invite failed because an
 unrelated member lacked topic support. Native and browser invitations now

@@ -4,49 +4,54 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Current work after v0.8.19
+## Current release — v0.8.20, October 11, 2026 (UTC)
 
-The owner made **MEL-600** a v0.8.20 publication blocker: permanent relay
-offboarding must settle impossible delivery, not merely remove a group member.
-Native, browser and Hub lifecycle changes pass composed client, Hub and itest
-qualification. Final UI corrections, the owner-reported own-human question
-approval fix and the remote running-report correction are qualified, with
-focused native checks on Linux, macOS and Windows. Tag packaging and verified
-publication/deployment remain. Exact-device and
-whole-person revocation, retained authoritative receipts, admission races,
-obsolete sync producers and restart recovery are covered; offline/outdated
-devices retain resumable copies. [V0_8_20.md](plans/V0_8_20.md) is the current
-qualification and publication checklist. Do not publish before this passes.
+[Download v0.8.20](https://github.com/misunders2d/agentnet/releases/tag/v0.8.20).
+Published **14:27:24 UTC**, tag `123de827a760f6726d749e7decba1074d7ea2f28`,
+above qualified application source `23de6ae0`. All thirteen assets and checksum
+entries are verified; the signed Android preview is included. In-place owned
+emulator upgrade and cold start preserve the exact 203-message fixture, queued
+sends, attachment, draft and identity. Native update check recognizes v0.8.20.
 
-`fix/mel-595-remote-needs-human` contains the tested remote Needs you card and
-quiet device Details fixes (`3be6b6f4`). The owner also asked to verify and repair
-remaining history counters. A private audit identified redundant transport
-copies of two signed group dismissals blocking linked-device history; the
-source/queue repair passes focused native/browser tests and private snapshot
-recovery, with unchanged admission rules and no live purge.
-[NEXT_RELEASE.md](NEXT_RELEASE.md) records the evidence and remaining work.
-These changes are not published yet.
+Own verified human-device questions need no redundant approval. A read-only
+post-update check confirms Zenbook's desktop backend and daemon on the exact tag
+and the owner's originally held battery question answered once. No manual
+approval, replay, live grant change or manual desktop restart was performed.
 
-October 11 follow-ups in the same branch: MEL-530 fixes whole-audience topic
-invite checks and browser reader-copy vetoes; MEL-502 keeps collective tags
-compact with a frozen exact-recipient snapshot; MEL-588 moves passive sync
-records from OKs to About's Technical details, retaining actual identity
-warnings. Focused native/browser and integrated rendered evidence is recorded
-in NEXT_RELEASE.md. No live client state has been changed.
+This release also handles permanent recipient removal, retains ordinary content
+accepted before sender removal, clears obsolete removed-host actions, prevents
+unrelated outdated readers from vetoing agent invitations, keeps collective tags
+compact, moves passive sync notices to Technical details, repairs duplicate
+signed-dismissal history and clears a remote running-card completion race.
+Source gates use documented composed race/native/mixed-version/container and
+rendered evidence; no opt-in/platform skip is counted as execution. See
+[V0_8_20.md](plans/V0_8_20.md) for exact tests, hashes and remaining limits.
 
-Local branch cleanup is complete: 24 obsolete branches and a stale missing
-Android worktree registration were removed after ancestry/patch review and a
-verified recovery bundle in `.git/cleanup-backups/20261011T102146Z.bundle`.
-The only local branches left are main, the active fix branch and
-`next/audience-prechecks` (real unmerged work). The root is the only registered
-worktree; no remote branches were deleted.
+The existing relay runs `agentnet-revived:v0.8.20-123de827`, started **14:32:12 UTC**,
+with the original realm, volume, loopback port and neighboring service unchanged.
+All fifteen served assets match the release. Full stopped-state backup:
+`/opt/agentnet-revived/backups/pre-v0.8.20-BoJ5AMiw`. Its readback preserves
+12 agents, 20,153 messages, 443 attachments and three profile pictures.
+
+**Remaining:** MEL-601 tracks the pre-existing restore-command allowlist missing
+profile pictures. The complete backup is safe; deployment used an independently
+reviewed private readback with strict picture hashes plus unchanged native core
+restore/blob checks. MEL-551 retains the public loader cache-header follow-up.
+MEL-546/558 stay open for actual physical-phone latency and broad history recovery;
+MEL-525/580 keep their wider unresolved cases. Do not claim those complete from
+the exact own-question and running-report regressions.
+
+Local branch cleanup preserved real unmerged work on `next/audience-prechecks`.
+The root remains the sole registered worktree; 24 earlier obsolete branches have
+a recovery bundle in `.git/cleanup-backups/20261011T102146Z.bundle`. The merged
+v0.8.20 fix branch can be removed after this release record is committed.
 
 ## Handoff to Claude — completed in v0.8.17
 
 The October 10 mobile handoff ([HANDOFF_CLAUDE_MOBILE.md](HANDOFF_CLAUDE_MOBILE.md))
 was taken over by Claude and shipped as v0.8.17 below.
 
-## Current published release — v0.8.19, October 11, 2026 (UTC)
+## Previous release — v0.8.19, October 11, 2026 (UTC)
 
 [Download v0.8.19](https://github.com/misunders2d/agentnet/releases/tag/v0.8.19).
 Published **08:33:39 UTC**, tag `2a71b98d35ba8157e7c06f286bd556f40ee40a8d`,
@@ -79,9 +84,9 @@ or the Tailscale socket; no credential reset is needed. The existing target is
 `agentnet-revived-hub`, Compose service `hub` in
 `/opt/agentnet-revived/compose.yaml`. Preserve its original named volume,
 loopback binding, realm and neighboring `telegram-bot-api-local` container.
-The v0.8.20 deployment script is prepared privately outside the repository;
-it must not run before the published binary checksum and served-asset hashes
-are supplied and verified. No deployment occurred during access recovery.
+The v0.8.20 deployment scripts and complete stopped-state backups remain private
+on the existing server. Do not rerun the upgrade script: its v0.8.19 preflight
+is intentionally no longer true. See the current release record above.
 
 ## Previous release — v0.8.18, October 10, 2026 (UTC)
 
