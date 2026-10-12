@@ -6131,10 +6131,15 @@ export class Engine {
     const held = await this.groupRead(checks, "held", env.id);
     const human = (address, fingerprint) => own?.devices.some(d => d.address === address && d.fingerprint === fingerprint) && own.human_keys?.includes(fingerprint);
     if (this.revoked || own?.state !== "self" || env.to !== this.address || env.v !== wire.Version2 || env.kind !== "message" ||
-        !held || !(held.reason === "invalid" || held.reason === "proof_pending" && held.history_recovery) || held.envelope !== data || !pin || pin.pending ||
+        !held || !(held.reason === "invalid" || mode==="device-erased"&&held.reason==="conflicting_copy" || held.reason === "proof_pending" && held.history_recovery) || held.envelope !== data || !pin || pin.pending ||
         !human(this.address, this.fp) || !human(env.from, pin.fingerprint)) return null;
     try {
       const n = await wire.open(data, this.keys, this.address, await this.pubOf(pin));
+      if(mode==="device-erased"){
+        if(n.sub!==wire.SubDeviceHistory||!n.replica||n.attachments.length)return null;
+        const w=wire.parseDeviceHistory(n.body);
+        return await this.directHistory().erasedNative(w.item,w.recipient,w.recipient_key||"",checks)?checks:null;
+      }
       if (n.sub !== "history" || !n.replica || n.attachments.length) return null;
       const root=wire.parseConvRoot(n.root),item=wire.parseHistory(n.body);
       if(root.kind==="group") {if(mode==="dm"||!item.pid&&!item.ref)return null;}
@@ -6752,7 +6757,7 @@ export class Engine {
           const before = at;
           at = h.id;
           // Missing context keeps the recovery guard through later ordinary proof retries.
-          const historyRecovery = h.reason === "proof_pending" && h.history_recovery || (recoverHistory||recoverLifecycle) && h.reason === "invalid" && !recovered.has(h.id) && (recoverHistory ? recoverLifecycle ? "all" : true : "dm");
+          const historyRecovery = h.reason === "proof_pending" && h.history_recovery || recoverRoster&&h.reason==="conflicting_copy"&&!recovered.has(h.id)&&"device-erased" || (recoverHistory||recoverLifecycle) && h.reason === "invalid" && !recovered.has(h.id) && (recoverHistory ? recoverLifecycle ? "all" : true : "dm");
           // One upgrade pass revalidates legacy roster-mismatch holds. This
           // never unfreezes a person; full normal admission still decides.
           const rosterRecovery=recoverRoster&&h.reason==="identity_conflict"&&!recovered.has(h.id);

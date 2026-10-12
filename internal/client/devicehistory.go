@@ -66,6 +66,16 @@ func deviceHistoryHash(r deviceHistoryRow) string {
 }
 
 func (a *Agent) deviceHistorySource(q dbq, storage, id string) (deviceHistoryRow, error) {
+	r, err := a.deviceHistoryStoredSource(q, storage, id)
+	if err == nil {
+		if err = validateDeviceHistoryItem(r); err != nil {
+			err = errors.Join(errDeviceHistoryBlocked, err)
+		}
+	}
+	return r, err
+}
+
+func (a *Agent) deviceHistoryStoredSource(q dbq, storage, id string) (deviceHistoryRow, error) {
 	r := deviceHistoryRow{storage: storage, id: id}
 	var key, target, refID, refFP, recipient string
 	var at int64
@@ -109,10 +119,41 @@ func (a *Agent) deviceHistorySource(q dbq, storage, id string) (deviceHistoryRow
 		return r, err
 	}
 	r.item = h
-	if err = validateDeviceHistoryItem(r); err != nil {
-		return r, errors.Join(errDeviceHistoryBlocked, err)
-	}
 	return r, nil
+}
+
+// Older native originals may have been erased before any history metadata was
+// saved. Their exact tombstone is authoritative about deletion, not new content.
+// Match all surviving original fields; acknowledge only an inert duplicate and
+// never write the carrier's text, manifests, authority or execution state.
+func (a *Agent) erasedNativeDeviceHistory(q dbq, r deviceHistoryRow) (bool, error) {
+	for _, storage := range []string{"in", "out"} {
+		var erased bool
+		if err := q.QueryRow(`SELECT EXISTS(SELECT 1 FROM conv_erased WHERE conv='' AND key=? AND lid=?) AND NOT EXISTS(SELECT 1 FROM device_history_rows WHERE storage=? AND id=?)`, r.item.FromKey, r.id, storage, r.id).Scan(&erased); err != nil {
+			return false, err
+		}
+		if !erased {
+			continue
+		}
+		old, err := a.deviceHistoryStoredSource(q, storage, r.id)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if old.replica || old.item.Body != "" {
+			continue
+		}
+		// The deleted body is intentionally unavailable. Everything else,
+		// including original endpoints, kind, references and files, must match.
+		old.item.Body = r.item.Body
+		if deviceHistoryHash(old) != deviceHistoryHash(r) || old.toKey != "" && r.toKey != "" && old.toKey != r.toKey {
+			return false, errHistoryCatchupConflict
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func validateDeviceHistoryItem(r deviceHistoryRow) error {
@@ -258,6 +299,23 @@ func (a *Agent) admitDeviceHistory(ctx context.Context, env envelope.Envelope, i
 	if err = readSyncAuthority(tx, auth, env.From, sender.Fingerprint(), a.Address, a.Self().Fingerprint()); err != nil {
 		tx.Rollback()
 		return hold(reasonInvalid, err.Error())
+	}
+	if erased, e := a.erasedNativeDeviceHistory(tx, r); e != nil {
+		tx.Rollback()
+		if errors.Is(e, errHistoryCatchupConflict) {
+			return hold(reasonConflict, "device history differs from an erased original")
+		}
+		return e
+	} else if erased {
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO history_receipts(id) VALUES(?)`, env.ID); err != nil {
+			return err
+		}
+		if held {
+			if _, err = tx.Exec(`DELETE FROM quarantine WHERE id=?`, env.ID); err != nil {
+				return err
+			}
+		}
+		return a.store.done(tx.Commit())
 	}
 	var erasedHash string
 	err = tx.QueryRow(`SELECT h.hash FROM device_history_rows h JOIN inbox i ON i.id=h.id JOIN conv_erased e ON e.conv='' AND e.key=h.author_fp AND e.lid=h.id WHERE h.storage='in' AND h.id=? AND h.author_fp=? AND h.recipient=?`, r.id, r.item.FromKey, r.to).Scan(&erasedHash)

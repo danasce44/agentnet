@@ -430,7 +430,11 @@ func TestP6InviterLeavesWithoutRemovingAgent(t *testing.T) {
 	if _, e := carol.LeaveGroup(tctx(t), conv); e != nil {
 		t.Fatal(e)
 	}
-	eventually(t, "departure applied", func() bool { m, e := w.bob.GroupMembers(conv); return e == nil && len(m) == 2 })
+	// Observe the departure at both the executor and the next sender before
+	// exercising post-departure operation, rather than racing its arrival.
+	for _, a := range []*Agent{w.alice, w.bob} {
+		eventually(t, "departure applied", func() bool { m, e := a.GroupMembers(conv); return e == nil && len(m) == 2 })
+	}
 	for _, a := range []*Agent{w.alice, w.bob} {
 		got := stateAt(t, a, p.PID)
 		if !got.Member || !got.Claimable() {
@@ -444,7 +448,7 @@ func TestP6InviterLeavesWithoutRemovingAgent(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer host.Close()
+	t.Cleanup(func() { host.Close() })
 	if got := stateAt(t, host, p.PID); !got.Claimable() {
 		t.Fatalf("consent lost on restart: %+v", got)
 	}

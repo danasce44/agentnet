@@ -15,6 +15,7 @@ async function world() {
     if (offline) throw new TypeError('Failed to fetch');
     const p = new URL(url).pathname;
     if (p === '/v1/version') return json({ features: ['env2', 'person2', 'caps', 'notify1'], realm_id: 'f'.repeat(32) });
+    if (p.startsWith('/v1/groups/') && p.endsWith('/publish')) { const publication=JSON.parse(o.body);assert.equal(publication.v,1);assert.equal(typeof publication.invitation,'string');const record=publication.commit,key=p.replace(/\/publish$/,'/chain'),records=groups.get(key)||[];records[record.seq]=record;groups.set(key,records);return json({seq:record.seq,hash:record.hash}); }
     if (p.startsWith('/v1/groups/') && p.endsWith('/chain')) { const records=groups.get(p)||[]; if(o.method==='POST'){const record=JSON.parse(o.body);records[record.seq]=record;groups.set(p,records);return json({seq:record.seq,hash:record.hash});} const after=Number(new URL(url).searchParams.get('after')||-1);return json({records:records.filter(r=>r.seq>after),more:false}); }
     if (p.endsWith('/profile')) return json(profiles.get(p.slice(11, -8)));
     if (p.endsWith('/agent-catalog')) return json(catalogs.get(p.slice(11, -14)) || []);

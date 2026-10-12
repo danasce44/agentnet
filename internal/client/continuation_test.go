@@ -313,16 +313,7 @@ func TestContinueRequestCodexSavedBackgroundStaysFresh(t *testing.T) {
 	h.question = append([]string(nil), Harnesses["codex"].question...)
 	Harnesses["xstyle"] = h
 	w := newWorld(t, "")
-	script, e := os.ReadFile(Harnesses["xstyle"].bin)
-	if e != nil {
-		t.Fatal(e)
-	}
-	script = []byte(strings.Replace(string(script), "cat > /dev/null", `cat > "$STUB_LOG.stdin"`, 1))
-	if e = os.WriteFile(Harnesses["xstyle"].bin, script, 0700); e != nil {
-		t.Fatal(e)
-	}
-	t.Setenv("STUB_NO_AGENT", "1")
-	t.Setenv("STUB_O", needsHumanMarker+"\nWhich branch?")
+	t.Setenv("STUB_NATIVE_ANSWER", needsHumanMarker+"\nWhich branch?")
 	t.Setenv("STUB_THREAD", "prior-worker-thread")
 	setResponder(t, w.bob, "xstyle", st.dir, time.Minute)
 	w.bob.Approve(w.alice.Address)
@@ -337,7 +328,7 @@ func TestContinueRequestCodexSavedBackgroundStaysFresh(t *testing.T) {
 	if old == nil || old.ID != "prior-worker-thread" {
 		t.Fatal(old)
 	}
-	t.Setenv("STUB_NO_AGENT", "")
+	t.Setenv("STUB_NATIVE_ANSWER", "completed clarification")
 	t.Setenv("STUB_THREAD", "new-worker-thread")
 	if e = w.bob.ContinueRequest(q.ID, protocol.NewID(), 1, "release branch"); e != nil {
 		t.Fatal(e)
@@ -351,7 +342,11 @@ func TestContinueRequestCodexSavedBackgroundStaysFresh(t *testing.T) {
 	if len(runs) != 2 || strings.Contains(runs[1], "resume") || strings.Contains(runs[1], "--sandbox") || strings.Contains(runs[1], "approval_policy") {
 		t.Fatal(runs)
 	}
-	prompt, e := os.ReadFile(st.log + ".stdin")
+	rpc, e := os.ReadFile(st.log + ".rpc")
+	if e != nil || strings.Count(string(rpc), "thread/start") != 2 || strings.Contains(string(rpc), "thread/resume") {
+		t.Fatalf("continuation resumed native session: %s %v", rpc, e)
+	}
+	prompt, e := os.ReadFile(st.log + ".prompt")
 	if e != nil || !strings.Contains(string(prompt), "fresh-context continuation") || !strings.Contains(string(prompt), "release branch") {
 		t.Fatalf("%s %v", prompt, e)
 	}

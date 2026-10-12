@@ -151,9 +151,6 @@ func TestOwnRevisedProposalUsesOrdinaryTaskPermission(t *testing.T) {
 	persons(t, w.alice)
 	setResponder(t, w.alice, "stub", st.dir, time.Minute)
 	phone := linkedVia(t, w.alice, "phone", func(ctx context.Context, id string) error { return w.alice.DecideLink(ctx, id, true) })
-	if err := w.alice.Approve(phone.Address); err != nil {
-		t.Fatal(err)
-	}
 	request, err := phone.SendMessage(tctx(t), Outgoing{To: w.alice.Address, Kind: envelope.KindQuestion, Body: "Which report?"})
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +165,7 @@ func TestOwnRevisedProposalUsesOrdinaryTaskPermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitState(t, w.alice, task.ID, stateAwaiting)
+	waitState(t, w.alice, task.ID, stateNeedHuman)
 	var holds bool
 	if err = w.alice.store.db.QueryRow(`SELECT `+ownProposalHolds+` FROM inbox WHERE id=?`, task.ID).Scan(&holds); err != nil || holds {
 		t.Fatalf("revised task inherited exact proposal exception: %v %v", holds, err)
@@ -177,13 +174,7 @@ func TestOwnRevisedProposalUsesOrdinaryTaskPermission(t *testing.T) {
 	if err != nil || v == nil || !v.Edited || v.Task != "Write the report in English." || v.Proposal != p.Body {
 		t.Fatalf("edited provenance: %+v %v", v, err)
 	}
-	if st.count() != 1 {
-		t.Fatalf("edited task ran without normal permission: runs=%d", st.count())
-	}
-	if err = w.alice.Accept(task.ID); err != nil {
-		t.Fatal(err)
-	}
-	waitState(t, w.alice, task.ID, stateNeedHuman)
+	// A current own human needs no separate AgentNet task grant or Accept.
 	if st.count() != 2 {
 		t.Fatalf("accepted revised task runs=%d", st.count())
 	}

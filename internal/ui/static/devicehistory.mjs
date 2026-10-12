@@ -59,6 +59,19 @@ export function deviceHistory(e,Hold){
    const r=await source(row,here);if(result&&result.hash!==r.hash)fail("ambiguous original ID.");result=r;
   }return result;
  }
+ async function erasedNative(item,to,toKey,checks){
+  for(const [s,here]of [["inbox",false],["outbox",true]]){
+   const row=await read(checks,s,item.id);
+   if(!directHistoryRow(row)||row.history||row.replica||row.device_history||row.body!=="")continue;
+   const name=e.rowName(row),tombstone=await read(checks,"erased","|"+name.key+"|"+name.lid);
+   if(!tombstone||name.key!==item.from_key)continue;
+   // Deletion discarded the body; compare every retained field and only
+   // acknowledge a duplicate. No text, file or executable state is restored.
+   const old=await source({...row,body:item.body},here);
+   if(old.recipient!==to||old.recipient_key&&toKey&&old.recipient_key!==toKey||old.hash!==await wire.deviceHistoryHash(item,to))fail("copy conflicts with erased original.","conflicting_copy");
+   return true;
+  }return false;
+ }
  async function project(r,own,checks,ops=[],admission=null){
   const h=r.item,fromOwn=await human(own,h.from,h.from_key,admission),toOwn=await human(own,r.recipient,r.recipient_key,admission);
   if(!fromOwn&&!toOwn)fail("neither endpoint belongs to this human.");
@@ -89,6 +102,7 @@ export function deviceHistory(e,Hold){
   const w=wire.parseDeviceHistory(n.body),checks=[],ops=[];
   await e.refreshPerson(e.me,admission?{...admission,roster:w.roster}:null);const own=await authority(w,env,pin,checks);
   const item=await validate(w.item,w.recipient),r={item,recipient:w.recipient,recipient_key:w.recipient_key||"",hash:await wire.deviceHistoryHash(item,w.recipient)};
+  if(await erasedNative(item,w.recipient,w.recipient_key||"",checks)){ops.checks=checks;return ops;}
   // A previously admitted, locally erased original keeps its immutable hash.
   // A fresh carrier may be acknowledged without restoring text or needing an
   // erased parent's executable body to pass validation again.
@@ -200,5 +214,5 @@ export function deviceHistory(e,Hold){
   await e.readSyncAuthority(w,e.address,e.fp,dev.address,dev.fingerprint,checks);await fileSource(w.item,checks);
   const rec=await carrier(dev,wire.SubDeviceFile,JSON.stringify(w),files);await e.store.write([{s:"outbox",k:rec.id,v:rec}],checks);e.changed();await e.post(rec);
  }
- return {source,original,project,human,admit,step,gate,requestFile,admitFile,serveFile,offerFile};
+ return {source,original,project,human,admit,step,gate,requestFile,admitFile,serveFile,offerFile,erasedNative};
 }

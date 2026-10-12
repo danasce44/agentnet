@@ -500,6 +500,32 @@ phone.connected=false;desk.connected=false;
  check((await e.store.outboxStates(['queued','waiting','archive_staged'])).length===0,'10k completed archives create no new queue pressure');
  e.store.all=all;
 }
+// Legacy erased native original: no device_history projection ever existed.
+{
+ const reader=await person('erased-native/desk');
+ await reader.store.write([{s:'persons',k:b.me.person,v:{...b.me,state:'pinned'}},{s:'pins',k:b.address,v:{address:b.address,json:wire.marshalPublic(b.pub),fingerprint:b.fp,pending:null}}]);
+ const id=wire.newID(),raw=await wire.seal({id,from:b.address,to:reader.address,ts:9,kind:'message',body:'native text to erase'},b.keys,reader.pub);
+ await receiveHistory(raw,reader);
+ const row=await reader.store.get('inbox',id),original=await reader.directHistory().source(row,false);
+ check(!row.device_history&&!row.history,'original has native endpoints and no imported metadata');
+ await reader.deleteThread(b.address,id);
+ const sender=await sibling(reader,'erased-native/phone'),record={v:1,person:reader.me.person,roster:reader.me.hash,recipient:original.recipient,recipient_key:original.recipient_key,item:original.item};
+ const heldRaw=await seal(sender,record,reader),env=wire.parseEnvelope(heldRaw);
+ await reader.store.write([{s:'held',k:env.id,v:{id:env.id,from:sender.address,fp:sender.fp,reason:'conflicting_copy',envelope:heldRaw,at:1}}]);
+ const reopened=new Engine({store:reader.store,base:reader.base,fetch});await reopened.load();await reopened.retryHeld();
+ const delivered=async id=>!!await reopened.store.get('receipts',id)||acks.some(a=>a.id===id&&a.body.state==='delivered');
+ check(!await reopened.store.get('held',env.id)&&await delivered(env.id),'upgrade/restart recovers exact legacy erased carrier through ordinary admission');
+ for(let i=0;i<2;i++){const copy=await receiveHistory(await seal(sender,record,reader),reopened);check(!await reopened.store.get('held',copy)&&await delivered(copy),'new encrypted duplicate of erased original is acknowledged');}
+ const after=await reopened.store.get('inbox',id);
+ check(after.body===''&&!after.history&&!after.device_history&&!(await reopened.v1Threads()).some(g=>g.some(m=>m.id===id)),'erased native text, files and execution are never imported or displayed');
+ for(const change of ['kind','timestamp','recipient','key']){
+  const bad=structuredClone(record);if(change==='kind')bad.item.kind='question';if(change==='timestamp')bad.item.ts++;if(change==='recipient')bad.recipient=sender.address;if(change==='key')bad.recipient_key=sender.fp;
+  const copy=await receiveHistory(await seal(sender,bad,reader),reopened);check((await reopened.store.get('held',copy))?.reason==='conflicting_copy','erased skeleton mismatch stays held: '+change);
+ }
+ await reopened.store.write([{s:'kv',k:'person',v:{...reader.me,state:'conflict'}}]);
+ const copy=await receiveHistory(await seal(sender,record,reader),reopened);check(!!await reopened.store.get('held',copy),'current frozen person cannot acknowledge erased history');
+}
+
 // Original endpoint identity also governs local deletion of imported outgoing rows.
 await p.deleteThread(b.address,id);
 check(!(await p.v1Threads()).some(g=>g.some(m=>m.id===id||m.id===answer)), 'local deletion removes imported request and replies');

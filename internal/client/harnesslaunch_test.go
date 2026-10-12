@@ -29,8 +29,12 @@ func TestNativeLaunchPreservesOwnerWrapperAndEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := resolveNativeLaunch("native")
-	if err != nil || got.Path != link || got.Resolved != executable || got.Installation != "npm-compatible" {
+	if err != nil || got.Path != link || got.Resolved != resolved || got.Installation != "npm-compatible" {
 		t.Fatalf("install %+v %v", got, err)
 	}
 	// An arbitrary owner wrapper is deliberately NOT replaced by its child.

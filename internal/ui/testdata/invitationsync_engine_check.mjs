@@ -62,7 +62,8 @@ check((await copies(a)).length===1&&(await a.store.get('outbox',first.id)).envel
 await p.store.write([{s:'pins',k:a.address,v:sourcePin}]);await receive(first.envelope,p);
 let views=await p.groupInvitations();check(views.length===1&&views[0].id===id&&views[0].status==='pending'&&views[0].direction==='out'&&!views[0].can_cancel&&!views[0].can_refresh,'linked device shows exact pending invitation without action authority');
 check(!await p.store.get('kv',intentKey),'mirror is never local consent/publication intent');
-await assert.rejects(()=>p.cancelGroup({id}),/No outgoing invitation/);checks++;
+await assert.rejects(()=>p.cancelGroup({id}),/group current context missing/);checks++;
+check(!await p.store.get("kv",intentKey),"missing current group evidence cannot turn a passive mirror into cancellation authority");
 await assert.rejects(()=>p.decideGroup({id,accept:true}),/No invitation/);checks++;
 await a.store.write([{s:'kv',k:intentKey,v:{...intent,status:'cancelled'}}]);await a.syncInvitations();rows=await copies(a);check(rows.length===2,'changed status creates one newer revision');
 const newest=rows.find(o=>o.invitation_revision===2);await receive(newest.envelope,p);
@@ -76,7 +77,7 @@ const restarted=new Engine({store:a.store,base:a.base,fetch});Object.assign(rest
 await restarted.syncInvitations();check((await copies(a)).length===2,'restart does not resend unchanged views');
 await caps(p,[wire.CapEnv2,wire.CapPerson,wire.CapRoom]);const sent=posts.length;await restarted.post(newest);check((await a.store.get('outbox',newest.id)).state==='waiting'&&posts.length===sent,'older reader waits without receiving unknown subtype');
 await caps(p);await restarted.post(await a.store.get('outbox',newest.id));check(posts.length===sent+1,'upgraded reader releases original ciphertext');
-await p.store.write([{s:'pins',k:a.address,v:{...(await p.store.get('pins',a.address)),pending:{fingerprint:b.fp}}}]);check((await p.groupInvitations()).length===0,'changed source key hides trusted view');
+await p.store.write([{s:'pins',k:a.address,v:{...(await p.store.get('pins',a.address)),pending:{fingerprint:b.fp}}}]);const retained=await p.groupInvitations();check(retained.length===1&&retained[0].id===id&&retained[0].status==='cancelled'&&!retained[0].can_cancel&&!retained[0].can_refresh,'previously authenticated mirror remains inert when original source key changes');const changedCarrier=await receive(await seal(a,wire.parseInvitationSync(newest.body)),p);check(!!await p.store.get('held',changedCarrier),'changed source key cannot admit a new invitation carrier');
 await a.store.write([{s:'kv',k:'person',v:{...a.me,human_keys:[a.fp]}}]);await assert.rejects(()=>a.invitationSyncGate(newest),/current own-human/);checks++;
 check(!wire.capsReads({caps:[wire.CapRoom]},wire.CapOwnSyncV2),'legacy room capability never implies invitation sync');
 await assert.rejects(()=>wire.seal({v:2,id:wire.newID(),from:a.address,to:p.address,ts:1,kind:'task',sub:wire.SubInvitationSync,replica:true,body:first.body},a.keys,p.pub),/quiet rootless/);checks++;

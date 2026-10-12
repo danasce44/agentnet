@@ -12,8 +12,7 @@ const incomplete={pid:'held-only',state:'pending',state_text:'Its invitation is 
 const invited={pid:'real-invite',state:'invited',host,inviter:me,member:true,agent_id:'named',shared:[],missing:0,can_ask:false,can_decide:false,can_dismiss:true};
 const view=room({...base,agents:[incomplete,invited]},{person:me,me}, {named:'Analyst'});
 assert.deepEqual(Array.from(view.invited,g=>g.pid),['real-invite'],'held records are not invitations');
-assert.deepEqual(Array.from(view.incomplete,g=>g.pid),['held-only']);
-assert.deepEqual(Object.keys(view.incomplete[0]).sort(),['pid','stateText'],'incomplete context has no guessed identity or authority');
+assert.ok(!JSON.stringify(view).includes('held-only'),'incomplete technical context creates no person, invitation or action in the room');
 assert.equal(view.guests.length,0);assert.equal(view.waiting.length,0);
 assert.equal(view.invited[0].can.dismiss,true,'real invitation cancellation remains');
 const only=room({...base,agents:[incomplete]},{person:me,me},{});

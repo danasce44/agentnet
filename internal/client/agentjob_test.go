@@ -415,7 +415,15 @@ func TestAgentDismissal(t *testing.T) {
 	}
 	eventually(t, "bob to hold it", func() bool { return inboxCount(t, w.bob, `id = ? AND state = ?`, queued.ID, stateAgentWaiting) == 1 })
 	stopBob()
-	injectFaults(w.bob).add("POST", "/v1/messages", 1, false)
+	// Keep all POSTs offline until the queued-output boundary is observed;
+	// an earlier status copy must not consume a one-shot failure.
+	transport := w.bob.hub.http.Transport
+	w.bob.hub.http.Transport = resetFailureTransport(func(req *http.Request) (*http.Response, error) {
+		if req.Method == "POST" && req.URL.Path == "/v1/messages" {
+			return nil, errInjected
+		}
+		return transport.RoundTrip(req)
+	})
 	j = claimAt(t, w.bob, queued.ID)
 	w.bob.finishAgent(tctx(t), j, &Responder{Harness: "agentstub"}, envelope.StatusDone, "queued reply\nemotion: calm")
 	var out, outState string
@@ -432,6 +440,7 @@ func TestAgentDismissal(t *testing.T) {
 		return n
 	}
 	answeredDue := due() // its answered state, noted when the reply was stored
+	w.bob.hub.http.Transport = transport
 	if _, err := w.bob.DismissParticipation(tctx(t), pid4); err != nil {
 		t.Fatal(err)
 	}

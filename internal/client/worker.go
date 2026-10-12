@@ -403,11 +403,7 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	if !h.stdin {
 		args = append(args, "--", prompt)
 	}
-	launch, err := resolveNativeLaunch(h.bin)
-	if err != nil {
-		a.endJob(j.ID, stateJobFailed, "native launcher unavailable: "+err.Error())
-		return
-	}
+	launch, launchErr := resolveNativeLaunch(h.bin)
 	cmd := exec.CommandContext(runCtx, launch.Path, args...)
 	cmd.Dir = r.Dir
 	// cmd.Environ, after Dir, keeps the PWD=Dir that exec sets when Env is
@@ -470,7 +466,7 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	}
 	var roomBridge *codexRoomBridge
 	var stopNativeFollowups func()
-	if nativeCodex {
+	if nativeCodex && launchErr == nil {
 		var roomCall func(context.Context, json.RawMessage) (string, error)
 		if roomCodex {
 			roomCall = func(ctx context.Context, raw json.RawMessage) (string, error) { return a.codexRoomTool(ctx, j.ID, raw) }
@@ -502,7 +498,10 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	a.Logf("%s %s from %s: running %s in %s", j.Kind, j.ID, j.From, r.Harness, r.Dir)
 	setupMS := time.Since(selectedAt).Milliseconds()
 	launchAt := time.Now()
-	runErr := cmd.Start()
+	runErr := launchErr
+	if runErr == nil {
+		runErr = cmd.Start()
+	}
 	if runErr != nil {
 		a.Logf("%s %s: launch failed: setup_ms=%d start_ms=%d (%v)", j.Kind, j.ID, setupMS, time.Since(launchAt).Milliseconds(), runErr)
 	} else {

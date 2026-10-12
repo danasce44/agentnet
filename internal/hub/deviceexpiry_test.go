@@ -365,7 +365,19 @@ func TestRevokedSenderRetainsAcceptedCommunication(t *testing.T) {
 
 func TestUpgradeRepairsEveryRevokedCustodyOnce(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hub.db")
-	oldDB, err := sqlitedb.Open(path, schema[:len(schema)-1])
+	// This fixture predates the custody repair, regardless of newer schema
+	// steps appended by later releases.
+	repairStep := -1
+	for i, step := range schema {
+		if step == revokedCustodyRepairSchema {
+			repairStep = i
+			break
+		}
+	}
+	if repairStep < 0 {
+		t.Fatal("revoked custody repair schema is missing")
+	}
+	oldDB, err := sqlitedb.Open(path, schema[:repairStep])
 	if err != nil {
 		t.Fatal(err)
 	}

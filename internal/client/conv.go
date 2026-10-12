@@ -1193,6 +1193,11 @@ func (a *Agent) releaseConv(ctx context.Context, feats []string) {
 // proof, continuing the look under way (heldLook), and reports whether more
 // follow. Messages still without proof stay held, in place.
 func (a *Agent) retryProof(ctx context.Context) (more bool) {
+	if err := a.recoverErasedDeviceHistory(); err != nil {
+		a.Logf("recovering erased native history: %v", err)
+		a.convWork.due(convRetryMore)
+		return false
+	}
 	if err := a.recoverInvalidLifecycleHistory(); err != nil {
 		a.Logf("recovering held lifecycle history: %v", err)
 		a.convWork.due(convRetryMore)

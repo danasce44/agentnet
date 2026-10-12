@@ -288,6 +288,11 @@ func Open(home string) (*Agent, error) {
 		st.db.Close()
 		return nil, err
 	}
+	if err := a.recoverErasedDeviceHistory(); err != nil {
+		a.hub.release()
+		st.db.Close()
+		return nil, err
+	}
 	if err := a.recoverInvalidStatuses(); err != nil {
 		a.hub.release()
 		st.db.Close()

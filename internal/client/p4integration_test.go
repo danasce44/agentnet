@@ -28,7 +28,7 @@ func TestProposalOutcomeBeforeTrailersNeverCloses(t *testing.T) {
 }
 
 // A harmless roster update must preserve both standing person questions and
-// trusted-own-device tasks. Losing native trust demotes only automatic tasks.
+// own-human tasks. Removing the device demotes unstarted automatic tasks.
 func TestPersonReconciliationPreservesOwnTaskAndPersonQuestion(t *testing.T) {
 	s := securityStore(t)
 	owner, _ := identity.Generate()
@@ -44,15 +44,11 @@ func TestPersonReconciliationPreservesOwnTaskAndPersonQuestion(t *testing.T) {
 		}
 	}
 	pin(r, true)
-	joined := protocol.PersonRoster{Person: r.Person, Label: r.Label, Seq: 1, Prev: r.Hash(), Devices: []identity.Public{self, sender}, HumanKeys: r.Humans(), By: self.Fingerprint()}
+	joined := protocol.PersonRoster{Person: r.Person, Label: r.Label, Seq: 1, Prev: r.Hash(), Devices: []identity.Public{self, sender}, HumanKeys: append(r.Humans(), sender.Fingerprint()), By: self.Fingerprint()}
 	joined.Join = ed25519.Sign(desk.Sign, protocol.JoinBytes(joined.Person, joined.Seq, joined.Prev, sender))
 	joined.Sign(owner.Sign)
 	pin(joined, false)
 	if err := s.pin(sender); err != nil {
-		t.Fatal(err)
-	}
-	trust, _ := json.Marshal([]map[string]string{{"address": sender.Address, "fingerprint": sender.Fingerprint()}})
-	if err := s.setConfig(map[string]string{"self_consent": string(trust)}); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := s.db.Begin()
@@ -93,9 +89,11 @@ func TestPersonReconciliationPreservesOwnTaskAndPersonQuestion(t *testing.T) {
 		delete(want, j.ID)
 	}
 	pending := add(envelope.KindTask)
-	if err := s.setConfig(map[string]string{"self_consent": "[]"}); err != nil {
-		t.Fatal(err)
-	}
+	removed := renamed
+	removed.Seq, removed.Prev = 3, renamed.Hash()
+	removed.Devices, removed.HumanKeys = []identity.Public{self}, []string{self.Fingerprint()}
+	removed.Sign(owner.Sign)
+	pin(removed, false)
 	tx, err = s.db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -108,9 +106,9 @@ func TestPersonReconciliationPreservesOwnTaskAndPersonQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state, _ := s.jobState(pending); state != stateAwaiting {
-		t.Fatalf("lost trust still pending: %s", state)
+		t.Fatalf("removed human still pending: %s", state)
 	}
 	if j, ok, err := s.claimJob("stub"); err != nil || ok {
-		t.Fatalf("untrusted task claimed: %+v %v %v", j, ok, err)
+		t.Fatalf("removed human task claimed: %+v %v %v", j, ok, err)
 	}
 }

@@ -97,7 +97,10 @@ func TestCodexSessionFixtureProcess(t *testing.T) {
 				enc.Encode(map[string]any{"method": "item/commandExecution/outputDelta", "params": map[string]any{"threadId": thread, "turnId": "turn", "delta": strings.Repeat("n", n)}})
 			}
 			mode := os.Getenv("STUB_TURN")
-			answer := "codex native answer"
+			answer := os.Getenv("STUB_NATIVE_ANSWER")
+			if answer == "" {
+				answer = "codex native answer"
+			}
 			if mode != "" {
 				answer = "partial commentary"
 			}
