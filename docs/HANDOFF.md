@@ -17,10 +17,12 @@ OMP accepted all F1–F6/B1–B20 at documentation candidate `817bcc48`, includi
 exact erased-native recovery on ThinkPad’s failure shape. Full native client
 suites now pass on Linux/macOS/Windows. The full race batch found one bounded
 completion-order defect: finishing a parent could suppress its child's already
-stored answer. The exact-result correction and cancellation/membership negatives
-pass focused race checks; affected native checks and exact timeout-tail coverage
-remain. Other packages, UI, desktop, real IndexedDB and mixed-version evidence
-remain valid. Merge/tag acceptance and tag-built release/APK verification remain;
+stored answer. Qualified source `ee80deff114bc1505b8d39bef99fd9902842eb4c`
+passes the exact-result correction and cancellation/membership negatives under
+race and native Linux/macOS/Windows checks. Exact timeout-tail coverage includes
+all five previously paused parallel tests. Other packages, UI, desktop, real
+IndexedDB and mixed-version evidence remain valid. Merge/tag acceptance and
+tag-built release/APK verification remain;
 this is not yet published. No live history/grant/replay mutation was performed.
 
 ## Current release — v0.8.22, October 11, 2026 (UTC)

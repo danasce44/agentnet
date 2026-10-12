@@ -25,6 +25,8 @@ This record starts with v0.8.1; earlier releases remain on the
   individual and grouped notice dismissal changes no messages or trust decisions.
 - Recover held history copies of locally deleted native messages without
   restoring their text, files or completed work.
+- Keep an agent's completed reply deliverable after its parent request finishes,
+  while preserving cancellation and current participation checks.
 - Preserve native harness launchers, report missing-executable failures back to
   requesters, and distinguish inconclusive setup probes.
   Codex uses its native app-server transport, including native approval refusals,
