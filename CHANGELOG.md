@@ -6,6 +6,13 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Record own-agent consent before unrelated invitation fanout. Recover stored
+  group acceptances and their exact unsent invitation after restart, without
+  another click or another decision.
+- Show own-agent invitations as joining, with an explicit setup blocker when
+  the local agent is disabled. Keep them out of approval counts and controls;
+  show active only after the host's signed acceptance arrives.
+
 ## [0.8.23] — 2026-10-12
 
 - Use the same verified human identity across personal devices for own-agent

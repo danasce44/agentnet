@@ -170,10 +170,10 @@ function InviteRow({ c, o }: Props) {
   const title = convTitle(c, o);
   const seen = (a?.shared || []).length;
   const tasks = (a?.tasks_from || []).filter((p) => p.person !== o.person?.person).map((p) => p.label || p.address);
-  const meta = c.decide_on ? "Nothing runs unless you let it join." : failed ? "Couldn’t check what it would see here."
+  const meta = a?.owner_invited ? a.state_text : c.decide_on ? "Nothing runs unless you let it join." : failed ? "Couldn’t check what it would see here."
     : !a ? "Checking what it would see…" : (seen ? "It would see " + (seen === 1 ? "1 earlier message" : seen + " earlier messages") : "It would see nothing earlier") + " and what’s asked of it.";
   const decide = (accept: boolean) => run(accept ? "accept" : "decline", (api) => api.decideAgent(c.pid!, accept), accept ? "Your agent joined." : "Declined. Your agent stays out.");
-  const actions = c.decide_on ? <DecideOn address={c.decide_on} o={o} /> : acts.length ? <>
+  const actions = a?.owner_invited ? undefined : c.decide_on ? <DecideOn address={c.decide_on} o={o} /> : acts.length ? <>
     {/* Letting it join waits for what it would see: the decision must name it.
         When that can't be read here, the chat's own card decides instead. */}
     {acts.includes("accept") && (failed
@@ -184,7 +184,7 @@ function InviteRow({ c, o }: Props) {
   return (
     <OpenCard onOpen={() => go("dm", c.conv)} current={isOpen(c.conv)} label={title + ". Open the chat."}
       face={<AgentAvatar seed={o.me.address} size={40} mood="waiting" />} actions={actions}>
-      <Body tag={<Tag tone={c.decide_on ? "muted" : "act"}>Needs your OK</Tag>} at={c.at} title={title} quote={c.excerpt ? firstLine(c.excerpt, 160) : undefined} meta={meta}>
+      <Body tag={<Tag tone={a?.owner_invited || c.decide_on ? "muted" : "act"}>{a?.owner_invited ? "Joining" : "Needs your OK"}</Tag>} at={c.at} title={title} quote={c.excerpt ? firstLine(c.excerpt, 160) : undefined} meta={meta}>
         {tasks.length > 0 && <p className="pt-1 text-[13px] font-semibold text-approval-ink">{tasks.join(" and ")} could give it tasks without asking you.</p>}
       </Body>
     </OpenCard>

@@ -70,6 +70,8 @@ type ParticipationInfo struct {
 	Invited     int64               `json:"invited,omitempty"`   // the inviter's claim, unix seconds
 	Audience    string              `json:"audience,omitempty"`  // protocol.AudienceConversation or AudienceRoom, as invited
 	Until       int64               `json:"until,omitempty"`     // a room's end time as invited; past it here, it counts as ended
+
+	OwnerInvited bool `json:"owner_invited,omitempty"` // current human owner already supplied consent; presentation, never execution authority
 }
 
 // dmMembers are a DM's member persons as pinned here now, by person id: a
@@ -366,6 +368,7 @@ func resolve(conv, pid string, events []protocol.ParticipationEvent, m dmMembers
 			inviter, _ = m.roomAuthor(inv.Author)
 		}
 		info.Host, info.Inviter = host.info, inviter.info
+		info.OwnerInvited = inv.Role == "" && valid && inv.Author.Person == inv.Host.Person && inviter.roster.Human(inv.Author.Fingerprint)
 		info.AgentID, info.Role = inv.Host.AgentID, inv.Role
 		_, member := m.persons[inv.Host.Person]
 		info.External = !member
@@ -747,7 +750,6 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 			return ParticipationInfo{}, err
 		}
 	}
-	a.trySelfConsent(ctx, ev.PID) // this person's own agent, hosted here
 	return a.participation(conv, ev.PID)
 }
 
@@ -1024,7 +1026,7 @@ func (a *Agent) sweepSelfConsent(ctx context.Context) {
 func (a *Agent) resendUnsentAccepts(ctx context.Context, self string) {
 	rows, err := a.store.db.Query(`SELECT event FROM participation_events d WHERE d.author = ? AND d.type = ?
 		AND json_extract(d.event, '$.author.address') = ?
-		AND EXISTS (SELECT 1 FROM conversations c WHERE c.id = d.conv)
+		AND (EXISTS (SELECT 1 FROM conversations c WHERE c.id = d.conv) OR EXISTS (SELECT 1 FROM group_context g WHERE g.conv = d.conv))
 		AND NOT EXISTS (SELECT 1 FROM outbox o WHERE o.conv = d.conv AND o.pid = d.pid AND o.sub = ? AND o.body = d.event)`,
 		self, protocol.EventAccept, a.Address, envelope.SubEvent)
 	if err != nil {
@@ -1043,6 +1045,25 @@ func (a *Agent) resendUnsentAccepts(ctx context.Context, self string) {
 	}
 	rows.Close()
 	for _, ev := range unsent {
+		// Same-host consent can be stored before the invitation's fanout.
+		// Recover that exact prerequisite if the process failed before it
+		// queued any copy. Received invitations are never re-authored.
+		invite, err := a.ownEvent(ev.Conv, ev.PID, protocol.EventInvite, protocol.EventInvite)
+		if err != nil {
+			a.Logf("participation %s: reading stored invite: %v", ev.PID, err)
+			continue
+		}
+		if invite != nil && invite.Hash() == ev.Prev {
+			raw, _ := json.Marshal(*invite)
+			var queued bool
+			if err = a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM outbox WHERE conv=? AND pid=? AND sub=? AND body=?)`, ev.Conv, ev.PID, envelope.SubEvent, string(raw)).Scan(&queued); err == nil && !queued {
+				err = a.resend(ctx, *invite)
+			}
+			if err != nil {
+				a.Logf("participation %s: sending stored invite: %v", ev.PID, err)
+				continue
+			}
+		}
 		if err := a.resend(ctx, ev); err != nil {
 			a.Logf("participation %s: sending this device's stored accept again failed (the next daemon start tries again, agentnet dm accept-agent %s now): %v", ev.PID, ev.PID, err)
 		}
@@ -1232,6 +1253,13 @@ func (a *Agent) recordAndSendWith(ctx context.Context, ev protocol.Participation
 	}
 	if err != nil {
 		return err
+	}
+	// This stored invitation is already the owner's decision. Record the
+	// host's signed acceptance before any unrelated reader's fanout can fail
+	// or block. Shares also retry an existing pending invitation; the normal
+	// exact-once decision guard still wins against a concurrent manual click.
+	if ev.Type == protocol.EventInvite || ev.Type == protocol.EventShare {
+		a.trySelfConsent(ctx, ev.PID)
 	}
 	a.convWork.due(convRetry) // accepted guests learn this record's public scope without waiting for other traffic
 	if err := a.resend(ctx, ev); err != nil {

@@ -4,6 +4,48 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Reopened MEL-525 own-invitation fix — awaiting OMP review
+
+Owner resumed this blocker alone after v0.8.23. Source is on the existing main
+checkout; no extra branch, worktree or helper was created. Notifications and the
+new skin remain deferred. OMP owns the I1–I4 checklist and exact-candidate review.
+
+Isolated regressions established three causes: same-host consent ran after
+network fanout; the duplicate group invitation path missed that call; stored
+accept recovery selected only direct conversations, excluding group_context.
+The fix records the ordinary signed decision immediately after the invitation
+or share is stored, before fanout. Existing restart recovery now includes groups
+and sends an exact unsent own invitation before its stored acceptance. Existing
+current roster, human-role, pin, revocation and decision-race checks still govern
+consent. No task or historical work is replayed.
+
+Native and browser views expose owner-supplied consent separately from host
+acceptance. Pending own invitations say joining (or enable the local agent),
+never supply a second consent control/count. They remain invited while the host
+is offline; active still requires its signed acceptance. Comic header, RoomPanel,
+chat-list/OKs projections and the existing Classic/Zoom views are exercised.
+
+Evidence: the pre-fix slow-fanout test failed with zero local decisions. A second
+regression reproduced missed group acceptance recovery after restart. DM, group
+and duplicate-pending retries now store exactly one decision before blocked
+transport, survive failed fanout/reopen, and converge at the peer without a
+manual accept. Focused client authority/consent tests passed under race in
+114.187s; other-person native/browser approval checks passed in 3.341s. The
+final focused UI race batch, including the real journey and bundle/API checks,
+passed in 33.245s; go vet passed. The real linked-browser/native-host fixture records pending/active UTC
+timestamps and renders its actual projected views (PASS16.773s) in Comic/Classic/Zoom at
+1280/390, including offline and disabled-host states and Comic OKs. Logs and
+screenshots are `/tmp/agentnet-own-invite-*`; no physical-phone run is claimed.
+The fixture uses the existing short test relay session grace so its pre-link
+session cannot hold initial group setup behind stale capabilities.
+
+The Comic bundle and local CLI are built. Full release/platform/mixed-version
+and APK preservation gates have not been rerun for this follow-up; no new tag,
+publication, live installation, permission change or deployment is claimed.
+The exact ten-second delay in the owner's ThinkPad attempt remains unmeasured;
+the isolated ordering/recovery defects above are proven, not a complete timing
+trace of that live attempt.
+
 ## Current release — v0.8.23, October 12, 2026 (UTC)
 
 [Download v0.8.23](https://github.com/misunders2d/agentnet/releases/tag/v0.8.23)

@@ -441,7 +441,7 @@ func (l *Live) hasResponder() bool {
 
 func agentView(info client.ParticipationInfo, p dmPeople, msgs []client.ConvMessage, responder bool) AgentView {
 	v := AgentView{Topic: info.Topic, PID: info.PID, PIDs: []string{info.PID}, AgentID: info.AgentID, State: info.State, Host: personView(info.Host), HostHere: info.HostHere,
-		Inviter: personView(info.Inviter), Note: info.Note, Shared: []string{}, TasksFrom: []PersonView{}, Held: info.Held}
+		Inviter: personView(info.Inviter), OwnerInvited: info.OwnerInvited, Note: info.Note, Shared: []string{}, TasksFrom: []PersonView{}, Held: info.Held}
 	v.External, v.Member = info.External, info.Member || p.group && !info.External
 	for _, inviter := range info.Inviters {
 		v.Inviters = append(v.Inviters, personView(inviter))
@@ -476,12 +476,23 @@ func agentView(info client.ParticipationInfo, p dmPeople, msgs []client.ConvMess
 	case client.PartPending:
 		v.StateText = "Participation is waiting for verified invitation context."
 	case client.PartInvited:
-		if v.HostHere {
+		if info.OwnerInvited {
+			v.StateText = "Joining on " + info.Host.Address + ". Waiting for that device to confirm. No further approval is needed."
+			if v.HostHere {
+				v.StateText = "Joining here. Your invitation already gives permission."
+				if !responder {
+					v.StateText = "Enable this agent on this computer to finish joining. Your invitation already gives permission."
+				}
+			}
+			if info.Held > 0 {
+				v.StateText = "Waiting for this invitation to verify on " + info.Host.Address + ". Your invitation already gives permission."
+			}
+		} else if v.HostHere {
 			v.StateText = p.who(info.Inviter.Person) + " invited your agent. Nothing runs unless you accept."
 		} else {
 			v.StateText = "Invited. " + info.Host.Label + " accepts or declines it on " + info.Host.Address + "."
 		}
-		v.CanDecide, v.CanDismiss = v.HostHere, true
+		v.CanDecide, v.CanDismiss = v.HostHere && !info.OwnerInvited, true
 	case client.PartActive:
 		v.StateText = "In this DM. It answers what either of you asks it, on " + info.Host.Address + " with " + host +
 			" own setup, and is shown only what was shared and what is asked of it here."

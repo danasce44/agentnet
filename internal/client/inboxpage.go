@@ -272,7 +272,7 @@ func (a *Agent) InspectInboxNotices(section string, o InboxPageOptions) (InboxNo
 				}
 				continue // hostInvites likewise omits context that cannot resolve
 			}
-			if !info.HostHere || info.State != PartInvited || info.Role == protocol.RoleHuman && info.Held != 0 {
+			if !info.HostHere || info.State != PartInvited || info.OwnerInvited || info.Role == protocol.RoleHuman && info.Held != 0 {
 				continue
 			}
 			n.From, n.Detail, n.Content = info.Inviter.Address, info.Note, info

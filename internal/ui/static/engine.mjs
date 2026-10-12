@@ -10383,7 +10383,8 @@ export class Engine {
       Object.assign(info, { role: inv.e.role || "", ...(inv.e.topic!=null?{topic:inv.e.topic}:{}), host: host(inv.e.host), inviter: author(inv.e.author)||priorAuthor(inv), grant: [...(inv.e.grant || [])], taskKeys: m.group && m.roomEvents?.has(inv.hash) ? (inv.e.task_keys||[]).filter((fp,i)=>m.epochs.get(fp)===inv.e.group.task_admissions?.[i]) : (inv.e.task_keys || []).filter((fp) => !departed(inv, fp)), audience: inv.e.audience || "", until: inv.e.until || 0,
         external: m.group ? inv.e.group.host_role === "visitor" : !m.has(inv.e.host.person),
         ...(m.group ? {group:inv.e.group} : {}),
-        ...(inv.e.host.agent_id ? { agent_id: inv.e.host.agent_id } : {}), note: inv.e.note, invited: inv.e.ts, state: "invited" });
+        ...(inv.e.host.agent_id ? { agent_id: inv.e.host.agent_id } : {}), note: inv.e.note, invited: inv.e.ts, state: "invited",
+        owner_invited: !inv.e.role && inv.e.author.person===inv.e.host.person && !!author(inv.e.author)?.human_keys?.includes(inv.e.author.fingerprint) });
     } else if (invites.size > 1) {
       Object.assign(info, { state: "conflict", conflict: "different invites share this participation id" });
     }
@@ -10466,7 +10467,7 @@ export class Engine {
         needsYou.push({reason:"agent_invite",role:"human",conv,pid:info.pid,peer:info.inviter?.address||"",why:(info.inviter?.label||"Someone")+" invited you to join this conversation as a guest.",excerpt:firstLine(info.note),at:first?iso(first.at):isoClaim(info.invited)||iso(this.now()),...(here?{actions:["accept","decline"]}:{decide_on:info.host.address})});
         continue;
       }
-      if (info.role === "human" || info.state !== "invited" || !mine(info.host)) continue;
+      if (info.role === "human" || info.state !== "invited" || info.owner_invited || !mine(info.host)) continue;
       // Listed when its first record reached this browser (msgs are oldest
       // first); the inviter's own time is only its claim.
       const first = msgs.find((m) => m.sub === "event" && m.pid === info.pid);
@@ -10520,7 +10521,7 @@ export class Engine {
     }
     const whose = hostHere ? "your" : label(info.host) + "'s";
     const v = { member:!!info.member || !!groupPeople && !info.external,pids:[info.pid],inviters:(info.inviters||[]).map(p=>this.personView(p)),pid: info.pid, state: info.state, host: this.personView(info.host), host_here: hostHere, inviter: this.personView(info.inviter),
-      ...(info.external ? { external: true } : {}),
+      ...(info.external ? { external: true } : {}), owner_invited: !!info.owner_invited,
       ...(info.agent_id ? { agent_id: info.agent_id } : {}),
       note: info.note, shared, missing, tasks_from: info.taskKeys.map((fp) => {
         const p = people.find((x) => x.devices.some((d) => d.fingerprint === fp));
@@ -10530,7 +10531,8 @@ export class Engine {
     switch (info.state) {
     case "pending": v.state_text = "Participation is waiting for verified invitation context."; break;
     case "invited":
-      v.state_text = hostHere ? "It names this browser to run an agent, but this browser runs none: it cannot accept."
+      v.state_text = info.owner_invited && !hostHere ? (info.held ? "Waiting for this invitation to verify on " : "Joining on ") + info.host.address + ". Waiting for that device to confirm. No further approval is needed."
+        : hostHere ? "It names this browser to run an agent, but this browser runs none: it cannot accept."
         : "Invited. " + label(info.host) + " accepts or declines it on " + info.host.address + ".";
       v.can_dismiss = true;
       break;

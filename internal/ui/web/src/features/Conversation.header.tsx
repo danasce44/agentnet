@@ -50,8 +50,9 @@ export function helpers(ctx: Ctx, run: <R>(fn: (a: Api) => Promise<R>) => Promis
     const since = joined(a.pid) || a.invited;
     out.push({
       pid: a.pid, who: "a:" + a.host.address + "#" + (a.agent_id || ""), name: agentLabel(a, ctx), agent: true, member:!!a.member, seed: a.agent_id || a.host.address, device: a.member ? undefined : deviceKind(a.host.address), active: a.state === "active",
-      // An agent joins once its owner says OK (the room panel's words).
-      sub: a.state === "active" ? "since " + timeOf(since) : a.host_here ? "Waiting for your OK" : "Waiting for " + personName(a.host) + "’s OK",
+      // Only the host's actual acceptance makes it active. An owner's signed
+      // invitation already gives consent while that confirmation is in flight.
+      sub: a.state === "active" ? "since " + timeOf(since) : a.owner_invited ? a.state_text : a.host_here ? "Waiting for your OK" : "Waiting for " + personName(a.host) + "’s OK",
       dismiss: a.can_dismiss ? () => run((x) => x.dismissAgent(a.pid)) : undefined, review: a.can_decide,
     });
   }

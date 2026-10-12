@@ -792,6 +792,8 @@ type AgentView struct {
 	CanDecide  bool         `json:"can_decide"`
 	CanDismiss bool         `json:"can_dismiss"`
 	CanAsk     bool         `json:"can_ask"`
+
+	OwnerInvited bool `json:"owner_invited,omitempty"` // host owner's verified human invitation needs no second consent
 }
 
 // DMDraft is a message the person writes in a DM. The page sends messages
