@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+## [0.8.23] — 2026-10-12
+
 - Use the same verified human identity across personal devices for own-agent
   invitations, questions, tasks and exact remote Stop. No extra AgentNet
   approval is required; each harness keeps its native tools and permissions.
@@ -21,7 +23,10 @@ This record starts with v0.8.1; earlier releases remain on the
 - Correct historical roster-prefix handling and inert history display after a
   device retires. Keep technical held-copy diagnostics in explicit troubleshooting;
   individual and grouped notice dismissal changes no messages or trust decisions.
-- Preserve native harness launchers and distinguish inconclusive setup probes.
+- Recover held history copies of locally deleted native messages without
+  restoring their text, files or completed work.
+- Preserve native harness launchers, report missing-executable failures back to
+  requesters, and distinguish inconclusive setup probes.
   Codex uses its native app-server transport, including native approval refusals,
   across worker modes without injected permission or tool overrides.
 

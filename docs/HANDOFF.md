@@ -13,7 +13,12 @@ scope, diagnosis and actual evidence. No additional helpers or worktrees.
 The owner has superseded old D3 limits: every current verified own human device
 may invite/question/task any own agent without a second AgentNet approval;
 native harness permissions and current key/roster/revocation checks remain.
-Implementation and verification are in progress, not a released claim.
+Qualified application source: `d47d6c923cdf41ea2a62f0605fa27cc3d8dbc11c`.
+All composed source gates pass, including affected native Linux/macOS/Windows,
+completed race coverage, real IndexedDB and mixed-version delivery. OMP verified
+all F1–F6/B1–B20, including exact erased-native recovery on ThinkPad’s failure
+shape. Final immutable acceptance and tag-built release/APK verification remain;
+this is not yet published. No live history/grant/replay mutation was performed.
 
 ## Current release — v0.8.22, October 11, 2026 (UTC)
 
