@@ -227,7 +227,11 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 		if !target.Claimable() || c.target == nil || target.Host.Address != c.target.Address || target.Host.Fingerprint != c.target.Fingerprint || target.AgentID != c.target.AgentID {
 			return verdictStop, "an upstream request target ended or changed", nil
 		}
-		if target.Host.Address == self && c.state != stateRunning && c.id != r.ID {
+		// A parent can consume its child's stored answer before the answer's
+		// remaining copies leave the outbox. Normal completion does not revoke
+		// that completed output; new/running work and stopped origins stay fenced.
+		completedOutput := output && r.State == stateAnswered && c.state == stateAnswered
+		if target.Host.Address == self && c.state != stateRunning && c.id != r.ID && !completedOutput {
 			return verdictStop, "originating local run stopped", nil
 		}
 		if c.kind != envelope.KindQuestion && c.kind != envelope.KindTask || c.target == nil {

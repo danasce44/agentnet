@@ -844,7 +844,8 @@ func (a *Agent) holdEndedOutputs(only string) (int, error) {
 	}
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT o.id, o.conv, o.pid, coalesce(i.id, ''), coalesce(i.sender, ''), coalesce(i.verified_by, ''),
-		coalesce(i.kind, ''), coalesce(i.local, 0), coalesce(i.target, '')
+		coalesce(i.kind, ''), coalesce(i.local, 0), coalesce(i.target, ''),
+		CASE WHEN coalesce(o.status,'') <> 'progress' THEN coalesce(i.state,'') ELSE '' END
 		FROM outbox o LEFT JOIN inbox i ON (i.id=o.reply_to OR o.kind IN ('answer','result') AND i.lid=o.reply_to AND i.conv=o.conv AND i.pid=o.pid) AND (coalesce(o.status,'') = 'progress' OR EXISTS (
 		 SELECT 1 FROM outbox first WHERE first.id = i.result_id AND first.conv = o.conv AND first.pid = o.pid
 		 AND first.lid = o.lid AND first.reply_to = o.reply_to AND first.body = o.body
@@ -861,7 +862,7 @@ func (a *Agent) holdEndedOutputs(only string) (int, error) {
 	for rows.Next() {
 		var o out
 		var target string
-		if err := rows.Scan(&o.id, &o.req.Conv, &o.req.PID, &o.req.ID, &o.req.Sender, &o.req.Key, &o.req.Kind, &o.req.Local, &target); err != nil {
+		if err := rows.Scan(&o.id, &o.req.Conv, &o.req.PID, &o.req.ID, &o.req.Sender, &o.req.Key, &o.req.Kind, &o.req.Local, &target, &o.req.State); err != nil {
 			rows.Close()
 			return 0, err
 		}
