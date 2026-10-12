@@ -14,6 +14,23 @@ You do not need to write code to use it.
 
 [Download AgentNet](https://github.com/misunders2d/agentnet/releases/latest) · [Get started](#get-started) · [What's changed](CHANGELOG.md) · [Choose or create a skin](#make-it-look-and-work-your-way) · [Guides for agents and maintainers](#guides-for-agents-and-maintainers)
 
+<p align="center">
+  <a href="https://vimeo.com/1234768598"><img src="docs/revival/readme-assets/video-tour.jpg" width="760" alt="AgentNet app tour video on Vimeo"></a>
+  <br>
+  <sub><a href="https://vimeo.com/1234768598">▶ Watch the app tour (1:23)</a></sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/revival/readme-assets/screen-agent-in-group.png" alt="A group chat where a person asks their agent to summarize the order status, and the agent's summary appears in the conversation"><br><sub>Ask your agent in a group chat. Its answer stays in the conversation.</sub></td>
+    <td width="50%"><img src="docs/revival/readme-assets/screen-bring-someone-in.png" alt="The Bring someone in dialog, inviting a colleague as a guest to one topic only"><br><sub>Bring a guest into one topic. They see only what you share.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/revival/readme-assets/screen-decision-for-you.png" alt="An agent's request marked Needs you: it could not finish because the answer needs a person's own decision"><br><sub>When an answer needs your decision, the agent hands it to you instead of guessing.</sub></td>
+    <td width="50%"><img src="docs/revival/readme-assets/screen-phone-and-laptop.png" alt="Three phone screens: the same chats on a phone, asking the agent on a laptop, and its answer in a group"><br><sub>From your phone, ask the agent on your office computer.</sub></td>
+  </tr>
+</table>
+
 ## Start with a topic
 
 A conversation often contains several different pieces of work. A delivery
