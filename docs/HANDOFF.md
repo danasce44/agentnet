@@ -4,28 +4,35 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Active work — v0.8.23, October 12, 2026
+## Current release — v0.8.23, October 12, 2026 (UTC)
 
-Codex implements the owner's next-release assignment on
-`fix/v0.8.23-supervised`, in this sole checkout. OMP supervises and must accept
-the exact candidate before publication. See [V0_8_23.md](plans/V0_8_23.md) for
-scope, diagnosis and actual evidence. No additional helpers or worktrees.
+[Download v0.8.23](https://github.com/misunders2d/agentnet/releases/tag/v0.8.23)
+or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.23/AgentNet-android.apk).
+Published **14:05:53 UTC**, exact OMP-accepted tag
+`2ce464673da720f1e245c84838f3726c2972124f`. All thirteen tag-built assets match
+their GitHub digests and SHA256SUMS before and after publication. The original-key
+APK passes version, dual-ABI and alignment checks and preserves the exact
+203-message fixture, queued sends, attachment, draft, identity and origin across
+in-place installation and warm/cold starts. Its actual native update check
+recognizes published v0.8.23. Install over the existing app; do not uninstall
+or relink. See [V0_8_23.md](plans/V0_8_23.md) for scope and qualification evidence.
+
 The owner has superseded old D3 limits: every current verified own human device
 may invite/question/task any own agent without a second AgentNet approval;
 native harness permissions and current key/roster/revocation checks remain.
-OMP accepted all F1–F6/B1–B20 at documentation candidate `817bcc48`, including
-exact erased-native recovery on ThinkPad’s failure shape. Full native client
-suites now pass on Linux/macOS/Windows. The full race batch found one bounded
-completion-order defect: finishing a parent could suppress its child's already
-stored answer. Qualified source `ee80deff114bc1505b8d39bef99fd9902842eb4c`
-passes the exact-result correction and cancellation/membership negatives under
-race and native Linux/macOS/Windows checks. Exact timeout-tail coverage includes
-all five previously paused parallel tests. Other packages, UI, desktop, real
-IndexedDB and mixed-version evidence remain valid. Merge/tag acceptance and
-tag-built release/APK verification remain;
-this is not yet published. No live history/grant/replay mutation was performed.
+OMP accepted all F1–F6/B1–B20 and the bounded completed-child-output correction.
+Full native client suites and affected final-source checks pass on
+Linux/macOS/Windows. Composed race coverage includes exact timeout tails and
+all five previously paused parallel tests; no timeout was increased. Other
+packages, UI, desktop, actual IndexedDB and mixed-version evidence are retained.
+Physical-phone delivery and universal third-party MCP parity are not claimed.
 
-## Current release — v0.8.22, October 11, 2026 (UTC)
+Release work is on pushed main. The merged implementation branch was removed
+locally and remotely; main is the only branch and the root is the sole worktree.
+No live history/grant/replay mutation or v0.8.23 relay deployment was performed.
+The last verified relay deployment remains v0.8.22 below.
+
+## Previous release — v0.8.22, October 11, 2026 (UTC)
 
 [Download v0.8.22](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22).
 Published **16:41:57 UTC**, exact qualified tag
@@ -61,8 +68,8 @@ history cases remain open. No live request was replayed or permission changed.
 Release work is merged into main. The completed v0.8.21/v0.8.22 fix branches
 were removed after ancestry checks; immutable tags remain. The root is the sole
 worktree. Its remaining audience-precheck patch was subsequently preserved at
-`archive/audience-prechecks-a13f3edd`; the obsolete branch was removed. The active
-v0.8.23 branch above is the only new implementation branch.
+`archive/audience-prechecks-a13f3edd`; the obsolete branch was removed. The later
+v0.8.23 implementation branch has also been merged and removed.
 
 ## Previous release — v0.8.20, October 11, 2026 (UTC)
 
