@@ -24,7 +24,11 @@ OMP accepted all F1–F6/B1–B20 and the bounded completed-child-output correct
 Full native client suites and affected final-source checks pass on
 Linux/macOS/Windows. Composed race coverage includes exact timeout tails and
 all five previously paused parallel tests; no timeout was increased. Other
-packages, UI, desktop, actual IndexedDB and mixed-version evidence are retained.
+packages, UI, desktop and actual IndexedDB evidence are retained. The earlier
+mixed-version pass predated the final output correction and did not close that
+final-source gate before publication. OMP subsequently ran the exact v0.8.23
+tag source against v0.8.22: PASS in 56.278s, with no skip. This was a post-publication
+evidence correction; the immutable release was not rebuilt or changed.
 Physical-phone delivery and universal third-party MCP parity are not claimed.
 
 Release work is on pushed main. The merged implementation branch was removed
