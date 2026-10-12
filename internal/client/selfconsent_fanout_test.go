@@ -43,17 +43,43 @@ func testSelfConsentBeforeFanout(t *testing.T, scenario string) {
 		t.Fatal(err)
 	}
 	base := w.alice.hub.http.Transport
-	entered, release := make(chan struct{}), make(chan struct{})
+	type inviteCallKey struct{}
+	entered, release := make(chan string, 1), make(chan struct{})
 	var once, released sync.Once
 	w.alice.hub.http.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		once.Do(func() { close(entered) })
+		// Other incoming fixture traffic may still refresh proof after Run
+		// stops. Only this InviteAgent call's fanout is the test boundary.
+		if r.Context().Value(inviteCallKey{}) != true {
+			return base.RoundTrip(r)
+		}
+		once.Do(func() { entered <- r.Method + " " + r.URL.RequestURI() })
 		select {
 		case <-release:
 		case <-r.Context().Done():
 		}
 		return nil, errors.New("isolated fanout unavailable")
 	})
-	ctx, cancel := context.WithCancel(tctx(t))
+	defer func() {
+		released.Do(func() { close(release) })
+		w.alice.hub.http.Transport = base
+	}()
+	// Force unrelated traffic before the invitation: the old any-request
+	// barrier incorrectly entered here, before its invitation even existed.
+	probeCtx, probeCancel := context.WithCancel(tctx(t))
+	probeDone := make(chan error, 1)
+	go func() { probeDone <- w.alice.hub.do(probeCtx, "GET", "/v1/version", nil, nil) }()
+	select {
+	case request := <-entered:
+		probeCancel()
+		<-probeDone
+		t.Fatalf("fanout barrier intercepted unrelated request: %s", request)
+	case err := <-probeDone:
+		probeCancel()
+		if err != nil {
+			t.Fatalf("unrelated request: %v", err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.WithValue(tctx(t), inviteCallKey{}, true))
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -67,7 +93,8 @@ func testSelfConsentBeforeFanout(t *testing.T, scenario string) {
 	}
 	defer finish()
 	select {
-	case <-entered:
+	case request := <-entered:
+		t.Logf("invitation fanout blocked at %s", request)
 	case <-time.After(5 * time.Second):
 		t.Fatal("invitation never reached the transport")
 	}

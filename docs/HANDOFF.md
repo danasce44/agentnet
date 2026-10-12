@@ -39,6 +39,20 @@ screenshots are `/tmp/agentnet-own-invite-*`; no physical-phone run is claimed.
 The fixture uses the existing short test relay session grace so its pre-link
 session cannot hold initial group setup behind stale capabilities.
 
+OMP's independent group race run exposed a defect in the fanout regression:
+its any-request barrier could fire before the invitation was stored. A forced
+unrelated signed version lookup reproduces that false boundary deterministically
+(`fanout-boundary-before.log`, FAIL0.262s). The corrected barrier follows only
+the exact InviteAgent call's context, permits unrelated traffic, and records the
+blocked request. The decision-before-fanout, group/duplicate and restart checks
+remain unchanged. This correction changes tests and this evidence only; the
+passing linked-browser, UI and authority evidence above is retained.
+The corrected regression passed five race runs (all 15 DM/group/retry cases)
+in 78.212s (`fanout-boundary-race.log`). Restoring the old late-consent ordering
+as a negative control fails all three cases with zero decisions before fanout
+in 0.660s (`fanout-ordering-negative.log`); the application source was restored
+unchanged afterward. All logs use the `/tmp/agentnet-own-invite-` prefix.
+
 The Comic bundle and local CLI are built. Full release/platform/mixed-version
 and APK preservation gates have not been rerun for this follow-up; no new tag,
 publication, live installation, permission change or deployment is claimed.
