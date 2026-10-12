@@ -6,6 +6,10 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Required for v0.8.24 (MEL-614): show same-device agent questions once, clear
+  stale “Sending…” previews after delivery, and retain the selected agent for
+  new follow-ups. Correct retained history without replaying completed work.
+
 ## [0.8.23] — 2026-10-12
 
 - Use the same verified human identity across personal devices for own-agent

@@ -4,6 +4,20 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Next release — v0.8.24, not authorized for publication yet
+
+Owner decision, October 12: **MEL-614 must be included in v0.8.24**. Merge
+[PR #7](https://github.com/misunders2d/agentnet/pull/7), implementation commit
+`0fc95aab`, and qualify the integrated candidate before tagging. The fix corrects
+duplicate same-device agent questions, permanent “Sending…” previews and lost
+named-agent selection for new follow-ups. Focused client/UI race tests and
+`go vet ./...` passed; release qualification remains outstanding.
+
+**Do not release now.** Sergey plans additional work tomorrow. This note records
+required scope, not permission to publish or update installed apps. The same
+requirement is tracked in [MEL-614](https://linear.app/mellanni/issue/MEL-614);
+it does not depend on Zenbook being online.
+
 ## Current release — v0.8.23, October 12, 2026 (UTC)
 
 [Download v0.8.23](https://github.com/misunders2d/agentnet/releases/tag/v0.8.23)
