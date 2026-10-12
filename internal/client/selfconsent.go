@@ -6,45 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
 )
 
-// Self-invite consent (owner decision D3, docs/plans/ROOM_V1.md §5): an
-// invite of this person's own agent here, signed by a device this host
-// trusts, is accepted without the person's click (selfConsent,
-// participation.go). Other people's agents still need their owner's accept.
-//
-// The trust set is this host device plus the own devices the person added,
-// each by its exact key, under the config key self_consent. Only the local
-// person changes it; nothing received does. A browser device must never be
-// in it: its code comes from the relay, and a browser key in the trust set
-// would turn that code into execution here (review X4). Nothing in a link
-// request tells a browser from a computer running agentnet, so a device is
-// added only when the person says it is the latter, while approving its
-// pending link request here with agentnet person approve --native ID
-// (ApproveNativeLink). Nothing else adds one (not person approve ID, not
-// an approval on the page or on another device, not a request approved
-// already), and nothing is meant to trust a browser: --native said of one
-// is the mistake the command's output and help warn against. person
-// untrust ADDRESS removes a device. A key that changes is no longer trusted.
-//
-// D3 holds for invites stored here from the first time a build with it
-// opened this home (selfConsentSinceKey): earlier ones were made when
-// nothing ran before the click, and still wait for it.
-//
-// Each accept leaves a local notice (agentnet inbox --review, and the
-// page's review items with reason "self_consented") until the person
-// dismisses it (agentnet resolve PID, or resolve on the page).
+// Owner rule, 2026-10-12 (supersedes D3): a current verified human device of
+// this host's person speaks for the owner, on phones, browsers and computers.
+// Its invitations, questions and tasks need no second AgentNet approval.
+// Native harness permissions still apply. The old native-device trust list is
+// retained in stored data without new reads or writes; it no
+// longer supplies authority. Current roster, human role, exact pin, pending-key
+// and revocation checks are shared with own-human questions (persongrant.go).
 
 const (
-	selfConsentKey        = "self_consent"
 	selfConsentNoticesKey = "self_consent_notices"
-	selfConsentSinceKey   = "self_consent_since" // unix seconds: set once, when Open first runs a build with D3
-	maxSelfConsentNotices = 64                   // the oldest notice goes first
+	maxSelfConsentNotices = 64 // the oldest notice goes first
 )
 
 // TrustedDevice is one own device whose invites of this person's agents
@@ -64,110 +41,74 @@ type SelfConsentNotice struct {
 	At      int64  `json:"at"`      // unix seconds
 }
 
-// SelfConsentTrust lists the trust set: this device first, then the own
-// devices the person added.
-func (a *Agent) SelfConsentTrust() ([]TrustedDevice, error) {
-	added, err := selfConsentAddedIn(a.store.db)
+// OwnHumanDevices lists the current verified own human devices, host first.
+func (a *Agent) OwnHumanDevices() ([]TrustedDevice, error) {
+	rows, err := a.store.db.Query(`SELECT candidate.address,candidate.fingerprint FROM person_devices candidate
+ WHERE candidate.address<>? AND `+ownHumanQuestionHolds("candidate.address", "candidate.fingerprint")+` ORDER BY candidate.address`, a.Address)
 	if err != nil {
 		return nil, err
 	}
-	return append([]TrustedDevice{{Address: a.Address, Fingerprint: a.Self().Fingerprint()}}, added...), nil
+	defer rows.Close()
+	var devices []TrustedDevice
+	for rows.Next() {
+		var d TrustedDevice
+		if err := rows.Scan(&d.Address, &d.Fingerprint); err != nil {
+			return nil, err
+		}
+		devices = append(devices, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	local, err := a.ownHumanAuthor(a.store.db, a.Address, a.Self().Fingerprint())
+	if err != nil {
+		return nil, err
+	}
+	if local {
+		devices = append([]TrustedDevice{{Address: a.Address, Fingerprint: a.Self().Fingerprint()}}, devices...)
+	}
+	return devices, nil
 }
 
-// NativeTaskPermissions reports the independent, locally trusted own-device
-// permission for direct tasks. It is not a person grant or a group TaskKeys
-// grant; removing either of those does not remove this trust. The same current
-// authority predicate used by the worker supplies the effective status.
-func (a *Agent) NativeTaskPermissions() ([]Grant, error) {
-	devices, err := selfConsentAddedIn(a.store.db)
+// OwnHumanPermissions reports effective authority, including phones, without a separate grant.
+func (a *Agent) OwnHumanPermissions() ([]Grant, error) {
+	devices, err := a.OwnHumanDevices()
 	if err != nil {
 		return nil, err
 	}
 	grants := make([]Grant, 0, len(devices))
 	for _, d := range devices {
-		active, err := ownDeviceHolds(a.store.db, d.Address, d.Fingerprint)
-		if err != nil {
-			return nil, err
-		}
-		// Receipt also verifies the sender against its current pin. A stored
-		// native trust entry cannot describe an old, replaced key as active.
-		key, pinned, err := pinnedKey(a.store.db, d.Address)
-		if err != nil {
-			return nil, err
-		}
-		active = active && pinned && key.Fingerprint() == d.Fingerprint
-		status := "inactive: current own-device trust does not hold"
-		if active {
-			status = "active"
-		}
-		grants = append(grants, Grant{Address: d.Address, Fingerprint: d.Fingerprint, Status: status})
+		grants = append(grants, Grant{Address: d.Address, Fingerprint: d.Fingerprint, Status: "active"})
 	}
 	return grants, nil
 }
 
-// UntrustOwnDevice removes the device at address from the trust set; this
-// device itself always stays in it. Its invites of this person's agents
-// wait for a click again, and its tasks to this device's agent wait for the
-// person's OK again (ownDeviceHolds), those pending now included. To trust
-// it again, the person links it again (there is no person trust: see X4).
-func (a *Agent) UntrustOwnDevice(address string) error {
-	if address == a.Address {
-		return errors.New("this device always trusts itself: its own invites are its person's")
-	}
-	return a.setSelfConsentTrust(func(tx *sql.Tx) error {
-		added, err := selfConsentAddedIn(tx)
-		if err != nil {
-			return err
-		}
-		i := slices.IndexFunc(added, func(d TrustedDevice) bool { return d.Address == address })
-		if i < 0 {
-			return fmt.Errorf("%s is not in the trust set", address)
-		}
-		if err := putConfigJSON(tx, selfConsentKey, slices.Delete(added, i, i+1)); err != nil {
-			return err
-		}
-		return demoteLapsedOwnTasks(tx, "you untrusted that device of yours")
-	})
-}
+var ownTaskHolds = ownHumanQuestionHolds("inbox.sender", "inbox.verified_by")
 
-// Own devices (owner rule 2026-10-05, "my devices are me"; D9 for device
-// threads): a task sent to this device's agent in a device thread by
-// another device of this installation's own person runs without asking, as
-// the person's own work, when that device is one this host trusts: in the
-// trust set above, by the exact key its person's signed roster, pinned
-// here, lists for it, which verified the task, with no key change pending.
-// This is the same trust that lets its invites of the person's agents in
-// without a click (AGENTS.md: trusted own devices may give the agent
-// tasks), so X4 holds here too: a browser or phone device of the person is
-// never in it, and its tasks wait for the person's OK on this device. Owner
-// question 1 of the P4 spec (should a phone's "Do it" start at once?) is
-// open; until it is answered, this stays closed, and widening it to every
-// roster device is dropping the trust-set condition below. A device the
-// person untrusts here, removes from the roster, or whose key changes no
-// longer holds, nor does any device once this one leaves its person: their
-// pending tasks wait for the OK again (demoteLapsedOwnTasks). Nothing
-// received grants it. The harness's normal task permissions still apply.
-
-// ownDeviceHoldsFor is that condition for an address and a verifying
-// fingerprint, as SQL expressions: the single own-device predicate.
-const ownDeviceHoldsFor = `EXISTS (SELECT 1 FROM persons pr JOIN person_devices d ON d.person = pr.person
-	JOIN peers p ON p.address = d.address
-	WHERE pr.state = 'self' AND d.address = %s AND d.fingerprint = %s AND p.pending IS NULL
-	  AND EXISTS (SELECT 1 FROM json_each(coalesce((SELECT v FROM config WHERE k = 'self_consent'), '[]')) n
-	    WHERE json_extract(n.value, '$.address') = d.address AND json_extract(n.value, '$.fingerprint') = d.fingerprint))`
-
-// ownTaskHolds is ownDeviceHoldsFor for an inbox row.
-var ownTaskHolds = fmt.Sprintf(ownDeviceHoldsFor, "inbox.sender", "inbox.verified_by")
-
-// ownDeviceHolds reports whether a task from address verified by fp is
-// this person's own and may run without asking.
+// ownDeviceHolds uses the same verified human authority for tasks and invites.
 func ownDeviceHolds(q querier, address, fp string) (bool, error) {
 	if fp == "" {
 		return false, nil
 	}
 	var ok bool
-	err := q.QueryRow(`SELECT `+fmt.Sprintf(ownDeviceHoldsFor, "?", "?"), address, fp).Scan(&ok)
+	err := q.QueryRow(`SELECT `+ownHumanQuestionHolds("?", "?"), address, fp, address, fp).Scan(&ok)
 	return ok, err
+}
+
+// The local identity is held by this process, not a peer pin. Its human role
+// and current membership still come from the same verified own-person roster.
+func (a *Agent) ownHumanAuthor(q dbq, address, fp string) (bool, error) {
+	if address != a.Address || fp != a.Self().Fingerprint() {
+		return ownDeviceHolds(q, address, fp)
+	}
+	p, found, err := personBySelfIn(q, address)
+	if err != nil || !found || p.info.State != personSelf || !p.has(address, fp) || !p.roster.Human(fp) {
+		return false, err
+	}
+	var refused bool
+	err = q.QueryRow(`SELECT EXISTS(SELECT 1 FROM config WHERE k=? AND v=?) OR EXISTS(SELECT 1 FROM peers WHERE address=? AND pending IS NOT NULL)`, "revoked-exact-device/"+address+"/"+fp, address, address).Scan(&refused)
+	return !refused, err
 }
 
 // demoteLapsedOwnTasks moves the device-thread tasks waiting to run here
@@ -198,81 +139,6 @@ func demoteLapsedOwnTasks(tx *sql.Tx, why string) error {
 	// Back in review: reported afresh to each recipient.
 	_, err = tx.Exec(`DELETE FROM reported WHERE item IN (?`+strings.Repeat(", ?", len(ids)-1)+`)`, ids...)
 	return err
-}
-
-// markSelfConsentSince records, once, when this home first ran a build
-// with D3 (Open calls it): invites stored here before then are not
-// accepted without a click.
-func (s *store) markSelfConsentSince() error {
-	if _, err := s.config(selfConsentSinceKey); !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO config(k, v) VALUES(?, ?)`, selfConsentSinceKey, strconv.FormatInt(time.Now().Unix(), 10))
-	return err
-}
-
-// invitedSinceSelfConsent reports whether the invite event hash was stored
-// here since D3 began here; without that record, it was not.
-func (s *store) invitedSinceSelfConsent(hash string) (bool, error) {
-	var received int64
-	var since sql.NullString
-	err := s.db.QueryRow(`SELECT received_at, (SELECT v FROM config WHERE k = ?) FROM participation_events WHERE hash = ?`, selfConsentSinceKey, hash).Scan(&received, &since)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	began, perr := strconv.ParseInt(since.String, 10, 64)
-	return since.Valid && perr == nil && received >= began, nil
-}
-
-func (a *Agent) setSelfConsentTrust(change func(*sql.Tx) error) error {
-	tx, err := a.store.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := change(tx); err != nil {
-		return err
-	}
-	if err := a.store.done(tx.Commit()); err != nil {
-		return err
-	}
-	notifyDaemon(a.home)
-	return nil
-}
-
-// selfConsentTrusted reports whether the device at address with key
-// fingerprint fp is in the trust set (fp alone, with address "": any
-// trusted device has that key).
-func (a *Agent) selfConsentTrusted(address, fp string) (bool, error) {
-	if fp == a.Self().Fingerprint() && (address == "" || address == a.Address) {
-		return true, nil
-	}
-	added, err := selfConsentAddedIn(a.store.db)
-	if err != nil {
-		return false, err
-	}
-	return slices.ContainsFunc(added, func(d TrustedDevice) bool {
-		return d.Fingerprint == fp && (address == "" || d.Address == address)
-	}), nil
-}
-
-func selfConsentAddedIn(q querier) ([]TrustedDevice, error) {
-	var out []TrustedDevice
-	return out, configJSONIn(q, selfConsentKey, &out)
-}
-
-// addSelfConsentTrustIn adds (or, for a new key, replaces) address in the
-// trust set within tx.
-func addSelfConsentTrustIn(tx *sql.Tx, address, fp string) error {
-	added, err := selfConsentAddedIn(tx)
-	if err != nil {
-		return err
-	}
-	added = slices.DeleteFunc(added, func(d TrustedDevice) bool { return d.Address == address })
-	return putConfigJSON(tx, selfConsentKey, append(added, TrustedDevice{Address: address, Fingerprint: fp}))
 }
 
 // SelfConsentNotices lists the auto-accepts the person has not dismissed,

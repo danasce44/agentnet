@@ -130,7 +130,7 @@ for (const oldAfterReload of [false, true]) {
  await e.retryHeld();
  const row=await f.store.get("held",held);
  check(row.reason==="key_changed"&&!row.notice_archived&&!await f.store.get("inbox",held),"retry resurfaces changed key without admitting ciphertext");
- await refuses(()=>e.archiveHeldNotice(held),/cannot be archived/);
+ await e.archiveHeldNotice(held);check((await f.store.get("held",held)).notice_archived&&!await f.store.get("inbox",held),"key notice dismissal does not trust or admit");
  e.stop();
 }
 

@@ -124,6 +124,39 @@ func TestOwnHumanResolveSyncedRequest(t *testing.T) {
 		t.Fatalf("queued resolution: %+v %v", sent, e)
 	}
 	waitState(t, w.alice, q.ID, stateResolved)
+	// The sender and a sibling holding only history must agree with the
+	// card's exact executor status. A closed request remains in history.
+	if !w.alice.tellStatus(tctx(t), q.ID) {
+		t.Fatal("terminal report could not be sent")
+	}
+	eventually(t, "phone receives terminal executor report", func() bool {
+		e := execOf(t, phone, q.ID)
+		return e != nil && e.State == stateResolved
+	})
+	for range 3 {
+		if _, err := w.alice.deviceHistoryPage(tablet.Self()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deliverDeviceHistory(t, w.alice, tablet, envelope.SubDeviceHistory)
+	for _, a := range []*Agent{phone, tablet} {
+		topics, err := a.Threads()
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, topic := range topics {
+			if topic.ID == q.ID {
+				found = true
+				if topic.Pending || topic.Waiting || len(topic.PendingIDs) != 0 || topic.Count != 1 {
+					t.Fatalf("%s closed request remains pending or lost: %+v", a.Address, topic)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s lost closed request history", a.Address)
+		}
+	}
 	var required string
 	if e = tablet.store.db.QueryRow(`SELECT required_cap FROM outbox WHERE id=?`, sendID).Scan(&required); e != nil || required != protocol.CapOwnSyncV3 {
 		t.Fatalf("decision compatibility: %s %v", required, e)

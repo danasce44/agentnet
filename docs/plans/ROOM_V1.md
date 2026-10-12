@@ -261,27 +261,28 @@ Integration owners: TODO(integrate:P2) merge verified naming helpers; TODO(integ
 
 `room ask` is the only way a run can send a request. Send commands must never be added to question-mode allow rules.
 
-## 5. Self-invite consent (D3)
+## 5. Self-invite consent (D3, superseded by owner correction 2026-10-12)
 
-`selfConsent(ctx, pid)` in `client/participation.go` signs the ordinary accept through `decide` (`:595`). Old peers see a normal accept, so this needs no wire change and no capability.
+Every current verified human device of a person can invite, question or task
+any of that person's own agents without another AgentNet OK. This includes
+phones and browsers, applies to every user, and requires no native-device
+flag or extra task grant. The old local `self_consent` list is legacy data,
+not the source of this authority.
 
-**Conditions (all must hold):**
-- The invite is in state `invited`, with `Held==0` and `HostHere`.
-- `Role==""`, and this device has not decided yet (`ownEvent` makes this idempotent).
-- The author, the host and this device's self are the same person, and that person is not conflicted or frozen.
-- The author device is in the pinned own chain **and in the local trust set**:
-  - The trust set is the host plus own devices the person added, stored under the `config` key `self_consent`.
-  - The reason: rosters do not mark browser devices (`person.go:70-79`), and a browser key must not turn relay-served code into execution here (review X4).
-- `TaskKeys` is empty or contains only keys from the trust set.
-- The AgentID is the default responder or an enabled catalog agent.
-- In a group, `inviteEpoch` holds.
+`selfConsent` signs the existing ordinary acceptance. It requires a current
+undecided invitation, matching host/person, a current signed human author
+key pinned exactly on this host, no pending key change, revocation or frozen
+person, valid current invitation/task-key scope and an enabled host agent.
+An own human's signed invitation may explicitly name other current members'
+task keys; accepting that exact owner decision does not require another click.
+Agent-host keys cannot invoke the own-human exception. Other people's
+invitations retain their existing consent requirements.
 
-**When it runs:**
-- after `recordAndSend` in `inviteParticipation`;
-- after event admission (`conv.go:948`);
-- in a sweep at daemon start.
-
-Each auto-accept shows a local notice with a dismiss button. An invite that fails any condition falls back to the normal accept click.
+Existing admission and startup reconciliation apply the rule to pending
+never-run requests. History replicas and completed, failed or interrupted
+work never restart. The native harness still governs tools and permissions;
+AgentNet adds no execution policy. Older D3 trust-set discussions below are
+historical and do not govern the current implementation.
 
 ## 6. Agent files (D5)
 
@@ -470,7 +471,7 @@ Every phase runs `go vet ./...` and `go test -race -count=1 -timeout 600s ./...`
 
 ## 10. Defaults chosen for the open questions (owner may veto any)
 
-1. **D3 trust set.** Chosen: the host plus own native devices the person added. The literal D3 reading ("any linked device") would let a browser key enable execution.
+1. **Historical D3 trust set (superseded 2026-10-12; see §5).** Previously chosen: the host plus own native devices the person added. The literal D3 reading ("any linked device") would let a browser key enable execution.
 2. **Follower context.** Chosen: an agent run withholds turns from unapproved guests and agents (with a count); people still see everything.
 3. **May question runs ask other agents?** Owner P6 override: yes, questions only; tasks retain the full origin chain and recipient authority.
 4. **Own agent asking own agent.** Owner decision D9: runs without asking, for any two agents of the same person.

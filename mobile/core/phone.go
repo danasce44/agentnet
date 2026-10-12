@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/misunders2d/agentnet/internal/protocol"
 	"github.com/misunders2d/agentnet/internal/ui"
 )
 
@@ -10,6 +11,7 @@ import (
 type phoneProvider struct {
 	*ui.Live
 	available func() bool
+	dismiss   func(string)
 	address   string
 	session   *Session
 }
@@ -103,4 +105,21 @@ func (p *phoneProvider) linkDiagnostics(v *ui.Overview) {
 		}
 		v.Link.Detail += "The connection stopped: " + failure
 	}
+}
+
+// A notification already displayed by Android disappears once the exact
+// conversation/message is actually presented, not merely selected.
+func (p *phoneProvider) NotifySeen(conv string, ids []string) error {
+	if err := p.Live.NotifySeen(conv, ids); err != nil {
+		return err
+	}
+	if p.dismiss != nil && len(ids) > 0 {
+		if protocol.ValidHash(conv) {
+			p.dismiss("conv=" + conv)
+		}
+		for _, id := range ids {
+			p.dismiss("msg=" + id + "&dir=in")
+		}
+	}
+	return nil
 }

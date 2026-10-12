@@ -408,6 +408,10 @@ func (l *Live) DM(id string) (DMThread, error) {
 			if err != nil {
 				return DMThread{}, err
 			}
+			dm.Stop, err = l.a.StopFor(m.ID, m.Key, m.Exec)
+			if err != nil {
+				return DMThread{}, err
+			}
 			if m.SendStopped && m.State == "not_delivered" {
 				dm.StateText = "Not sent; local sending stopped."
 				if m.DeliveryUncertain {

@@ -126,6 +126,42 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
    return {ok:true,storage:realIDB?'real IndexedDB':'memory unit only',checks:labels.length,labels};
   }finally{await w.close();}
  }
+ // A valid older person-chain response cannot turn known history into an
+ // identity conflict. Retained legacy ciphertext recovers through admission.
+ {
+  const w=await world();
+  try {
+   await w.receive(c.proof);
+   const old=await wire.parseRoster(v.challenge.rosters[0]), next={...old,seq:old.seq+1,prev:await wire.rosterHash(old),label:'New display name',by:await wire.fingerprint(alicePub),sig:null,join:null};
+   next.sig=new Uint8Array(await crypto.subtle.sign('Ed25519',aliceKeys.sign,new TextEncoder().encode('agentnet-person-v2\n'+wire.rosterJSON(next))));
+   await wire.verifyNext(next,old);
+   const previous=await w.st.get('persons',old.person),pinned=await w.e.personRecord([old,next],'pinned',previous);
+   await w.st.write([{s:'persons',k:old.person,v:pinned}]);
+   const id=wire.parseEnvelope(c.context.envelope).id;
+   await w.st.write([{s:'held',k:id,v:{id,from:alicePub.address,reason:'identity_conflict',detail_code:'',envelope:c.context.envelope,at:1700000000000}}]);
+   await w.reload();await w.e.retryHeld();
+   check(!await w.st.get('held',id)&&!!(await w.st.get('kv','group/'+conv))?.context,'legacy false roster hold recovers exact authenticated group context after restart');
+   check((await w.st.get('persons',old.person)).hash===pinned.hash,'older historical roster never rolls back pinned current person');
+   check(!!await w.st.get('kv','held-roster-prefix-recovery-v1'),'bounded upgrade revalidation completion is durable');
+   await w.reload();await w.e.retryHeld();
+   check((await w.st.all('outbox')).length===0,'roster recovery does not send or replay work');
+  }finally{await w.close();}
+ }
+ for(const frozen of [false,true]){
+  const w=await world();try{
+   await w.receive(c.proof);
+   const old=await wire.parseRoster(v.challenge.rosters[0]);
+   const step=async label=>{const r={...old,seq:old.seq+1,prev:await wire.rosterHash(old),label,by:await wire.fingerprint(alicePub),sig:null,join:null};r.sig=new Uint8Array(await crypto.subtle.sign('Ed25519',aliceKeys.sign,new TextEncoder().encode('agentnet-person-v2\n'+wire.rosterJSON(r))));await wire.verifyNext(r,old);return r;};
+   const next=await step('Pinned branch'),fork=await step('Other branch'),previous=await w.st.get('persons',old.person),pinned=await w.e.personRecord([old,next],frozen?'conflict':'pinned',previous);
+   await w.st.write([{s:'persons',k:old.person,v:pinned}]);
+   if(!frozen)w.extraChains.set(old.person,[JSON.parse(wire.rosterJSON(old)),JSON.parse(wire.rosterJSON(fork))]);
+   const id=wire.parseEnvelope(c.context.envelope).id;
+   await w.st.write([{s:'held',k:id,v:{id,from:alicePub.address,reason:'identity_conflict',envelope:c.context.envelope,at:1700000000000}}]);
+   await w.reload();await w.e.retryHeld();
+   check(!!await w.st.get('held',id)&&!(await w.st.get('kv','group/'+conv))?.context,'upgrade recovery preserves '+(frozen?'frozen identity':'real signed fork')+' hold');
+   check((await w.st.get('persons',old.person)).hash===pinned.hash&&(await w.st.all('outbox')).length===0,'failed identity recovery never changes pinned head or starts work');
+  }finally{await w.close();}
+ }
  let w;
  try{
   // Background disclosure coalesces a burst, including a failed active pass.
@@ -1202,13 +1238,49 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
   const typingTargets=await w.e.typingTargets({conv});check(typingTargets.length===2&&!typingTargets.some(x=>x.pub.address==='dana/desk'),'group typing audience is current effective humans only, outside host excluded');
   await w.receive(c.withdrawn);check((await w.e.typingTargets({conv})).length===1,'ordinary signed withdrawal removes typing destination without inferred room grant');
   await w.reload();check(!(await w.e.typingView({conv})).entries.length,'typing remains ephemeral across real reload');await w.close();
+  // Linked own-human management uses a passive signed mirror and an exact
+  // relay fence; observing that mirror alone never publishes its admission.
+  w=await world();{
+   const siblingKeys=await wire.newKeys(),siblingAddress='browser/linked',siblingPub=await wire.publicEntry(siblingKeys,siblingAddress),siblingFP=await wire.fingerprint(siblingPub);
+   const join=new Uint8Array(await crypto.subtle.sign('Ed25519',siblingKeys.sign,wire.joinBytes(roster.person,roster.seq+1,await wire.rosterHash(roster),siblingPub)));
+   const next=await wire.nextRoster(keys,address,roster,[...roster.devices,siblingPub],join,roster.label,[w.e.fp,siblingFP]);
+   await wire.verifyNext(next,roster);
+   const me=await w.e.personRecord([roster,next],'self',w.e.me);w.e.me=me;await w.st.write([{s:'kv',k:'person',v:me}]);await w.e.pinDevices(me);
+   w.extraChains.set(me.person,[JSON.parse(wire.rosterJSON(roster)),JSON.parse(wire.rosterJSON(next))]);
+   let published=0,cancelled=0,lose=true;const requests=[],linkedCall=w.e.call.bind(w.e);
+   w.e.call=async(method,path,body)=>{
+    if(method==='POST'&&path.includes('/publish?')){published++;return {seq:body.commit.seq,hash:body.commit.hash};}
+    if(method==='POST'&&path.includes('/cancel-invitation?')){requests.push(body);cancelled++;if(lose){lose=false;throw Error('synthetic lost cancellation response');}return {cancelled:true};}
+    return linkedCall(method,path,body);
+   };
+   const created=await w.e.createGroup('Linked admin cancellation'),packet=await w.e.groupCurrent(created);
+   const person=await w.st.get('persons',(await wire.parseRoster(v.challenge.rosters[0])).person);
+   const proposal={v:1,root:packet.root,state:packet.state,withdrawals:null,target:person.person,roster:person.hash,seq:1,prev:await wire.groupStateHash(packet.state),history:null,nonce:wire.newID()},id=await wire.groupInvitationID(proposal);
+   const record={v:1,person:me.person,roster:me.hash,id,revision:1,status:'pending',proposal};
+   // Feed the authenticated mirror through its production admission method;
+   // the transport signature is separately covered by own-sync vector tests.
+   const ops=await w.e.admitInvitationSync({body:wire.invitationSyncJSON(record)},{from:siblingAddress},{fingerprint:siblingFP});await w.st.write(ops,ops.checks);
+   await w.e.recoverGroupIntents();
+   check(published===1&&!await w.st.get('kv','group-invitation/out/'+id),'linked mirror never becomes an executable publication intent');
+   const view=(await w.e.groupInvitations()).find(x=>x.id===id);check(view?.can_cancel&&view.can_refresh,'linked own human can manage exact pending invitation');
+   for(const bad of [{...me,state:'conflict'},{...me,human_keys:[siblingFP]},{...me,devices:me.devices.filter(d=>d.fingerprint!==w.e.fp)}]){
+    await w.st.write([{s:'kv',k:'person',v:bad}]);let refused=false;try{await w.e.cancelGroup({id});}catch{refused=true;}check(refused&&cancelled===0,'frozen, agent-host or removed actor cannot cancel');
+   }
+   await w.st.write([{s:'kv',k:'person',v:me}]);let lost=false;try{await w.e.cancelGroup({id});}catch(e){lost=e.message.includes('lost cancellation');}
+   check(lost&&!await w.st.get('kv','group-invitation/out/'+id),'uncertain cancel response does not invent local completion');
+   await w.e.cancelGroup({id});await w.e.cancelGroup({id});
+   check(cancelled===2&&JSON.stringify(requests[0])===JSON.stringify(requests[1]),'cancel retry preserves exact proposal/head binding and then becomes locally idempotent');
+   check((await w.e.groupCurrent(created)).state.seq===0&&published===1,'linked cancellation leaves group head and unrelated proposals unchanged');
+   const local=await w.st.get('kv','group-invitation/out/'+id);check(local.status==='cancelled'&&local.inviter===address&&local.fp===w.e.fp,'only explicit cancellation creates a terminal local row');
+   await w.reload();check((await w.e.groupInvitations()).find(x=>x.id===id)?.status==='cancelled','linked cancellation survives real store reload');
+  }await w.close();
   w=await world();const createRequests=[],createWrite=w.st.write.bind(w.st),createCall=w.e.call.bind(w.e);let createConflict=false;
-  w.e.call=async(method,path,body)=>{if(method==='POST'&&path.startsWith('/v1/groups/')){createRequests.push(body);return {seq:body.seq,hash:body.hash};}return createCall(method,path,body);};
+  w.e.call=async(method,path,body)=>{if(method==='POST'&&path.startsWith('/v1/groups/')){check(path.includes('/publish?')&&body.v===1&&typeof body.invitation==='string','publication uses signed explicit wrapper');createRequests.push(body);return {seq:body.commit.seq,hash:body.commit.hash};}return createCall(method,path,body);};
   w.st.write=async(ops,checks)=>{if(!createConflict&&ops.some(o=>o.k?.startsWith('group-publication/')&&o.v===undefined)){createConflict=true;const person=await w.st.get('kv','person');await createWrite([{s:'kv',k:'person',v:{...person,fixtureLabel:'create dependency changes after custody'}}]);}return createWrite(ops,checks);};
   const exactCreate=await w.e.createGroup('Direct create after conditional conflict');check(createConflict&&createRequests.length===2&&JSON.stringify(createRequests[0])===JSON.stringify(createRequests[1]),'direct create repeats exact recorded original ciphertext after conditional conflict');check((await w.e.groupCurrent(exactCreate)).state.seq===0&&(await w.st.all('outbox')).length===0,'direct create installs once without fabricated audience');await w.close();
   w=await world();
   const call=w.e.call.bind(w.e), posted=[];
-  w.e.call=async(method,path,body,options)=>{if(method==='POST'&&path.startsWith('/v1/groups/')){posted.push(body);return {seq:body.seq,hash:body.hash};}return call(method,path,body,options);};
+  w.e.call=async(method,path,body,options)=>{if(method==='POST'&&path.startsWith('/v1/groups/')){if(path.includes('/cancel-invitation?'))return {cancelled:true};check(path.includes('/publish?')&&body.v===1&&typeof body.invitation==='string','publication binding present');posted.push(body.commit);return {seq:body.commit.seq,hash:body.commit.hash};}return call(method,path,body,options);};
   const created=await w.e.createGroup('Explicit browser group');
   check(posted.length===1&&posted[0].seq===0,'explicit browser create uses one original journal publication');
   check((await w.e.groupCurrent(created)).state.title==='Explicit browser group','created context verified before install');
@@ -1240,12 +1312,12 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
   const oldCaps=JSON.parse(wire.capsJSON(await wire.newCaps(keys,address,oldSession,[wire.CapEnv2,wire.CapRoom]))),newCaps=JSON.parse(wire.capsJSON(await wire.newCaps(keys,address,newSession,[wire.CapEnv2,wire.CapRoom,wire.CapGroupInvitationControl])));
   let controlProfile={live:true,sessions:[oldSession,newSession],caps:[oldCaps,newCaps]};
   const controlGate={pubOf:async()=>pub,profile:async()=>controlProfile};
-  let oldBlocked=false;try{await Engine.prototype.requireGroupInvitationControl.call(controlGate,address,{});}catch(e){oldBlocked=e.message.includes('gic1');}
+  let oldBlocked=false;try{await Engine.prototype.requireGroupInvitationControl.call(controlGate,address,{});}catch(e){oldBlocked=e.code==='group_invitation_unsupported';}
   check(oldBlocked&&!wire.RoomImplies.includes(wire.CapGroupInvitationControl),'mixed signed grp1/rm1 sessions cannot receive nonce or cancellation; gic1 not implied');
   const sealedBefore=JSON.stringify(controlCopies[0]);
   const finalControlGate={pinned:async()=>({fingerprint:controlCopies[0].recipient_fp}),requireGroupInvitationControl:(a,p)=>Engine.prototype.requireGroupInvitationControl.call(controlGate,address,p)};
   const finalControl=await Engine.prototype.groupLifecycleGate.call(finalControlGate,controlCopies[0]);
-  check(finalControl.why.includes('gic1')&&JSON.stringify(controlCopies[0])===sealedBefore,'after-queue old session blocks final lifecycle handoff without changing sealed copy');
+  check(finalControl.why.includes('needs an update')&&JSON.stringify(controlCopies[0])===sealedBefore,'after-queue old session blocks final lifecycle handoff without changing sealed copy');
 
   controlProfile={live:true,sessions:[newSession],caps:[newCaps]};await Engine.prototype.requireGroupInvitationControl.call(controlGate,address,{});
   check(true,'explicit signed gic1 current session permits invitation controls');

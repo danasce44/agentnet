@@ -62,6 +62,8 @@ func (h *Hub) routes() http.Handler {
 	mux.HandleFunc("PUT /v1/team", h.handlePutTeam)
 	mux.HandleFunc("DELETE /v1/teams/{id}", h.handleDeleteTeam)
 	mux.HandleFunc("GET /v1/teams/{id}/chain", h.handleTeamChain)
+	mux.HandleFunc("POST /v1/groups/{id}/publish", h.handleGroupPublication)
+	mux.HandleFunc("POST /v1/groups/{id}/cancel-invitation", h.handleGroupInvitationCancel)
 	mux.HandleFunc("POST /v1/groups/{id}/chain", h.handleGroupCommit) // hub/groups.go: encrypted signed group journal (admins)
 	mux.HandleFunc("GET /v1/groups/{id}/chain", h.handleGroupChain)
 	mux.HandleFunc("POST /v1/admin/invites", h.handleInvite)

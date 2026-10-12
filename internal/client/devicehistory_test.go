@@ -546,4 +546,51 @@ func TestDeviceHistoryOwnEndpointsReordered(t *testing.T) {
 			t.Fatalf("own imported direction or execution: %+v", m)
 		}
 	}
+	// Exporting history must not turn this host's original question into a
+	// conversation with itself. Both original reply endpoints remain usable.
+	checkNative := func() {
+		t.Helper()
+		for _, id := range []string{q.ID, reply.ID} {
+			if err := a.CheckReplyTo(id, laptop.Address); err != nil {
+				t.Fatalf("original peer was overwritten by history: %v", err)
+			}
+			if err := a.CheckReplyTo(id, reader.Address); err == nil {
+				t.Fatal("reply allowed to unrelated sibling")
+			}
+			if err := a.CheckReplyTo(id, a.Address); err == nil {
+				t.Fatal("reply redirected back to this host")
+			}
+		}
+	}
+	checkNative()
+	// Reimport the exact original from the sibling. It has a different local
+	// view, but neither that view nor an old saved projection is routing proof.
+	original, err := reader.deviceHistorySource(reader.store.db, "in", q.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, _, err := reader.store.selfPerson(reader.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, _ := json.Marshal(original.item)
+	body, _ := json.Marshal(protocol.DeviceHistory{V: 1, Person: own.info.Person, Roster: own.info.Roster, Recipient: original.to, RecipientKey: original.toKey, Item: item})
+	duplicate := sealTo(t, reader, a, envelope.Inner{V: envelope.Version2, Kind: envelope.KindMessage, Sub: envelope.SubDeviceHistory, Replica: true, Body: string(body)})
+	groupGovernanceDeliver(t, reader, a, duplicate)
+	if state, err := a.store.disposition(duplicate.ID); err != nil || state != protocol.StateDelivered {
+		t.Fatalf("duplicate history: %s %s %v", state, heldReason(t, a, duplicate.ID), err)
+	}
+	checkNative()
+	if _, err := a.store.db.Exec(`UPDATE device_history_rows SET peer=?,direction='out' WHERE id IN (?,?)`, a.Address, q.ID, reply.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.db.Exec(deviceHistoryOriginalPeerSchema); err != nil {
+		t.Fatal(err)
+	}
+	checkNative()
+	var attempts int
+	if err := a.store.db.QueryRow(`SELECT attempts FROM inbox WHERE id=? AND replica=0`, q.ID).Scan(&attempts); err != nil || attempts != 0 {
+		t.Fatalf("repair changed original execution: attempts=%d err=%v", attempts, err)
+	}
+
 }

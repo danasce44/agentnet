@@ -506,6 +506,12 @@ func participationIn(q dbq, conv, pid string, m dmMembers, self string) (Partici
 		return ParticipationInfo{}, err
 	}
 	info := resolve(conv, pid, events, m)
+	if m.historyEvents == nil {
+		info, err = closedParticipation(q, conv, pid, events, m, info)
+		if err != nil {
+			return ParticipationInfo{}, err
+		}
+	}
 	info.HostHere = info.Host.Address == self && info.Host.State == personSelf
 	if info.Role == protocol.RoleHuman {
 		rows, err := q.Query(`SELECT DISTINCT coalesce(p.label,'Someone') FROM outbox o LEFT JOIN person_devices d ON d.address=o.recipient LEFT JOIN persons p ON p.person=d.person WHERE o.pid=? AND o.state='waiting' AND o.required_cap=? AND instr(coalesce(o.error,''),?)=1`, pid, protocol.CapHumanParticipation, WaitPeerUpdate)
@@ -647,18 +653,8 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 		if err := a.requireParticipationCaps(ctx, key, protocol.CapHumanParticipation); err != nil && !errors.Is(err, errAgentIdentityUnsupported) {
 			return ParticipationInfo{}, err
 		}
-		for _, person := range m.persons {
-			for _, device := range person.roster.Devices {
-				if m.group != nil {
-					if err := a.requireParticipationCaps(ctx, device, protocol.CapGroupHumanParticipation); err != nil {
-						return ParticipationInfo{}, err
-					}
-				}
-				if err := a.requireParticipationCaps(ctx, device, protocol.CapHumanParticipation); err != nil && !errors.Is(err, errAgentIdentityUnsupported) {
-					return ParticipationInfo{}, err
-				}
-			}
-		}
+		// Only the invited host must support joining. Other readers' exact
+		// copies wait independently at their existing capability gates.
 		infos, err := a.Participations(conv)
 		if err != nil {
 			return ParticipationInfo{}, err
@@ -873,14 +869,13 @@ func undecidedHere(conv, pid, fp string) func(*sql.Tx) error {
 // person's click (owner decision D3; selfconsent.go) when all of these hold,
 // and otherwise leaves it to the click as before:
 //
-//   - it was stored here since D3 began here (selfConsentSinceKey);
 //   - it is invited, no event of it is held, and this installation hosts it;
 //   - it invites an agent (no role: never a human guest), and this device
 //     has decided nothing of it;
 //   - its author, its host and this installation speak for one person,
 //     this one, as pinned here (never frozen);
-//   - the author device is a current device of that person's pinned chain
-//     and in the trust set, and so is every task key the invite names;
+//   - the author is a current verified own human device; its signed invitation
+//     is the owner's decision, including any task keys explicitly selected;
 //   - its agent is the default responder, selected, or an enabled agent of
 //     this host's catalog;
 //   - in a group, its invite epoch holds.
@@ -930,20 +925,12 @@ func (a *Agent) selfConsent(ctx context.Context, pid string) (bool, error) {
 		return false, nil // the invite itself, never a scope standing for it
 	}
 	if !slices.Equal(info.TaskKeys, inv.TaskKeys) {
-		return false, nil // it names a device removed since (loadDepartedTaskKeys): no own device's word any more; the person decides
-	}
-	if since, err := a.store.invitedSinceSelfConsent(info.Invite); err != nil || !since {
-		return false, err // stored before D3 here: made when nothing ran before the click
+		return false, nil // the signed invitation names a device removed since
 	}
 	if author, ok := m.author(inv.Author); !ok || author.info.Person != me.info.Person {
 		return false, nil
 	}
-	trusted, err := a.selfConsentTrusted(inv.Author.Address, inv.Author.Fingerprint)
-	for _, fp := range inv.TaskKeys {
-		if trusted && err == nil {
-			trusted, err = a.selfConsentTrusted("", fp)
-		}
-	}
+	trusted, err := a.ownHumanAuthor(a.store.db, inv.Author.Address, inv.Author.Fingerprint)
 	if err != nil || !trusted {
 		return false, err
 	}
@@ -954,6 +941,15 @@ func (a *Agent) selfConsent(ctx context.Context, pid string) (bool, error) {
 	_, err = a.signWith(ctx, info, protocol.EventAccept, info.Invite, func(tx *sql.Tx) error {
 		if err := undecidedHere(info.Conv, pid, self)(tx); err != nil {
 			return err
+		}
+		// Recheck the exact author in the accept transaction: a roster/key
+		// change between projection and signing must not authorize execution.
+		own, err := a.ownHumanAuthor(tx, inv.Author.Address, inv.Author.Fingerprint)
+		if err != nil {
+			return err
+		}
+		if !own {
+			return errors.New("inviter is no longer a verified own human device")
 		}
 		return addSelfConsentNoticeIn(tx, notice)
 	})

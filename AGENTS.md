@@ -27,10 +27,11 @@ program, `agentnet`, that is both the laptop client and the Hub.
 - **Questions** are answered automatically only for approved senders, by the
   recipient's chosen harness with the recipient's own setup: their skills,
   plugins, MCP servers and permissions unchanged (see docs/revival/M4.md).
-  Questions from this host’s own verified human devices need no additional
+  Invitations, questions and tasks from any current verified human device
+  of the agent owner need no additional
   AgentNet approval: those devices are the same person. Current signed roster,
   human role, exact pinned key and revocation checks still apply. Pending
-  never-run own questions may proceed after upgrade; history replicas and
+  never-run own questions and tasks may proceed after upgrade; history replicas and
   completed, failed or interrupted work never restart.
   AgentNet injects no tool exclusions, sandbox or approval overrides and no
   blanket CLI command restrictions on background runs. The recipient's own
@@ -39,7 +40,7 @@ program, `agentnet`, that is both the laptop client and the Hub.
   or tools, or run questions with an empty or substitute configuration: the
   point is that a coworker gets the answer this person's agent would give.
   If an answer needs an action the harness may not take, the result is
-  needs-human, not an invented answer. **Tasks** run only after the
+  needs-human, not an invented answer. **Other senders’ tasks** run only after the
   recipient accepts them (`accept ID`), or when the recipient has granted
   that sender's verified person or exact device key standing permission
   (`approve --tasks`, `accept --always`). Person grants cover current and
@@ -48,16 +49,15 @@ program, `agentnet`, that is both the laptop client and the Hub.
   keys may enroll roster devices, never agent hosts. Grants are local only,
   never set by received names or messages. Exact device grants need renewal
   after a changed key is trusted. Neither kind of grant
-  reruns failed or interrupted work. Self-invite consent (owner
-  decision D3, docs/plans/ROOM_V1.md §5) is the one invite accepted without
-  a click: the host person's own agent, invited from the host device or an
-  own device trusted there with `person approve --native`, with task keys
-  only of trusted own devices. Separately, the person's own approved human
-  devices, phones included (risk recorded on MEL-525), may confirm their
-  own agent's exact bound proposal without a second approval. Agent-host
-  keys have no such right; that trust too is local only. Either way the harness's normal
-  permissions apply — nothing is bypassed. Workers never touch the user's
-  open sessions.
+  reruns failed or interrupted work. Self-invite consent (owner correction
+  2026-10-12, docs/plans/ROOM_V1.md §5) applies to all current verified own
+  human devices, phones and browsers included, for every person and harness.
+  It requires no `--native`, `approve --tasks` or `accept` step. The current
+  signed roster, exact pinned human key, current invitation and task-key
+  scope, enabled host agent, revocation and freeze checks remain mandatory.
+  Agent-host keys cannot self-authorize as a human. Own human devices may
+  also confirm an exact bound proposal without a second AgentNet approval.
+  All harness permissions remain native; workers never touch open sessions.
 - **Fail closed:** TLS is never skipped (pinned certificate or system CAs),
   changed peer keys block until trusted, revoked agents are refused, secrets
   and plaintext never go to logs.

@@ -53,3 +53,25 @@ export function ResolveOwnRequest({ request, disabled }: { request: T.Continuati
     </Sheet>
   </>;
 }
+
+/** Stop uses the durable signed decision path. Receipt/queueing never means
+ * the process stopped; only the host's status says that. */
+export function StopOwnRequest({request}:{request:T.StopAction}) {
+  const store=useApp();
+  const [busy,setBusy]=useState(false),[queued,setQueued]=useState(false);
+  const send=useRef(sendID());
+  const identity=[request.host,request.id,request.key,request.attempt].join("/");
+  useEffect(()=>{send.current=sendID();setQueued(false);},[identity]);
+  const submit=async()=>{
+    if(busy)return;setBusy(true);
+    try {
+      const result=await store.run(api=>api.decide({host:request.host!,id:request.id,key:request.key,attempt:request.attempt,action:"cancel",expect:"running",report:"",send_id:send.current}));
+      if(result){setQueued(true);store.toast("Stop queued. Waiting for the host to confirm; completed actions are not undone.");}
+    }finally{setBusy(false);}
+  };
+  const acknowledged=!!request.result&&!request.result.refused;
+  return <div className="shrink-0">
+    <Button size="sm" variant="ghost" disabled={busy||request.pending||acknowledged||queued&&!request.result} onClick={()=>void submit()}>{busy?"Sending…":request.pending||queued&&!request.result?"Stop queued":acknowledged?request.result?.state==="cancelled"?"Stopped":"Stopping…":"Stop"}</Button>
+    {request.result?.refused&&<p role="status" className="max-w-48 text-[12px] text-text-2">{request.result.refused}</p>}
+  </div>;
+}

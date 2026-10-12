@@ -49,21 +49,6 @@ linger) if [ -n "$out" ]; then printf 'x\n' > "$out/x.txt"; fi
 esac
 `
 
-// codexRunStubScript is a codex-style fake harness for run folders: it
-// keeps its prompt, logs its arguments, places a file in the outbox its
-// prompt names (if any), and reports as codex exec --json does, in thread
-// $RUN_THREAD.
-const codexRunStubScript = `#!/bin/sh
-cat > "$RUN_LOG.prompt"
-echo "=== run $*" >> "$RUN_LOG"
-out=$(sed -n 's/.*place them directly in "\([^"]*\)".*/\1/p' "$RUN_LOG.prompt")
-if [ -n "$out" ]; then printf 'CODEX_FILE\n' > "$out/x.txt"; fi
-echo "{\"type\":\"thread.started\",\"thread_id\":\"$RUN_THREAD\"}"
-echo '{"type":"turn.started"}'
-echo '{"type":"item.completed","item":{"type":"agent_message","text":"codex did it"}}'
-printf '{"type":"turn.completed","usage":{}}'
-`
-
 type runStub struct{ log, dir, secret string }
 
 // installRunStub registers harness "runstub", which is given run folders
@@ -728,30 +713,26 @@ func TestDeviceTaskOutboxResentWithoutFiles(t *testing.T) {
 	}
 }
 
-// A resumed codex session cannot be given a folder (codex exec resume takes
-// no --add-dir), so its run gets no outbox and its prompt names none; the
-// first, fresh run of that session has one.
-func TestResumedCodexTaskGetsNoOutbox(t *testing.T) {
+// Native app-server fresh and resumed tasks receive their own run folder in
+// the prompt. Paths grant no additional permissions; the native harness decides.
+func TestResumedCodexTaskKeepsNativeOutboxPath(t *testing.T) {
 	st := installRunStub(t, "")
-	bin := filepath.Join(t.TempDir(), "codex.sh")
-	os.WriteFile(bin, []byte(codexRunStubScript), 0o700)
-	t.Setenv("RUN_THREAD", "thread-7")
-	Harnesses["xrun"] = harness{bin: bin, question: []string{"exec", "--ephemeral", "--sandbox", "read-only", "--color", "never"},
-		task: []string{"exec", "--ephemeral", "--color", "never"}, stdin: true, out: "-o", sessions: codexSessions, addDir: "--add-dir"}
+	bin := installCodexSessionStub(t, st.log)
+	t.Setenv("STUB_THREAD", "thread-7")
+	t.Setenv("STUB_WRITE_OUTPUT", "1")
+	Harnesses["xrun"] = harness{bin: bin, question: []string{"app-server"}, task: []string{"app-server"}, stdin: true, sessions: codexSessions}
 	t.Cleanup(func() { delete(Harnesses, "xrun") })
 	w := newWorld(t, "")
 	setResponder(t, w.bob, "xrun", st.dir, time.Minute)
 	runWith(t, w, w.bob, RunOptions{})
 	runWith(t, w, w.alice, RunOptions{})
-
 	first := acceptedTask(t, w, "first")
 	var res1 Message
-	eventually(t, "the first result", func() bool { var ok bool; res1, ok = findReply(w.alice, first); return ok })
+	eventually(t, "first result", func() bool { var ok bool; res1, ok = findReply(w.alice, first); return ok })
 	out1 := filepath.Join(w.bob.home, "runs", first, "out")
-	if len(res1.Attachments) != 1 || !strings.Contains(mustRead(t, st.log), "--add-dir "+out1) || !strings.Contains(st.prompt(t), `place them directly in "`+out1+`"`) {
-		t.Fatalf("first result %+v\n%s", res1, mustRead(t, st.log))
+	if len(res1.Attachments) != 1 || !strings.Contains(st.prompt(t), `place them directly in "`+out1+`"`) {
+		t.Fatalf("first result %+v", res1)
 	}
-
 	second, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: "second", Kind: envelope.KindTask, ReplyTo: res1.ID})
 	if err != nil {
 		t.Fatal(err)
@@ -761,12 +742,16 @@ func TestResumedCodexTaskGetsNoOutbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	var res2 Message
-	eventually(t, "the second result", func() bool { var ok bool; res2, ok = findReply(w.alice, second.ID); return ok })
-	runs := strings.Split(strings.TrimSpace(mustRead(t, st.log)), "\n")
-	last, prompt := runs[len(runs)-1], st.prompt(t)
-	if !strings.HasPrefix(last, "=== run exec resume thread-7 ") || strings.Contains(last, "--add-dir") || strings.Contains(prompt, "place them directly in") ||
-		res2.Status != envelope.StatusDone || len(res2.Attachments) != 0 || strings.Contains(res2.Body, "outbox") {
-		t.Fatalf("resumed run %q, result %+v, prompt:\n%s", last, res2, prompt)
+	eventually(t, "second result", func() bool { var ok bool; res2, ok = findReply(w.alice, second.ID); return ok })
+	out2 := filepath.Join(w.bob.home, "runs", second.ID, "out")
+	if res2.Status != envelope.StatusDone || len(res2.Attachments) != 1 || !strings.Contains(st.prompt(t), `place them directly in "`+out2+`"`) {
+		t.Fatalf("resumed result %+v", res2)
+	}
+	if rpc := mustRead(t, st.log+".rpc"); !strings.Contains(rpc, "thread/resume thread-7") {
+		t.Fatal(rpc)
+	}
+	if args := mustRead(t, st.log); strings.Contains(args, "--add-dir") {
+		t.Fatal(args)
 	}
 }
 

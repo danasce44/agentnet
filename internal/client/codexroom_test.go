@@ -22,11 +22,15 @@ func TestCodexRoomBridgeBoundTransport(t *testing.T) {
 	calls := make(chan string, 1)
 	cmd := exec.Command("codex")
 	cmd.Dir = t.TempDir()
-	b := newCodexRoomBridge(ctx, cmd, "PRIVATE_PROMPT", &output, func(ctx context.Context, raw json.RawMessage) (string, error) {
+	b, bridgeErr := newCodexRoomBridge(ctx, cmd, "PRIVATE_PROMPT", &output, func(ctx context.Context, raw json.RawMessage) (string, error) {
 		calls <- string(raw)
 		return "CORRELATED_REPLY", nil
 	})
+	if bridgeErr != nil {
+		t.Fatal(bridgeErr)
+	}
 	defer b.close()
+	defer cmd.Stdin.(io.Closer).Close()
 	messages := make(chan map[string]any, 10)
 	go func() {
 		d := json.NewDecoder(cmd.Stdin)
@@ -247,7 +251,7 @@ func TestCodexRoomExecutableLifecycle(t *testing.T) {
 			cmd.Env = append(cmd.Environ(), "AGENTNET_CODEX_FIXTURE_EXE="+exe, "AGENTNET_CODEX_ROOM_FIXTURE="+mode)
 			var output bytes.Buffer
 			called := make(chan struct{}, 1)
-			b := newCodexRoomBridge(ctx, cmd, "bound prompt", &output, func(ctx context.Context, _ json.RawMessage) (string, error) {
+			b, bridgeErr := newCodexRoomBridge(ctx, cmd, "bound prompt", &output, func(ctx context.Context, _ json.RawMessage) (string, error) {
 				called <- struct{}{}
 				if mode == "cancel" {
 					<-ctx.Done()
@@ -255,6 +259,9 @@ func TestCodexRoomExecutableLifecycle(t *testing.T) {
 				}
 				return "CORRELATED", nil
 			})
+			if bridgeErr != nil {
+				t.Fatal(bridgeErr)
+			}
 			defer b.close()
 			cmd.WaitDelay = time.Second
 			if e = cmd.Start(); e != nil {

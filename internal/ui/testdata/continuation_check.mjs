@@ -66,3 +66,26 @@ console.log('own-human resolution checks passed');
  assert.equal(posts.length,0,'explicit retry cannot move a resolution to a changed key');e.stop();
 }
 console.log('queued resolution capability and key checks passed');
+{
+ const {e,store,posts,pin}=await fixture(),x={host:'owner/desk',id:'1'.repeat(32),key:e.fp,action:'cancel',expect:'running',attempt:2,send_id:'2'.repeat(32)};
+ const m={id:x.id,kind:'question',target:{address:x.host,fingerprint:pin.fingerprint}},exec={host:x.host,state:'running',attempt:2};
+ e.ctlSupport=async(_host,_pin,cap)=>{assert.equal(cap,wire.CapOwnSyncV3);return [true,''];};
+ assert.equal((await e.stopOf(m,e.fp,exec)).id,x.id);
+ const fetch=e.fetch;e.fetch=async()=>{throw Error('offline fixture');};await e.decide(x);
+ assert.equal(posts.length,0);assert.equal((await e.stopOf(m,e.fp,exec)).pending,true,'offline Stop is durably queued, never stopped');
+ e.fetch=fetch;await e.post(await store.get('outbox',x.send_id));await e.decide(x);assert.equal(posts.length,1,'exact Stop retries retain one envelope');
+ const restarted=new Engine({store,base:e.base,fetch:e.fetch});Object.assign(restarted,{keys:e.keys,address:e.address,fp:e.fp,me:e.me,pinned:e.pinned});
+ assert.equal((await restarted.stopOf(m,e.fp,exec)).pending,true,'pending control survives reload');
+ const body={state:'running',n:1,at:1700000000,decision:x.send_id,report:'',attempt:2};
+ await store.write([{s:'inbox',k:'3'.repeat(32),v:{v:3,id:'3'.repeat(32),control:true,sub:wire.SubStatus,from:x.host,ref:{id:x.id,fingerprint:e.fp},body:JSON.stringify(body)}}]);
+ assert.equal((await restarted.stopOf(m,e.fp,exec)).result.state,'running','host acceptance does not claim stopped');
+ await store.write([{s:'inbox',k:'4'.repeat(32),v:{v:3,id:'4'.repeat(32),control:true,sub:wire.SubStatus,from:x.host,ref:{id:x.id,fingerprint:e.fp},body:JSON.stringify({...body,n:2,state:'answered',refused:'completed before cancellation'})}}]);
+ assert.equal((await restarted.stopOf(m,e.fp,exec)).result.refused,'completed before cancellation');
+ assert.equal(await e.stopOf(m,e.fp,{...exec,state:'answered'}),null,'terminal request has no Stop');
+ await assert.rejects(e.decide({...x,attempt:3}),/different decision/);
+ for(const bad of [{...e.me,state:'conflict'},{...e.me,human_keys:[]},{...e.me,devices:e.me.devices.filter(d=>d.address!==e.address)}]){
+  const own=e.me;e.me=bad;await assert.rejects(e.decide({...x,send_id:'5'.repeat(32)}),/current own human/);assert.equal(await e.stopOf(m,e.fp,exec),null);e.me=own;
+ }
+ restarted.stop();e.stop();
+}
+console.log('own-human durable Stop checks passed');

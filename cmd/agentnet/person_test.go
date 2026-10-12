@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/client"
+	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/testhub"
 )
 
@@ -49,12 +50,8 @@ func TestAdminRevokeExactPerson(t *testing.T) {
 	}
 }
 
-// Fail closed (review finding 1): person approve ID, the flow a browser
-// is linked with too, trusts nothing; only person approve --native ID,
-// which says it is never for a browser, adds the device to the self-consent
-// trust set. Nothing else adds one (there is no person trust); untrust
-// removes one, and person marks trusted devices.
-func TestPersonApproveTrustsOnlyNative(t *testing.T) {
+// Current verified human devices all use the same own-agent consent rule.
+func TestPersonApproveOwnHumanDevices(t *testing.T) {
 	t.Setenv("AGENTNET_NOTIFY", "off") // its daemon shows nothing on this desktop
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -99,44 +96,53 @@ func TestPersonApproveTrustsOnlyNative(t *testing.T) {
 		if err := runPerson(ctx, a, append(append([]string{"approve"}, approve...), id), &out); err != nil {
 			t.Fatalf("approve %v: %v", approve, err)
 		}
+		// A signed roster does not silently trust a changed directory key.
+		// Establish the exact peer pin through the ordinary sender path.
+		if _, err := a.SendMessage(ctx, client.Outgoing{To: dev.Address, Kind: envelope.KindMessage, Body: "linked device fixture"}); err != nil {
+			t.Fatal(err)
+		}
 		return client.TrustedDevice{Address: dev.Address, Fingerprint: dev.Self().Fingerprint()}, out.String()
 	}
 	trusted := func(d client.TrustedDevice) bool {
 		t.Helper()
-		set, err := a.SelfConsentTrust()
+		set, err := a.OwnHumanDevices()
 		if err != nil {
 			t.Fatal(err)
 		}
 		return slices.Contains(set, d)
 	}
 	phone, said := link("phone")
-	if trusted(phone) || strings.Contains(said, "need no accept") {
-		t.Fatalf("person approve ID trusted the device (it may be a browser): %q", said)
+	if !trusted(phone) || !strings.Contains(said, "without another AgentNet OK") {
+		t.Fatalf("ordinary phone approval: trusted %v, said %q", trusted(phone), said)
 	}
 	desk, said := link("desk", "--native")
-	if !trusted(desk) || !strings.Contains(said, "never") || !strings.Contains(said, "browser") {
-		t.Fatalf("approve --native: trusted %v, said %q", trusted(desk), said)
+	if !trusted(desk) || !strings.Contains(said, "legacy alias") {
+		t.Fatalf("legacy native approval: trusted %v, said %q", trusted(desk), said)
 	}
 	var out bytes.Buffer
 	if err := runPerson(ctx, a, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range strings.Split(out.String(), "\n") {
-		if marked := strings.Contains(line, "(trusted:"); marked != strings.Contains(line, desk.Address) {
-			t.Fatalf("person marks the wrong devices: %s", &out)
+	for _, d := range []client.TrustedDevice{phone, desk} {
+		found := false
+		for _, line := range strings.Split(out.String(), "\n") {
+			if strings.Contains(line, d.Address) && strings.Contains(line, "your verified device") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("own device missing from effective permissions: %s", &out)
 		}
 	}
-	for _, bad := range [][]string{{"trust", phone.Address}, {"untrust", a.Address}, {"approve", "--browser", "x"}, {"approve", "--native"}} {
+	for _, bad := range [][]string{{"trust", phone.Address}, {"untrust", a.Address}, {"untrust", desk.Address}, {"approve", "--browser", "x"}, {"approve", "--native"}} {
 		if err := runPerson(ctx, a, bad, &out); err == nil {
 			t.Fatalf("person %v accepted", bad)
 		}
 	}
-	if trusted(phone) {
-		t.Fatal("the phone became trusted")
+	if !trusted(phone) || !trusted(desk) {
+		t.Fatal("legacy untrust changed own-device authority")
 	}
-	if err := runPerson(ctx, a, []string{"untrust", desk.Address}, &out); err != nil || trusted(desk) {
-		t.Fatalf("untrust: %v", err)
-	}
+
 }
 
 // BUG-39a: after a Hub admin revokes one device of a person, the person's

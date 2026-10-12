@@ -14,6 +14,30 @@ export function notifySummary(n: T.NotifyView | undefined): string {
   return n.enabled ? "On" : "Off";
 }
 
+// Read Android's current grant and channel state on visibility changes; never
+// change the OS permission while merely rendering settings.
+function useNativeNotificationPermission() {
+  const android = useApp().host.android;
+  const [nativeGranted, setNativeGranted] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!android) return;
+    let alive = true;
+    const refresh = () => { void android.notificationStatus().then(v => { if (alive) setNativeGranted(v.granted); }, () => { if (alive) setNativeGranted(null); }); };
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    document.addEventListener("agentnet-native-visibility", refresh);
+    return () => { alive = false; window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); document.removeEventListener("agentnet-native-visibility", refresh); };
+  }, [android]);
+  return [android ? nativeGranted : undefined, setNativeGranted] as const;
+}
+
+export function NotificationSummary({ n }: { n: T.NotifyView | undefined }) {
+  const [granted] = useNativeNotificationPermission();
+  if (n?.enabled && granted !== undefined) return <>{granted === null ? "Checking…" : granted ? "On" : "Blocked by Android"}</>;
+  return <>{notifySummary(n)}</>;
+}
+
 export function NotificationsSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingElement> }) {
   const store = useApp();
   const o = useStore(store, (s) => s.overview);
@@ -80,7 +104,9 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
   const store = useApp();
   const [busy, setBusy] = useState(false);
   const iphone = !n.native && /iPhone|iPad/.test(navigator.userAgent) && !matchMedia("(display-mode: standalone)").matches;
-  const blocked = !n.native && permission() === "denied";
+  const android = store.host.android;
+  const [nativeGranted, setNativeGranted] = useNativeNotificationPermission();
+  const blocked = android ? nativeGranted === false : !n.native && permission() === "denied";
 
   // Turning on asks the browser first, from this click: its own question
   // needs one. A computer's own alerts ask nothing.
@@ -88,7 +114,9 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
     setBusy(true);
     if (on && store.host.android) {
       try {
-        if (!(await store.host.android.requestNotifications()).granted) {
+        const { granted } = await store.host.android.requestNotifications();
+        setNativeGranted(granted);
+        if (!granted) {
           store.toast("Allow notifications in Android settings to receive alerts.", "error");
           setBusy(false); return;
         }
@@ -112,9 +140,9 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
             <p className="font-semibold">{n.native && !store.host.android ? "Alerts on this computer" : "Notifications on this device"}</p>
             <Hint>{store.host.android ? "Android shows alerts while AgentNet is connected." : n.native ? "Shown while AgentNet runs here, even with this page closed." : "Your browser shows them, even with this page closed."}</Hint>
           </div>
-          <Toggle label="Notifications" checked={n.enabled} disabled={busy || (blocked && !n.enabled)} onChange={turn} />
+          <Toggle label="Notifications" checked={n.enabled && !blocked} disabled={busy || (!!android && nativeGranted === null) || (!android && blocked && !n.enabled)} onChange={turn} />
         </div>
-        {blocked && <Hint className="mt-3">Notifications are blocked in this browser’s settings. Everything else works without them.</Hint>}
+        {blocked && <Hint className="mt-3">Notifications are blocked in {android ? "Android settings (app or Chat activity channel)" : "this browser’s settings"}. Everything else works without them.</Hint>}
         {n.pending && <Hint className="mt-3">Your server is told about this change when this page reconnects.</Hint>}
       </Card>
       <Hint className="px-1">Chats notify you unless muted. Use Mute in the chat’s menu to keep it quiet.</Hint>

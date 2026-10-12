@@ -169,6 +169,16 @@ func (a *Agent) ContinuationFor(id, key string, exec *ExecView) (*ContinuationAc
 	if !errors.Is(e, sql.ErrNoRows) {
 		return nil, e
 	}
+	return a.remoteRequestFor(id, key, exec, stateNeedHuman)
+}
+
+// remoteRequestFor projects an exact own-host request; the host rechecks all
+// authority and the attempt when applying an explicit decision.
+func (a *Agent) remoteRequestFor(id, key string, exec *ExecView, state string) (*ContinuationAction, error) {
+	if exec == nil || exec.State != state || exec.Host == a.Address || exec.Attempt < 1 {
+		return nil, nil
+	}
+	var e error
 	if key == "" {
 		var stored sql.NullString
 		e := a.store.db.QueryRow(`SELECT coalesce(verified_by,(SELECT author_fp FROM device_history_rows h WHERE h.storage='in' AND h.id=inbox.id)) FROM inbox WHERE id=? OR lid=? LIMIT 1`, id, id).Scan(&stored)
@@ -186,7 +196,7 @@ func (a *Agent) ContinuationFor(id, key string, exec *ExecView) (*ContinuationAc
 			return nil, e
 		}
 	}
-	if exec == nil || exec.State != "needs_human" || exec.Host == a.Address || exec.Attempt < 1 || !protocol.ValidFingerprint(key) {
+	if exec == nil || exec.State != state || exec.Host == a.Address || exec.Attempt < 1 || !protocol.ValidFingerprint(key) {
 		return nil, nil
 	}
 	// This is the existing current own-human roster check, not names or labels.

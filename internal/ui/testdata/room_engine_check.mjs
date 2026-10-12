@@ -154,3 +154,33 @@ assert(disclosure.includes('participates with the scope of its invitation'));
 assert(!disclosure.includes('every new message and file'),'acceptance alone cannot infer the invitation’s scope');
 assert(!disclosure.includes(outsideAccept.author.address),'outside event has no raw host address');
 console.log('PASS P6 fixes engine: all-PID consent, reader epochs, share visibility, legacy/warning/disclosure parity, ordinary captured sends and outside admin gate');
+
+// A stored terminal participation is inert history after its signing phone is
+// retired. Real event signatures are verified against the retained exact pin;
+// the live resolver and original membership map must still reject that key.
+{
+  const oldKeys=await wire.newKeys(), oldPub=await wire.publicEntry(oldKeys,'alice/old-phone'), oldFP=await wire.fingerprint(oldPub);
+  const admission={conv,realm:id('7'),person:alice.person,roster:h64('a'),seq:0,prev:'',history:null,by:fp('a'),sig:new Uint8Array(64)};
+  const epoch=await wire.groupAdmissionHash(admission), m=members(true);
+  m.set(alice.person,{...alice,state:'pinned',steps:[{hash:h64('a'),devices:[oldPub.address+'|'+oldFP]}]});
+  m.group={state:{seq:3,members:[{person:alice.person,admin:true,admission},{person:bob.person,admin:false,admission:{...admission,person:bob.person}}]}};
+  m.epochs.set(fp('a'),epoch);m.roomEvents=new Set();
+  const original=await wire.signEvent(oldKeys,{...invite({group:{seq:3,hash:h64('e'),host_role:'member',host_admission:h64('2'),task_admissions:null}}),author:{...author(true),address:oldPub.address,fingerprint:oldFP,group_admission:epoch}});
+  const end=await wire.signEvent(oldKeys,{conv,pid:original.pid,type:'dismiss',prev:await wire.eventHash(original),ts:sec,author:original.author});
+  const events=[await rec(original),await rec(end)], base=e.resolveAgent(original.pid,events,m);
+  assert.equal(base.state,'pending');
+  const commit=await wire.signGroupCommit(oldKeys,{bootstrap:oldFP,v:1,conv,realm:id('7'),seq:3,prev:h64('d'),hash:h64('e'),admins:[alice.person],writer:oldPub.address,actor:alice.person,actor_roster:h64('a'),ciphertext:new Uint8Array([1])});
+  const records=[];records[3]=wire.groupCommitJSON(commit);
+  await e.store.write([{s:'kv',k:'group/'+conv,v:{records}},{s:'pins',k:oldPub.address,v:{address:oldPub.address,fingerprint:oldFP,json:wire.marshalPublic(oldPub)}}]);
+  for(const engine of [e,new Engine({store:e.store,base:e.base,now:()=>now,fetch:async()=>{throw Error('no network');}})]) {
+    const closed=await engine.closedParticipation({id:conv},original.pid,events,m,base);
+    assert.equal(closed.state,'dismissed');assert.equal(closed.dismissal,await wire.eventHash(end));assert.equal(closed.held,0);
+    assert.deepEqual(closed.taskKeys,[]);assert.deepEqual(closed.grant,[]);
+    assert.equal(engine.resolveAgent(original.pid,events,m).state,'pending','historical view must not mutate live membership');
+    const live=await engine.closedParticipation({id:conv},original.pid,[events[0]],m,engine.resolveAgent(original.pid,[events[0]],m));
+    assert.equal(live.state,'pending','no resurrection without exact terminal record');
+    const bad={...end,sig:new Uint8Array(end.sig)};bad.sig[0]^=1;
+    assert.equal((await engine.closedParticipation({id:conv},original.pid,[events[0],await rec(bad)],m,base)).state,'pending','forged terminal signature rejected');
+  }
+  console.log('PASS retired inviter: verified terminal history remains closed across fresh Engine; live authority and grants stay absent, forged end rejected');
+}

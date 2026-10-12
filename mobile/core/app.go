@@ -305,6 +305,7 @@ func (a *appSetup) SetupJoin(j ui.SetupJoin) (ui.SetupResult, error) {
 // Implementations must return promptly and marshal OS work onto their own lane.
 type Notifier interface {
 	Notify(workspace, fragment string)
+	Dismiss(workspace, fragment string)
 }
 
 func (a *App) SetNotifier(n Notifier) { a.mu.Lock(); a.notifier = n; a.mu.Unlock() }

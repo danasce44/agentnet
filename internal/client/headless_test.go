@@ -589,8 +589,8 @@ func TestReviewClickOpensMessengerWhenServed(t *testing.T) {
 // person.
 func TestQuickStatusesOrdered(t *testing.T) {
 	w := newWorld(t, "")
-	runAgent(t, w.alice)
-	runAgent(t, w.bob)
+	stopAlice := runAgent(t, w.alice)
+	stopBob := runAgent(t, w.bob)
 	for i := range 6 {
 		task, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: "quick change " + string(rune('a'+i)), Kind: envelope.KindTask})
 		if err != nil {
@@ -625,4 +625,8 @@ func TestQuickStatusesOrdered(t *testing.T) {
 		}
 		rows.Close()
 	}
+	stopAlice()
+	stopBob()
+	assertLocksDrained(t, &w.alice.statusLocks)
+	assertLocksDrained(t, &w.bob.statusLocks)
 }

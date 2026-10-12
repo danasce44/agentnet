@@ -728,6 +728,7 @@ func (a *Agent) verifyAndStore(ctx context.Context, env envelope.Envelope) error
 		if err := a.store.addReceivedInbox(in, sender.Fingerprint(), local); err != nil {
 			return err
 		}
+		a.wakeAlerts()
 		if err := a.processReceiverCatalog(in, sender.Fingerprint()); err != nil {
 			return err
 		}

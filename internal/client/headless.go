@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
@@ -247,7 +246,9 @@ func statusOf(state string) (public, detail string, ok bool) {
 		return "failed", "the agent's run failed here", true
 	case stateInterrupt:
 		return "interrupted", "the daemon stopped while it ran", true
-	case stateCancelled, stateCancelReq:
+	case stateCancelReq:
+		return "running", "Stopping; waiting for the process to exit", true
+	case stateCancelled:
 		return "cancelled", "stopped here", true
 	case stateNotRun:
 		return "not_run", "not run here", true
@@ -364,14 +365,16 @@ func (a *Agent) tellStatus(ctx context.Context, id string) bool {
 	// One status of a request at a time, each with the state as it is
 	// when its turn comes: two quick changes then carry increasing
 	// counters, and the last one told is the latest state.
-	mu, _ := a.statusLocks.LoadOrStore(id, &sync.Mutex{})
-	mu.(*sync.Mutex).Lock()
-	defer mu.(*sync.Mutex).Unlock()
+	unlock, err := a.statusLocks.acquire(ctx, id)
+	if err != nil {
+		return false // still due: cancellation never clears a pending status
+	}
+	defer unlock()
 	var due, attempt int64
 	var sender, key, kind, state string
 	var conv, lid sql.NullString
 	var local, replica, selected, ownTarget bool
-	err := a.store.db.QueryRow(`SELECT status_due, sender, coalesce(verified_by, ''), kind, state, conv, lid, local, replica, attempts,
+	err = a.store.db.QueryRow(`SELECT status_due, sender, coalesce(verified_by, ''), kind, state, conv, lid, local, replica, attempts,
 		EXISTS (SELECT 1 FROM reply_receiver_inputs WHERE inbox_id = inbox.id),
 		coalesce(json_extract(target,'$.address')=? AND json_extract(target,'$.fingerprint')=?,0) FROM inbox WHERE id = ?`, a.Address, a.Self().Fingerprint(), id).
 		Scan(&due, &sender, &key, &kind, &state, &conv, &lid, &local, &replica, &attempt, &selected, &ownTarget)
@@ -539,7 +542,7 @@ func (a *Agent) Decide(ctx context.Context, host, id, key, action, expect string
 	cap := protocol.CapHeadless
 	if action == "continue" {
 		cap = protocol.CapContinuation
-	} else if action == "resolve" && report == "" {
+	} else if (action == "resolve" || action == "cancel") && report == "" {
 		cap = protocol.CapOwnSyncV3
 	}
 	if ok, why := a.capSupport(ctx, host, hostKey, feats, cap); !ok {
@@ -560,7 +563,7 @@ func (a *Agent) Decide(ctx context.Context, host, id, key, action, expect string
 	if err != nil {
 		return ControlSent{}, err
 	}
-	if action == "continue" || action == "resolve" && report == "" {
+	if action == "continue" || (action == "resolve" || action == "cancel") && report == "" {
 		if err := a.store.addContinuationOutbox(env, in, hostKey.Fingerprint(), cap); err != nil {
 			return ControlSent{}, err
 		}
@@ -598,7 +601,7 @@ func (a *Agent) admitDecision(ctx context.Context, env envelope.Envelope, in env
 		a.answerDecision(ctx, env.From, in, d, state, refused)
 	}
 	senderFP := sender.Fingerprint()
-	ownerDecision := d.Action == "continue" || d.Action == "resolve" && d.Report == ""
+	ownerDecision := d.Action == "continue" || (d.Action == "resolve" || d.Action == "cancel") && d.Report == ""
 	// The decision's row, written with whatever it decides (or the refusal
 	// it met), so a replay meets the recorded outcome.
 	record := func(tx *sql.Tx, outcome string) (fresh bool, err error) {
@@ -703,7 +706,11 @@ func (a *Agent) admitDecision(ctx context.Context, env envelope.Envelope, in env
 		if state != d.Expect || attempts != d.Attempt {
 			return fmt.Sprintf("the request is no longer as you saw it (now %s, attempt %d)", state, attempts), nil
 		}
-		if ownerDecision && (d.Expect != stateNeedHuman || d.Attempt < 1 || kind != envelope.KindQuestion && kind != envelope.KindTask) {
+		expectedOwnState := stateNeedHuman
+		if d.Action == "cancel" {
+			expectedOwnState = stateRunning
+		}
+		if ownerDecision && (d.Expect != expectedOwnState || d.Attempt < 1 || kind != envelope.KindQuestion && kind != envelope.KindTask) {
 			return "choose the exact waiting request and attempt", nil
 		}
 		if d.Action == "continue" {

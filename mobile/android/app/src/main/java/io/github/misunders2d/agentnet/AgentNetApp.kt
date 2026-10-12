@@ -54,6 +54,7 @@ class NativeHost(private val application: Application) {
                 }
                 app.setNotifier(object : Notifier {
                     override fun notify(workspace: String, fragment: String) { main.post { notifyActivity(workspace, fragment) } }
+                    override fun dismiss(workspace: String, fragment: String) { main.post { dismissActivity(workspace, fragment) } }
                 })
                 core = app
                 publish(HostState(app.url(), app.origin()))
@@ -83,18 +84,28 @@ class NativeHost(private val application: Application) {
         }
         catch (_: Exception) { /* The page's existing connection state reports transport failures. */ }
     }
+    fun notificationsPermitted(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 && application.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
+        val manager = application.getSystemService(NotificationManager::class.java)
+        return manager.areNotificationsEnabled() && manager.getNotificationChannel("activity")?.importance != NotificationManager.IMPORTANCE_NONE
+    }
+    private fun dismissActivity(workspace: String, fragment: String) {
+        WebPolicy.notificationDestination(workspace, fragment)?.let { route ->
+            application.getSystemService(NotificationManager::class.java).cancel(route, 0)
+        }
+    }
     private fun notifyActivity(workspace: String, fragment: String) {
-        if (Build.VERSION.SDK_INT >= 33 && application.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        if (!notificationsPermitted()) return
         val route = WebPolicy.notificationDestination(workspace, fragment) ?: return
         val manager = application.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("activity", "Chat activity", NotificationManager.IMPORTANCE_DEFAULT))
         val click = Intent(application, MainActivity::class.java).putExtra("destination", fragment).putExtra("workspace", workspace)
             .setData(android.net.Uri.Builder().scheme("agentnet-notification").authority("open").appendQueryParameter("workspace", workspace).appendQueryParameter("destination", fragment).build())
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pending = PendingIntent.getActivity(application, route.hashCode(), click, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pending = PendingIntent.getActivity(application, 0, click, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val note = Notification.Builder(application, "activity").setSmallIcon(R.drawable.ic_agentnet)
             .setContentTitle("AgentNet").setContentText("New activity needs your attention.")
             .setVisibility(Notification.VISIBILITY_PRIVATE).setContentIntent(pending).setAutoCancel(true).build()
-        manager.notify(route.hashCode(), note)
+        manager.notify(route, 0, note)
     }
 }

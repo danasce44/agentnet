@@ -23,7 +23,7 @@ class UpdaterInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         try {
-            check(mode == "install" || mode == "snapshot" || mode == "network" || mode == "cleanup" || mode == "interrupt") { "Unknown fixture operation." }
+            check(mode in setOf("install", "snapshot", "network", "cleanup", "interrupt", "notifications", "notifications-denied")) { "Unknown fixture operation." }
             if (mode == "cleanup") {
                 val preferences=targetContext.applicationContext.getSharedPreferences("native-update",0)
                 val id=preferences.getInt("session",-1)
@@ -37,6 +37,10 @@ class UpdaterInstrumentation : Instrumentation() {
             }
             val activity = startActivitySync(Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
             waitForIdleSync()
+            if (mode.startsWith("notifications")) {
+                checkNotifications(activity, mode == "notifications-denied", result)
+                finish(Activity.RESULT_OK, result); return
+            }
             if (mode == "snapshot" || mode == "network") {
                 if (mode == "network") {
                     snapshot(activity) // Wait for the real embedded host before changing routes.
@@ -106,6 +110,61 @@ class UpdaterInstrumentation : Instrumentation() {
         } catch (e: Exception) {
             result.putString("stream", "Updater fixture failed: ${e.message}\n")
             finish(Activity.RESULT_CANCELED, result)
+        }
+    }
+
+    /** OS-boundary test on the owned emulator; never grants or changes permissions. */
+    private fun checkNotifications(activity: MainActivity, denied: Boolean, result: Bundle) {
+        val host = (targetContext.applicationContext as AgentNetApp).host
+        val manager = targetContext.getSystemService(android.app.NotificationManager::class.java)
+        val post = NativeHost::class.java.getDeclaredMethod("notifyActivity", String::class.java, String::class.java).apply { isAccessible = true }
+        val dismiss = NativeHost::class.java.getDeclaredMethod("dismissActivity", String::class.java, String::class.java).apply { isAccessible = true }
+        val workspace = "default"
+        val routes = listOf("conv=" + "a".repeat(64), "review", "msg=" + "b".repeat(32) + "&dir=in")
+        val tags = routes.map { WebPolicy.notificationDestination(workspace, it)!! }.toSet()
+        fun active() = manager.activeNotifications.filter { it.tag in tags }
+        fun emit(fragment: String) = runOnMainSync { post.invoke(host, workspace, fragment) }
+        fun waitFor(label: String, predicate: () -> Boolean) {
+            val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (!predicate() && System.nanoTime() < end) Thread.sleep(50)
+            check(predicate()) { label }
+        }
+        try {
+            check(host.notificationsPermitted() != denied) { "Expected Android permission ${if (denied) "denied" else "granted"}; this test never changes it." }
+            routes.forEach { route -> runOnMainSync { dismiss.invoke(host, workspace, route) } }
+            if (denied) {
+                routes.forEach(::emit)
+                waitFor("Denied notifications appeared") { active().isEmpty() }
+                result.putString("stream", "PASS Android denied permission: no notification posted; permissions unchanged.\n")
+                return
+            }
+            // Foreground, then background, then screen-off arrival use the same
+            // actual NotificationManager surface. Core event producers are tested in Go.
+            emit(routes[0]); emit(routes[0])
+            waitFor("Foreground notification/dedup failed") { active().size == 1 }
+            runOnMainSync { activity.moveTaskToBack(true) }
+            emit(routes[1])
+            waitFor("Background OK notification missing") { active().size == 2 }
+            uiAutomation.executeShellCommand("input keyevent 223").close()
+            emit(routes[2])
+            waitFor("Screen-off message/reminder route missing") { active().size == 3 }
+            check(active().all { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString() == "AgentNet" })
+            check(active().all { it.notification.visibility == android.app.Notification.VISIBILITY_PRIVATE })
+            uiAutomation.executeShellCommand("input keyevent 224").close()
+            val target = active().single { it.tag == WebPolicy.notificationDestination(workspace, routes[2]) }
+            target.notification.contentIntent.send()
+            waitFor("Notification tap lost exact destination") {
+                var matches = false
+                runOnMainSync { matches = activity.intent.getStringExtra("workspace") == workspace && activity.intent.getStringExtra("destination") == routes[2] }
+                matches
+            }
+            runOnMainSync { dismiss.invoke(host, workspace, routes[0]) }
+            waitFor("Reading exact chat did not dismiss its notification") { active().none { it.tag == WebPolicy.notificationDestination(workspace, routes[0]) } }
+            check(active().any { it.tag == WebPolicy.notificationDestination(workspace, routes[1]) }) { "Reading another chat cleared an OK" }
+            result.putString("stream", "PASS Android OS notification boundary: foreground/dedup, background OK, screen-off message/reminder route, private content, exact tap and read dismissal. No physical-phone or relay delivery claim.\n")
+        } finally {
+            uiAutomation.executeShellCommand("input keyevent 224").close()
+            routes.forEach { route -> runOnMainSync { dismiss.invoke(host, workspace, route) } }
         }
     }
     private fun javascript(page: WebView, script: String): String {

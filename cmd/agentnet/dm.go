@@ -35,7 +35,7 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 			}
 			return errors.New("no person on this installation (agentnet person create NAME, or link this device from your other one)")
 		}
-		trusted, err := a.SelfConsentTrust()
+		trusted, err := a.OwnHumanDevices()
 		if err != nil {
 			return err
 		}
@@ -50,7 +50,7 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 				this = "  (revoked by a Hub admin: agentnet person remove " + d.Address + " takes it off your person)"
 			}
 			if !d.This && slices.Contains(trusted, client.TrustedDevice{Address: d.Address, Fingerprint: d.Fingerprint}) {
-				this = "  (trusted: its invites of your agents here need no accept)"
+				this = "  (your verified device: own-agent invitations, questions and tasks need no extra OK)"
 			}
 			fmt.Fprintf(stdout, "  %s  %s%s\n", d.Address, d.Fingerprint, this)
 		}
@@ -118,7 +118,7 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 		}
 		fmt.Fprintf(stdout, "Device link code (one use, until %s; show it only to yourself):\n%s\n", o.Expires.Format("15:04"), o.Code)
 		fmt.Fprintln(stdout, "Join your new device with it; then approve it here: agentnet person links, agentnet person approve ID")
-		fmt.Fprintln(stdout, "(approve --native ID, only for a computer running agentnet and never a browser, also lets its invites of your own agents here need no accept)")
+		fmt.Fprintln(stdout, "After approval, your verified human device can invite, question and task your own agents without another AgentNet OK.")
 		return nil
 	case args[0] == "links" && len(args) == 1:
 		links, err := a.PendingLinks()
@@ -139,13 +139,16 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 		if err := a.ApproveNativeLink(ctx, args[2]); err != nil {
 			return err
 		}
-		fmt.Fprintln(stdout, "approved as a computer running agentnet: its invites of your own agents here need no accept (never approve a browser with --native; agentnet person untrust ADDRESS stops it)")
+		fmt.Fprintln(stdout, "approved: own-agent invitations, questions and tasks need no extra OK (--native is a legacy alias for ordinary approval)")
 		return nil
 	case (args[0] == "approve" || args[0] == "refuse") && len(args) == 2 && !strings.HasPrefix(args[1], "-"):
 		if err := a.DecideLink(ctx, args[1], args[0] == "approve"); err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "%sd\n", args[0])
+		if args[0] == "approve" {
+			fmt.Fprintln(stdout, "Your verified human device can invite, question and task your own agents without another AgentNet OK.")
+		}
 		return nil
 	case (args[0] == "admin" || args[0] == "unadmin") && len(args) == 2 && !strings.HasPrefix(args[1], "-"):
 		grant := args[0] == "admin"
@@ -159,11 +162,7 @@ func runPerson(ctx context.Context, a *client.Agent, args []string, stdout io.Wr
 		}
 		return nil
 	case args[0] == "untrust" && len(args) == 2:
-		if err := a.UntrustOwnDevice(args[1]); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "untrusted %s: its invites of your own agents here, and its tasks to your agent here, wait for your OK again\n", args[1])
-		return nil
+		return errors.New("your current verified human devices are you; remove the device from Your devices to end its access")
 	case args[0] == "remove" && len(args) == 2:
 		if err := a.RemoveDevice(ctx, args[1]); err != nil {
 			return err

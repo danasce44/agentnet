@@ -365,20 +365,14 @@ func TestReturnToReviewNotifiedAgain(t *testing.T) {
 	quiet(t, w.bob, n, 2)
 }
 
-// The codex preset, with a stand-in codex on PATH: a question and an
-// accepted task both run in a directory that is not a git repository, the
-// task with --skip-git-repo-check, and answers come from the -o file.
+// The native Codex transport works in a plain directory for both questions
+// and accepted tasks, without changing the owner's permission configuration.
 func TestCodexPresetInPlainDirectory(t *testing.T) {
-	installStub(t, "answer") // skips on Windows
-	bin := t.TempDir()
-	log := filepath.Join(bin, "log")
-	script := "#!/bin/sh\necho \"$*\" >> " + log + "\ncat >/dev/null\necho '{\"type\":\"turn.started\"}'\necho '{\"type\":\"turn.completed\"}'\n" +
-		"while [ $# -gt 0 ]; do [ \"$1\" = -o ] && printf 'codex answer' > \"$2\"; shift; done\n"
-	os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o700)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	st := installStub(t, "answer")
+	bin := installCodexSessionStub(t, st.log)
+	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	w := newWorld(t, "")
-	plain := t.TempDir()
-	setResponder(t, w.bob, "codex", plain, time.Minute)
+	setResponder(t, w.bob, "codex", t.TempDir(), time.Minute)
 	w.bob.Approve(w.alice.Address)
 	runWith(t, w, w.bob, RunOptions{})
 	runWith(t, w, w.alice, RunOptions{})
@@ -391,26 +385,13 @@ func TestCodexPresetInPlainDirectory(t *testing.T) {
 	for _, id := range []string{q.ID, task.ID} {
 		var r Message
 		eventually(t, "reply to "+id, func() bool { var ok bool; r, ok = findReply(w.alice, id); return ok })
-		if r.Body != "codex answer" || r.Status != envelope.StatusDone {
+		if r.Body != "codex native answer" || r.Status != envelope.StatusDone {
 			t.Fatalf("reply %+v", r)
 		}
 	}
-	data, _ := os.ReadFile(log)
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("codex runs:\n%s", data)
-	}
-	for _, l := range lines {
-		if !strings.HasPrefix(l, "exec ") || strings.Contains(l, "--ephemeral") || !strings.Contains(l, "--json") || !strings.Contains(l, "--skip-git-repo-check") || !strings.Contains(l, " -o "+w.bobHome) {
-			t.Fatalf("codex argv %q", l)
-		}
-	}
-	for _, line := range lines {
-		for _, flag := range []string{"--sandbox", "approval_policy", "--ignore-user-config", "--disable"} {
-			if strings.Contains(line, flag) {
-				t.Fatalf("native permissions changed: %s", data)
-			}
-		}
+	runs := st.runs()
+	if len(runs) != 2 || runs[0] != "run app-server" || runs[1] != "run app-server" {
+		t.Fatalf("codex runs: %v", runs)
 	}
 }
 

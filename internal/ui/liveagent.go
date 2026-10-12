@@ -474,7 +474,7 @@ func agentView(info client.ParticipationInfo, p dmPeople, msgs []client.ConvMess
 	}
 	switch info.State {
 	case client.PartPending:
-		v.StateText = "Its invitation is not here yet: nothing counts until it is."
+		v.StateText = "Participation is waiting for verified invitation context."
 	case client.PartInvited:
 		if v.HostHere {
 			v.StateText = p.who(info.Inviter.Person) + " invited your agent. Nothing runs unless you accept."

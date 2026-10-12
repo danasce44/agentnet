@@ -372,7 +372,7 @@ func TestResponderSwitchOffAndSingleDaemon(t *testing.T) {
 
 // The real harness binaries accept every flag the presets use.
 func TestHarnessFlagsExist(t *testing.T) {
-	helpArgs := map[string][]string{"claude": {"--help"}, "codex": {"exec", "--help"}, "pi": {"--help"}}
+	helpArgs := map[string][]string{"claude": {"--help"}, "codex": {"app-server", "--help"}, "pi": {"--help"}}
 	for name, args := range helpArgs {
 		h := Harnesses[name]
 		path, err := exec.LookPath(h.bin)

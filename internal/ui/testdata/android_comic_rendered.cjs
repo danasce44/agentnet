@@ -10,11 +10,12 @@ const fs = require('node:fs');
       const errors=[], appHTTP=[];page.on('pageerror',e=>errors.push(String(e)));
       page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/app/'))appHTTP.push(request.url());});
       await page.addInitScript(() => {
-        window.androidAppCalls=[];
+        window.androidAppCalls=[];window.androidNotificationGranted=true;window.androidNotificationCalls=[];
         window.androidUpdateResult='';
         let updateCalls=0;
         window.AgentNetAndroid = { postMessage(raw) {
           const request=JSON.parse(raw);
+          if(request.type.startsWith('notifications:')) {window.androidNotificationCalls.push(request.type);queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,granted:window.androidNotificationGranted})}));return;}
           if (request.type.startsWith('app:')) {
             window.androidAppCalls.push(request.type);
             let result;
@@ -29,6 +30,11 @@ const fs = require('node:fs');
           }
           queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,enabled:false,granted:true,drafts:[]})}));
         }};
+      });
+      await context.route('**/api/overview*', async route => {
+        const response=await route.fetch(), value=await response.json();
+        value.notify={...(value.notify||{}),enabled:true,available:true,native:true};
+        await route.fulfill({response,json:value});
       });
       await page.goto(process.argv[2]);
       await page.locator('section[aria-label="Chats"]').waitFor();
@@ -120,8 +126,17 @@ const fs = require('node:fs');
       assert.deepEqual(appHTTP,[],'Android updates must not call the absent desktop HTTP routes');
       await fits('About native update failure and retry'); await snap('about-update');
       await back();
+      await page.evaluate(()=>{window.androidNotificationGranted=false;window.agentnetNativeVisibility(true);});
       await page.getByRole('button',{name:/Notifications/}).first().click();
       await page.getByText('Stay connected in the background',{exact:true}).waitFor();
+      await page.getByText(/Notifications are blocked in Android settings/).waitFor();
+      const notificationToggle=page.getByRole('switch',{name:'Notifications',exact:true});
+      assert.equal(await notificationToggle.getAttribute('aria-checked'),'false','stored On never overrules OS denial');
+      await notificationToggle.click();
+      await page.getByText('Allow notifications in Android settings to receive alerts.',{exact:true}).waitFor();
+      assert.equal(await notificationToggle.getAttribute('aria-checked'),'false');
+      assert.equal(await page.evaluate(()=>window.androidNotificationCalls.filter(x=>x==='notifications:request').length),1,'only explicit click requests permission');
+      await context.unroute('**/api/overview*');
       await snap('notifications'); await fits('notifications');
       await back();
       await page.getByRole('button',{name:/Appearance/}).first().click();

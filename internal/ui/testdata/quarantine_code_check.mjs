@@ -118,7 +118,7 @@ assert.ok(legacy.reason.includes('failed a check') && legacy.reason.includes('co
 for (const [reason, code] of Object.entries(reasons)) {
   const item = quarantineItem({ id: 'held-' + reason, from: 'alice/laptop', reason, at });
   const decided = ['proof_pending', 'identity_conflict', 'conflicting_duplicate'].includes(reason) ? ['sender_verified'] : [];
-  assert.deepEqual(Object.keys(item).sort(), ['at', 'can_archive', 'code', 'detail', 'id', 'peer', 'reason', 'recovery', ...decided, ...(reason === 'proof_pending' ? ['action'] : [])].sort(), 'item fields for ' + JSON.stringify(reason));
+  assert.deepEqual(Object.keys(item).sort(), ['at', 'can_archive', 'code', 'detail', 'id', 'notice_reason', 'peer', 'reason', 'recovery', ...decided, ...(reason === 'proof_pending' ? ['action'] : [])].sort(), 'item fields for ' + JSON.stringify(reason));
   assert.equal(item.code, code, 'item code for ' + JSON.stringify(reason));
   assert.equal(item.peer, 'alice/laptop');
   assert.equal(item.at, new Date(at).toISOString());
@@ -155,8 +155,8 @@ for(const [i,reason] of ['key_changed','identity_conflict','conflicting_duplicat
  const heldID=(i+1).toString(16).padStart(32,'0');
  await engine.hold({id:heldID,from:'alice/laptop'},'SYNTHETIC_'+reason,reason);
  const beforeReject=await store.get('held',heldID);
- await assert.rejects(()=>engine.apiRequest('/api/act',{do:'archive_held',id:heldID}));
- assert.deepEqual(await store.get('held',heldID),beforeReject,'archive refusal changed '+reason);
+ await engine.apiRequest('/api/act',{do:'archive_held',id:heldID});
+ assert.deepEqual(await store.get('held',heldID),{...beforeReject,notice_archived:true},'archive changes only notice for '+reason);
  assert.equal((await store.get('receipts',heldID)).state,'quarantined');
  checks++;
 }
@@ -171,7 +171,7 @@ assert.equal((await store.get('held',proofID)).notice_archived,true,'same proof 
 for(const reason of ['key_changed','identity_conflict','conflicting_duplicate','future_safety_reason']) {
  await engine.hold({id:proofID,from:'alice/laptop'},'SYNTHETIC_PROOF',reason);
  assert.equal((await store.get('held',proofID)).notice_archived,false,'new safety reason resurfaces');
- await assert.rejects(()=>engine.apiRequest('/api/act',{do:'archive_held',id:proofID}));
+ await engine.apiRequest('/api/act',{do:'archive_held',id:proofID});
  await engine.hold({id:proofID,from:'alice/laptop'},'SYNTHETIC_PROOF','proof_pending');
  await engine.archiveHeldNotice(proofID);
 }
@@ -195,7 +195,7 @@ assert.equal((await store.get('held',proofID)).notice_archived,false,'refusal re
  assert.match((await e.archiveHeldNotices(held)).note,/Archived 0 notices/,'retry is idempotent');
  for(let i=0;i<ids.length;i++) {const r=await s.get('held',ids[i]);assert.equal(!!r.notice_archived,i<2);assert.equal(r.envelope,'retained ciphertext');}
  assert.equal((await s.all('receipts')).length,0);assert.equal((await s.all('inbox')).length,0);assert.equal((await s.all('outbox')).length,0);
- await assert.rejects(e.archiveHeldNotices([{id:ids[0],reason:'key_changed',detail_code:''}]));
+ assert.match((await e.archiveHeldNotices([{id:ids[0],reason:'key_changed',detail_code:''}])).note,/Archived 0 notices/,'changed reason snapshot is not hidden');
  await assert.rejects(e.archiveHeldNotices(Array(257).fill(held[0])));
  e.stop();checks+=12;
 }

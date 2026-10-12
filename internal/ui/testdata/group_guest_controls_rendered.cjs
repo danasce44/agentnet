@@ -300,7 +300,7 @@ if(variant==='held-flood'&&p==='/api/act'){
 }
 if(variant==='heldback'&&p==='/api/act'){
  if(body.do==='archive_held_batch'){
-  if(body.held.length!==2||body.held.some(r=>!['legacy-invalid','invalid-ended-invite'].includes(r.id)))throw Error('Unexpected archive snapshot');
+  if(![1,2].includes(body.held.length)||body.held.some(r=>!['legacy-invalid','invalid-ended-invite'].includes(r.id)))throw Error('Unexpected archive snapshot');
   fixture.overview.quarantine=fixture.overview.quarantine.filter(q=>!body.held.some(r=>r.id===q.id&&r.reason===q.code&&r.detail_code===(q.detail_code||'')));
   return {note:'Archived 2 notices on this device. Nothing was accepted or run.'};
  }
@@ -1056,9 +1056,7 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
    if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
    const nav=page.getByRole('navigation',{name:'Main',exact:true});
    await nav.getByRole('button',{name:/^OKs/}).click();
-   const unknown=page.getByRole('region',{name:'Held back',exact:true}).locator('li').filter({hasText:'couldn’t be checked'});
-   assert.equal(await unknown.count(),1,'unknown classification stays unverified in OKs');
-   assert.equal(await unknown.getByRole('button',{name:'Archive notice'}).count(),0);
+   assert.equal(await page.getByRole('region',{name:'Held back',exact:true}).count(),0,'unknown classification offers no supported decision and stays in diagnostics');
    await nav.getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();
    await page.getByRole('button',{name:/^About/}).click();
    await page.getByRole('button',{name:'Technical details',exact:true}).click();
@@ -1070,7 +1068,7 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
   const held=skin==='comic'?page.getByRole('region',{name:'Sync diagnostics',exact:true}):page.locator('#quarantine');
   await held.waitFor({state:'visible'});
   if(skin==='comic')await held.locator('summary').filter({hasText:'Retained sync records'}).click();
-  assert.equal(await held.locator('li').count(),skin==='comic'?3:4);
+  assert.equal(await held.locator('li').count(),4);
   const specific=held.locator('li').filter({hasText:'This invitation no longer matches the current group.'});
   await specific.getByText('If you still need to join, use the newer invitation or ask the inviter for a fresh one. You can archive this old notice.',{exact:true}).waitFor();
   assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),skin==='comic'?0:2);
@@ -1091,10 +1089,10 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
    assert(!await page.evaluate(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body.do!=='archive_held_batch')),'archive changes no admission or task state');
   }else{
   await specific.getByRole('button',{name:'Archive notice',exact:true}).click();
-  await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='archive_held'));
+  await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='archive_held_batch'));
   await page.waitForFunction(()=>fixture.overview.quarantine.length===3);
   await page.waitForFunction(()=>!document.querySelector('#skin').shadowRoot.textContent.includes('This invitation no longer matches the current group.'));
-  assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act').map(r=>r.body)),[{do:'archive_held',id:'invalid-ended-invite'}]);
+  assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act').map(r=>r.body)),[{do:'archive_held_batch',held:[{id:'invalid-ended-invite',reason:'invalid',detail_code:'group_invitation_outdated'}]}]);
   assert.deepEqual(await page.evaluate(()=>fixture.overview.quarantine.map(q=>q.id).sort()),['legacy-invalid','legacy-unknown','proof-waiting']);
   assert.equal(await page.evaluate(()=>fixture.retainedHeld.length),4,'local notice hide retains blocked envelope metadata');
   assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),1,'other invalid notice remains');

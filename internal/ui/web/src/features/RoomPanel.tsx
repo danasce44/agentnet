@@ -199,6 +199,8 @@ function RoomBody({ t, onDismissed }: { t: T.DMThread; onDismissed: (s: Snack) =
   const invitable = canBringIn(t);
   const rights = groupRights(t, o);
   const change = useGroupChange(t);
+  const [diagnostics, setDiagnostics] = useState(false);
+  const unresolved = [...(t.agents || []), ...(t.guests || [])].filter(p => p.state === "pending");
   const memberOf = (person?: string) => (person ? (t.members || []).find((x) => x.person === person) : undefined);
   return (
     <div className="relative flex flex-col pb-2">
@@ -243,11 +245,6 @@ function RoomBody({ t, onDismissed }: { t: T.DMThread; onDismissed: (s: Snack) =
         <div className="flex flex-col gap-2">{r.invited.map((g) => <PendingCard key={g.key} g={g} t={t} busy={busy === g.key} onAct={act} />)}</div>
       </>}
 
-      {r.incomplete.length > 0 && <details className="mt-4 rounded-xl bg-sunken px-3.5 py-2 text-[13px] text-text-2">
-        <summary className="cursor-pointer font-semibold">Incomplete context</summary>
-        <ul className="mt-2 space-y-2">{r.incomplete.map(g => <li key={g.pid} className="whitespace-pre-wrap [overflow-wrap:anywhere]">{g.stateText || "Participation records are incomplete; no invitation has been verified."}</li>)}</ul>
-      </details>}
-
       {r.waiting.length > 0 && <>
         <Label n={r.waiting.length}>Waiting on an OK</Label>
         <div className="flex flex-col gap-2">{r.waiting.map((w) => <WaitingRow key={w.id} w={w} onShow={() => { void store.open({ kind: "dm", id: t.id, focus: w.id }); if (!wide) store.setPanel(false); }} />)}</div>
@@ -262,6 +259,11 @@ function RoomBody({ t, onDismissed }: { t: T.DMThread; onDismissed: (s: Snack) =
         <IconLock size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
         Guests see only what was shared with them. Once dismissed, the chat carries on privately.
       </p>
+      {unresolved.length > 0 && <Button size="sm" variant="ghost" className="mt-2 self-start" onClick={() => setDiagnostics(true)}>Troubleshooting</Button>}
+      <Sheet open={diagnostics} onOpenChange={setDiagnostics} title="Chat diagnostics">
+        <p className="text-sm text-muted">Stored participation records awaiting verification. These are diagnostic details, not permission requests.</p>
+        <ul className="mt-3 space-y-3">{unresolved.map(p => <li key={p.pid} className="text-sm [overflow-wrap:anywhere]">{p.pid} · {p.state_text}</li>)}</ul>
+      </Sheet>
     </div>
   );
 }

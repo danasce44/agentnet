@@ -24,3 +24,12 @@ CREATE VIEW device_thread_links AS
  UNION ALL SELECT i.id,h.peer,coalesce(i.reply_to,''),i.received_at,'in',h.direction,h.author_fp,h.recipient FROM device_history_rows h JOIN inbox i ON i.id=h.id WHERE h.storage='in' AND i.conv IS NULL
  UNION ALL SELECT o.id,h.peer,coalesce(o.reply_to,''),o.created_at,'out',h.direction,h.author_fp,h.recipient FROM device_history_rows h JOIN outbox o ON o.id=h.id WHERE h.storage='out' AND o.conv IS NULL;
 `
+
+// Repair only local display metadata created by earlier history production or
+// duplicate admission. Signed originals, receipts and execution state are intact.
+const deviceHistoryOriginalPeerSchema = `
+UPDATE device_history_rows SET peer=(SELECT sender FROM inbox WHERE id=device_history_rows.id),direction='in'
+ WHERE storage='in' AND EXISTS(SELECT 1 FROM inbox WHERE id=device_history_rows.id AND replica=0);
+UPDATE device_history_rows SET peer=(SELECT recipient FROM outbox WHERE id=device_history_rows.id),direction='out'
+ WHERE storage='out' AND EXISTS(SELECT 1 FROM outbox WHERE id=device_history_rows.id);
+`

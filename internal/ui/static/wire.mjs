@@ -40,6 +40,7 @@ export const CapRootSync = "crs1", SubRootSync = "root-sync"; // explicit quiet 
 export const MaxHumanAudience = 16, MaxHumanProof = 32;
 export const SubGroupProof = "group-proof", SubGroupContext = "group-context"; // bounded quiet carriers; no capability advertisement
 export const SubGroupInvite = "group-invite", SubGroupConsent = "group-consent", SubGroupWithdrawal = "group-withdrawal";
+export const CapGroupInvitationManage = "gic2"; // same-person current-human cancellation; implies gic1
 export const CapGroupInvitationControl = "gic1"; // nonce proposals + signed cancellation; not rm1-implied
 export const CapGroup = "grp1"; // protocol constant only; absent from advertised defaults until Engine parity
 export const SubDriveSpace = "drive-space"; // envelope.SubDriveSpace: a conversation's shared Drive space record (version 2, quiet)
@@ -1842,7 +1843,7 @@ export async function verifyCaps(c, signKey) {
 // capsReads is protocol.CapsRecord.Reads: a record lists name, or rm1 when
 // rm1 implies it.
 export const RoomImplies = [CapExternalParticipation, CapAgentIdentity, CapHumanParticipation, CapAgentReaction, CapProgress, CapGroup, CapReplyReceiver, CapConvClear];
-export const capsReads = (c, name) => (c.caps || []).includes(name) || (c.caps || []).includes(CapRoom) && RoomImplies.includes(name);
+export const capsReads = (c, name) => (c.caps || []).includes(name) || name===CapGroupInvitationControl&&(c.caps||[]).includes(CapGroupInvitationManage) || (c.caps || []).includes(CapRoom) && RoomImplies.includes(name);
 
 // profileSupports is protocol.Profile.Supports for a profile as the relay
 // sends it ({person, sessions, live, caps}): there are sessions, and each

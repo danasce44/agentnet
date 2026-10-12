@@ -34,11 +34,11 @@ func TestGroupJournalCASAuthorityAndDurability(t *testing.T) {
 		return v
 	}
 	root := commit(a, ar, 0, "", admins)
-	if _, err := h.store.putGroupCommit(a.id.Public(a.addr), root, realm); err != nil {
+	if _, err := h.store.putGroupCommit(a.id.Public(a.addr), root, realm, ""); err != nil {
 		t.Fatal(err)
 	}
 	poison := commit(c, firstRoster(c, "Vitalii"), 1, root.Hash, admins)
-	if _, err := h.store.putGroupCommit(c.id.Public(c.addr), poison, realm); !errors.Is(err, errGroupForbidden) {
+	if _, err := h.store.putGroupCommit(c.id.Public(c.addr), poison, realm, ""); !errors.Is(err, errGroupForbidden) {
 		t.Fatalf("nonadmin append %v", err)
 	}
 	one, two := commit(a, ar, 1, root.Hash, admins), commit(b, br, 1, root.Hash, admins)
@@ -54,7 +54,7 @@ func TestGroupJournalCASAuthorityAndDurability(t *testing.T) {
 			c protocol.GroupCommit
 		}) {
 			defer wg.Done()
-			_, err := h.store.putGroupCommit(v.m.id.Public(v.m.addr), v.c, realm)
+			_, err := h.store.putGroupCommit(v.m.id.Public(v.m.addr), v.c, realm, "")
 			errs <- err
 		}(v)
 	}
@@ -96,23 +96,23 @@ func TestGroupJournalCASAuthorityAndDurability(t *testing.T) {
 	}
 	latest := page.Records[1]
 	rebased := commit(a, ar, 2, latest.Hash, []string{br.Person})
-	if _, err = h.store.putGroupCommit(a.id.Public(a.addr), rebased, realm); err != nil {
+	if _, err = h.store.putGroupCommit(a.id.Public(a.addr), rebased, realm, ""); err != nil {
 		t.Fatal(err)
 	}
 	removed := commit(a, ar, 3, rebased.Hash, []string{br.Person})
-	if _, err = h.store.putGroupCommit(a.id.Public(a.addr), removed, realm); !errors.Is(err, errGroupForbidden) {
+	if _, err = h.store.putGroupCommit(a.id.Public(a.addr), removed, realm, ""); !errors.Is(err, errGroupForbidden) {
 		t.Fatalf("removed admin %v", err)
 	}
 	forged := commit(b, br, 3, rebased.Hash, []string{br.Person})
 	forged.Ciphertext[0] ^= 1
-	if _, err = h.store.putGroupCommit(b.id.Public(b.addr), forged, realm); err == nil {
+	if _, err = h.store.putGroupCommit(b.id.Public(b.addr), forged, realm, ""); err == nil {
 		t.Fatal("forged ciphertext accepted")
 	}
 	if _, err = h.store.db.Exec("UPDATE agents SET revoked_at=1 WHERE address=?", b.addr); err != nil {
 		t.Fatal(err)
 	}
 	live := commit(b, br, 3, rebased.Hash, []string{br.Person})
-	if _, err = h.store.putGroupCommit(b.id.Public(b.addr), live, realm); !errors.Is(err, errGroupForbidden) {
+	if _, err = h.store.putGroupCommit(b.id.Public(b.addr), live, realm, ""); !errors.Is(err, errGroupForbidden) {
 		t.Fatalf("revoked admin device %v", err)
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,7 +37,7 @@ type sessionStyle int
 const (
 	noSessions     sessionStyle = iota // every job is a fresh, unsaved run
 	claudeSessions                     // --session-id UUID creates, --resume UUID continues
-	codexSessions                      // exec --json reports thread_id; exec resume ID continues
+	codexSessions                      // app-server thread/start and exact owned thread/resume
 	agySessions                        // stream-json reports conversation_id; --conversation ID continues
 )
 
@@ -55,7 +54,6 @@ type sessionRef struct {
 // sessionPlan is how one job runs.
 type sessionPlan struct {
 	args   []string    // harness arguments before the answer-file flag
-	tail   []string    // arguments after it (codex resume reads the prompt from "-")
 	ref    *sessionRef // nil: a one-shot run, nothing recorded
 	resume bool
 	note   string // why a new session was started instead of resuming, if it was
@@ -102,12 +100,12 @@ func (a *Agent) planSession(j job, r *Responder, h harness) (sessionPlan, error)
 		note = "the earlier session of this conversation was not reused: a later job has run in it since, or its latest job is unknown"
 	default:
 		want.ID = prev.ID
-		return sessionPlan{args: resumeArgs(h, mode, base, prev.ID), tail: sessionTail(h), ref: &want, resume: true}, nil
+		return sessionPlan{args: resumeArgs(h, mode, base, prev.ID), ref: &want, resume: true}, nil
 	}
 	if h.sessions == claudeSessions {
 		want.ID = newUUID()
 	}
-	return sessionPlan{args: createArgs(h, base, want.ID), tail: sessionTail(h), ref: &want, note: note}, nil
+	return sessionPlan{args: createArgs(h, base, want.ID), ref: &want, note: note}, nil
 }
 
 // createArgs starts a new saved session.
@@ -117,7 +115,7 @@ func createArgs(h harness, base []string, id string) []string {
 	case claudeSessions:
 		return append(args, "--session-id", id)
 	case codexSessions:
-		return append(args, "--json") // stdout: JSON events (codexstream.go)
+		return slices.Clone(base) // session identity is in app-server messages
 	}
 	return args
 }
@@ -128,37 +126,11 @@ func resumeArgs(h harness, mode string, base []string, id string) []string {
 	case claudeSessions:
 		return append(withoutFlags(base, sessionOneShot), "--resume", id)
 	case codexSessions:
-		// `codex exec resume` takes the global -c/--enable/--disable options
-		// but not --sandbox or --color: the sandbox is given as its
-		// documented config key instead.
-		args := []string{"exec", "resume", id, "--json"}
-		rest := withoutFlags(base, "--ephemeral")
-		for i := 0; i < len(rest); i++ {
-			switch rest[i] {
-			case "exec":
-			case "--color":
-				i++
-			case "--sandbox":
-				i++
-				args = append(args, "-c", fmt.Sprintf("sandbox_mode=%q", rest[i]))
-			default:
-				args = append(args, rest[i])
-			}
-		}
-		return args
+		return slices.Clone(base) // thread/resume carries the exact owned ID
 	case agySessions:
 		return append(slices.Clone(base), "--conversation", id)
 	}
 	return slices.Clone(base)
-}
-
-// sessionTail ends the arguments: codex reads the prompt from stdin when
-// given "-", as the verified create and resume runs did.
-func sessionTail(h harness) []string {
-	if h.sessions == codexSessions {
-		return []string{"-"}
-	}
-	return nil
 }
 
 // withoutFlags returns args without the given value-less flags.
@@ -178,9 +150,11 @@ func withoutFlags(args []string, drop ...string) []string {
 func presetID(h harness, mode string, base []string) string {
 	sum := sha256.New()
 	fmt.Fprintf(sum, "%s\x00%s\x00%s", h.bin, mode, strings.Join(base, "\x00"))
-	if path, err := exec.LookPath(h.bin); err == nil {
-		if info, err := os.Stat(path); err == nil {
-			fmt.Fprintf(sum, "\x00%s\x00%d\x00%d", path, info.Size(), info.ModTime().UnixNano())
+	if launch, err := resolveNativeLaunch(h.bin); err == nil {
+		for _, path := range []string{launch.Path, launch.Resolved} {
+			if info, err := os.Stat(path); err == nil {
+				fmt.Fprintf(sum, "\x00%s\x00%d\x00%d", path, info.Size(), info.ModTime().UnixNano())
+			}
 		}
 	}
 	return hex.EncodeToString(sum.Sum(nil))[:16]

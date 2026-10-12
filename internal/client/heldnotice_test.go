@@ -151,7 +151,7 @@ func TestHeldNoticeEnvelopeProducerPreservesFailureStage(t *testing.T) {
 	}
 }
 
-func TestHeldNoticeArchiveRejectsUnknownAndActionableReasons(t *testing.T) {
+func TestHeldNoticeArchiveRetainsActionableReasons(t *testing.T) {
 	s, err := openStore(filepath.Join(t.TempDir(), "client.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -167,21 +167,21 @@ func TestHeldNoticeArchiveRejectsUnknownAndActionableReasons(t *testing.T) {
 		if err = s.quarantine(id, "bob/laptop", reason, []byte(raw)); err != nil {
 			t.Fatal(err)
 		}
-		if err = a.ArchiveHeldNotice(id); err != ErrNoMessage {
-			t.Fatalf("archived actionable %s: %v", reason, err)
+		if err = a.ArchiveHeldNotice(id); err != nil {
+			t.Fatalf("archive notice %s: %v", reason, err)
 		}
 		var archived, acked int
 		var gotRaw, gotReason string
 		if err = s.db.QueryRow(`SELECT notice_archived,acked,envelope,reason FROM quarantine WHERE id=?`, id).Scan(&archived, &acked, &gotRaw, &gotReason); err != nil {
 			t.Fatal(err)
 		}
-		if archived != 0 || acked != 0 || gotRaw != raw || gotReason != reason {
+		if archived != 1 || acked != 0 || gotRaw != raw || gotReason != reason {
 			t.Fatalf("refusal changed %s", reason)
 		}
 	}
 	q, err := a.Quarantine()
-	if err != nil || len(q) != 3 {
-		t.Fatalf("actionable notices hidden: %+v %v", q, err)
+	if err != nil || len(q) != 0 {
+		t.Fatalf("dismissed notices remain visible: %+v %v", q, err)
 	}
 }
 
@@ -268,8 +268,8 @@ func TestHeldNoticeArchivePendingResurfacesSafetyReason(t *testing.T) {
 		if err := s.db.QueryRow(`SELECT notice_archived FROM quarantine WHERE id=?`, env.ID).Scan(&archived); err != nil || archived != 0 {
 			t.Fatalf("safety hold hidden: %s %d %v", reason, archived, err)
 		}
-		if err := a.ArchiveHeldNotice(env.ID); err != ErrNoMessage {
-			t.Fatalf("safety hold archive allowed: %s %v", reason, err)
+		if err := a.ArchiveHeldNotice(env.ID); err != nil {
+			t.Fatalf("safety notice archive: %s %v", reason, err)
 		}
 	}
 }

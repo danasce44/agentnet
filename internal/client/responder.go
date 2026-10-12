@@ -57,9 +57,8 @@ var Harnesses = map[string]harness{
 		stdin: true, sessions: claudeSessions, addDir: "--add-dir", addIn: true, limits: nativeHarnessPermissions + " Received files and task output folders are added with --add-dir; your setup decides access.",
 	},
 	"codex": {
-		bin: "codex", question: []string{"exec", "--ephemeral", "--skip-git-repo-check", "--color", "never"},
-		task:  []string{"exec", "--ephemeral", "--skip-git-repo-check", "--color", "never"},
-		stdin: true, out: "-o", sessions: codexSessions, addDir: "--add-dir", limits: nativeHarnessPermissions + " A device task gets one extra writable folder, its outbox, through --add-dir. AgentNet never passes --sandbox or a bypass; a resumed session, where codex cannot add a folder, gets no outbox.",
+		bin: "codex", question: []string{"app-server"}, task: []string{"app-server"},
+		stdin: true, sessions: codexSessions, limits: nativeHarnessPermissions + " Codex app-server inherits your native approval and sandbox policy. Received files and task output paths are supplied in context; AgentNet grants no additional writable folders.",
 	},
 	"omp": {
 		bin: "omp", question: []string{"-p", "--no-session"}, task: []string{"-p", "--no-session"}, stdin: true, limits: nativeHarnessPermissions,
@@ -77,10 +76,12 @@ func HarnessLimits(name string) string { return Harnesses[name].limits }
 // means only that its executable is on PATH: nothing is run to find out,
 // so it says nothing about login or whether it works.
 type HarnessInfo struct {
-	Name   string `json:"name"`
-	Path   string `json:"path,omitempty"`          // empty when not found on PATH
-	Tested string `json:"tested_live,omitempty"`   // empty: not tested live
-	Limits string `json:"question_mode,omitempty"` // what questions may use
+	Name         string `json:"name"`
+	Installation string `json:"installation,omitempty"`
+	Executable   string `json:"executable,omitempty"`
+	Path         string `json:"path,omitempty"`          // empty when not found on PATH
+	Tested       string `json:"tested_live,omitempty"`   // empty: not tested live
+	Limits       string `json:"question_mode,omitempty"` // what questions may use
 }
 
 // ListHarnesses reports which supported responders are on PATH.
@@ -88,8 +89,8 @@ func ListHarnesses() []HarnessInfo {
 	var out []HarnessInfo
 	for _, name := range HarnessNames() {
 		h := Harnesses[name]
-		path, _ := exec.LookPath(h.bin)
-		out = append(out, HarnessInfo{Name: name, Path: path, Tested: h.tested, Limits: h.limits})
+		launch, _ := resolveNativeLaunch(h.bin)
+		out = append(out, HarnessInfo{Name: name, Path: launch.Path, Installation: launch.Installation, Executable: launch.Resolved, Tested: h.tested, Limits: h.limits})
 	}
 	return out
 }
@@ -275,7 +276,15 @@ func checkOMPResponderSetup(r *Responder) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, Harnesses["omp"].bin, "--help")
+	return checkOMPLaunch(ctx, r)
+}
+
+func checkOMPLaunch(ctx context.Context, r *Responder) error {
+	launch, err := resolveNativeLaunch(Harnesses["omp"].bin)
+	if err != nil {
+		return fmt.Errorf("OMP launcher unavailable on this process's PATH: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, launch.Path, "--help")
 	cmd.Dir = r.Dir
 	var out, stderr limitedBuffer
 	out.max, stderr.max = maxOutput, 4<<10
@@ -283,14 +292,17 @@ func checkOMPResponderSetup(r *Responder) error {
 	ownProcessGroup(cmd)
 	defer stopGroup(cmd)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("OMP setup unavailable: chosen launcher --help failed; native background invocation support is required (%w)", err)
+		if ctx.Err() != nil {
+			return fmt.Errorf("OMP capability check did not finish: %s (%s) --help timed out or was cancelled. Its capabilities are unknown; check this launcher in the selected folder (%w)", launch.Path, launch.Installation, ctx.Err())
+		}
+		return fmt.Errorf("OMP launcher failed: %s (%s) --help did not complete. Its capabilities are unknown (%w)", launch.Path, launch.Installation, err)
 	}
 	if out.truncated {
 		return errors.New("OMP setup unavailable: native capability output exceeded the inspection limit")
 	}
 	for _, flag := range []string{"--print", "--no-session", "--extension"} {
 		if !strings.Contains(out.String(), flag) {
-			return fmt.Errorf("OMP setup unsupported: chosen launcher does not advertise %s; native OMP 18.4.8/18.7.0 contract is required", flag)
+			return fmt.Errorf("OMP setup unsupported: chosen launcher does not advertise %s; the installed OMP must support this native invocation", flag)
 		}
 	}
 	return nil

@@ -146,8 +146,15 @@ func (a *Agent) SetAlertPrefs(p AlertPrefs) error {
 // the pending alert whose newest message is among them is cancelled.
 // Nothing else cancels an alert.
 func (a *Agent) AlertPresented(conv string, ids []string) error {
-	if !protocol.ValidHash(conv) || len(ids) == 0 || len(ids) > protocol.MaxNotifySeenIDs {
+	if (!protocol.ValidHash(conv) && !protocol.ValidID(conv)) || len(ids) == 0 || len(ids) > protocol.MaxNotifySeenIDs {
 		return fmt.Errorf("alerts: a conversation and 1-%d message ids", protocol.MaxNotifySeenIDs)
+	}
+	if protocol.ValidID(conv) { // direct-device thread: coalesced by exact peer
+		var peer string
+		if err := a.store.db.QueryRow(`SELECT peer FROM device_thread_links WHERE id=? LIMIT 1`, conv).Scan(&peer); err != nil {
+			return err
+		}
+		conv = peer
 	}
 	args := []any{conv}
 	for _, id := range ids {
@@ -189,6 +196,28 @@ func queueAlert(tx *sql.Tx, in envelope.Inner, verifiedBy string, now time.Time)
 	return err
 }
 
+// queueDeviceAlert covers fresh v1 messages and direct-agent terminal replies.
+// History, control/progress records and requests (which have their own review
+// notification) stay quiet. The existing due queue coalesces by exact peer;
+// last_id supplies the precise message destination without a new queue/schema.
+func queueDeviceAlert(tx *sql.Tx, in envelope.Inner, verifiedBy string) error {
+	if in.V != envelope.Version || in.Conv != "" || in.Sub != "" || in.Replica || isReviewNotice(in) || isResponderProgress(in) {
+		return nil
+	}
+	if in.Kind != envelope.KindMessage && in.Kind != envelope.KindAnswer && in.Kind != envelope.KindResult {
+		return nil
+	}
+	var allowed bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM config WHERE k='alerts' AND v='on') AND (
+ EXISTS(SELECT 1 FROM person_devices d JOIN persons p ON p.person=d.person WHERE d.address=? AND d.fingerprint=? AND p.state IN ('self','pinned'))
+ OR EXISTS(SELECT 1 FROM outbox WHERE id=? AND recipient=? AND recipient_fp=?))`, in.From, verifiedBy, in.ReplyTo, in.From, verifiedBy).Scan(&allowed); err != nil || !allowed {
+		return err
+	}
+	_, err := tx.Exec(`INSERT INTO alerts(conv,sender,last_id,count,due_ms) VALUES(?,?,?,1,?)
+ ON CONFLICT(conv) DO UPDATE SET last_id=excluded.last_id,count=count+1`, in.From, in.From, in.ID, time.Now().Add(alertGrace).UnixMilli())
+	return err
+}
+
 // wakeAlerts makes the alert loop look again (nothing waits outside Run).
 func (a *Agent) wakeAlerts() {
 	select {
@@ -226,7 +255,7 @@ func (a *Agent) alertLoop(ctx context.Context, wake <-chan struct{}) {
 	}
 }
 
-// showDueAlerts shows one notification for the alerts due at now, still
+// showDueAlerts shows a notification per destination due at now, still
 // eligible, and returns the next deadline (zero: none). The alerts are
 // removed before the notification is asked for.
 func (a *Agent) showDueAlerts(now time.Time) (time.Time, error) {
@@ -235,26 +264,27 @@ func (a *Agent) showDueAlerts(now time.Time) (time.Time, error) {
 		return time.Time{}, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`SELECT l.conv,
+	rows, err := tx.Query(`SELECT l.conv,l.last_id,
 		EXISTS (SELECT 1 FROM config WHERE k = 'alerts' AND v = 'on')
 		AND l.conv NOT IN (`+mutedChatConvs+`)
-		AND (EXISTS (SELECT 1 FROM group_context WHERE conv=l.conv) OR EXISTS (SELECT 1 FROM person_devices d JOIN persons p ON p.person = d.person WHERE d.address = l.sender AND p.state = ?))
+		AND (EXISTS (SELECT 1 FROM group_context WHERE conv=l.conv) OR EXISTS (SELECT 1 FROM person_devices d JOIN persons p ON p.person = d.person WHERE d.address = l.sender AND p.state = ?) OR (l.conv=l.sender AND EXISTS(SELECT 1 FROM inbox i JOIN peers p ON p.address=i.sender WHERE i.id=l.last_id AND p.pending IS NULL)))
 		FROM alerts l WHERE l.due_ms <= ?`, personPinned, now.UnixMilli())
 	if err != nil {
 		return time.Time{}, err
 	}
-	var show []string
+	type alertTarget struct{ conv, id string }
+	var show []alertTarget
 	due := 0
 	for rows.Next() {
-		var conv string
+		var target alertTarget
 		var ok bool
-		if err := rows.Scan(&conv, &ok); err != nil {
+		if err := rows.Scan(&target.conv, &target.id, &ok); err != nil {
 			rows.Close()
 			return time.Time{}, err
 		}
 		due++
 		if ok {
-			show = append(show, conv)
+			show = append(show, target)
 		}
 	}
 	rows.Close()
@@ -270,19 +300,18 @@ func (a *Agent) showDueAlerts(now time.Time) (time.Time, error) {
 	if err := a.store.done(tx.Commit()); err != nil {
 		return time.Time{}, err
 	}
-	if len(show) > 0 {
-		conv := ""
-		if len(show) == 1 {
-			conv = show[0]
+	for _, target := range show {
+		fragment := "conv=" + target.conv
+		if !protocol.ValidHash(target.conv) {
+			fragment = "msg=" + target.id + "&dir=in"
 		}
 		if a.nativeNotify != nil {
-			fragment := ""
-			if protocol.ValidHash(conv) {
-				fragment = "conv=" + conv
-			}
 			a.nativeNotify(fragment)
 		} else {
-			argv, onClick := a.convClick(conv)
+			argv, onClick := a.convClick(target.conv)
+			if !protocol.ValidHash(target.conv) {
+				argv, onClick = a.reviewClick(target.id)
+			}
 			if err := a.notify("AgentNet", "New activity", argv, onClick); err != nil {
 				a.Logf("alert not shown (%v)", err)
 			}

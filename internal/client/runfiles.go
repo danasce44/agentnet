@@ -70,14 +70,10 @@ type fileKey struct {
 
 func (k fileKey) same(o fileKey) bool { return k.dev == o.dev && k.ino == o.ino }
 
-// outboxFor reports whether job j, run by harness h (resuming its session
-// or not), gets an outbox: a device thread's task, where the file checks
-// can be made, run by a harness that can be given the folder. codex exec
-// resume takes no --add-dir, so a resumed codex session gets no outbox and
-// its prompt names none.
+// outboxFor provides a task output path. The harness's native permissions
+// decide whether it can write there; a path in context grants no OS access.
 func outboxFor(j job, h harness, resume bool) bool {
-	return outboxSupported && j.Kind == envelope.KindTask && j.Conv == "" && j.PID == "" && j.Receiver == nil &&
-		!(resume && h.sessions == codexSessions)
+	return outboxSupported && j.Kind == envelope.KindTask && j.Conv == "" && j.PID == "" && j.Receiver == nil
 }
 
 // newRun prepares job j's run folder, with an outbox if outbox; it is made

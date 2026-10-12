@@ -4,6 +4,17 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Active work — v0.8.23, October 12, 2026
+
+Codex implements the owner's next-release assignment on
+`fix/v0.8.23-supervised`, in this sole checkout. OMP supervises and must accept
+the exact candidate before publication. See [V0_8_23.md](plans/V0_8_23.md) for
+scope, diagnosis and actual evidence. No additional helpers or worktrees.
+The owner has superseded old D3 limits: every current verified own human device
+may invite/question/task any own agent without a second AgentNet approval;
+native harness permissions and current key/roster/revocation checks remain.
+Implementation and verification are in progress, not a released claim.
+
 ## Current release — v0.8.22, October 11, 2026 (UTC)
 
 [Download v0.8.22](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22).
@@ -39,7 +50,9 @@ history cases remain open. No live request was replayed or permission changed.
 
 Release work is merged into main. The completed v0.8.21/v0.8.22 fix branches
 were removed after ancestry checks; immutable tags remain. The root is the sole
-worktree, and unmerged `next/audience-prechecks` is preserved.
+worktree. Its remaining audience-precheck patch was subsequently preserved at
+`archive/audience-prechecks-a13f3edd`; the obsolete branch was removed. The active
+v0.8.23 branch above is the only new implementation branch.
 
 ## Previous release — v0.8.20, October 11, 2026 (UTC)
 
@@ -2034,7 +2047,7 @@ Every change to AgentNet must uphold these fundamental invariants:
 
 8. **Process & State Isolation**:
    - Responders run headless in their own process group (`Setpgid: true` on Unix).
-   - Output buffers: standard command stdout is capped at 64 KiB and stderr at 4 KiB. For streaming Codex CLI executions (`codex exec --json`), individual JSON lines are bounded to 4 MiB (`codexLineMax = 4 << 20` in `internal/client/codexstream.go`), with bounded fallback to `-o`.
+   - Output buffers: standard command stdout is capped at 64 KiB and stderr at 4 KiB. Codex worker app-server JSON lines are bounded to 4 MiB (`codexLineMax = 4 << 20` in `internal/client/codexroom.go`). Only a completed matching native turn supplies the answer; there is no answer-file fallback. Native approval/sandbox/config settings are inherited, and an uncollectable native approval/input produces needs-human.
    - Process cancellation: On Windows, cancellation terminates the worker process (`cmd.Process.Kill()`), but child process cleanup is unverified. Pi argument length limits on Windows remain an open uncertainty (`MEL-414`).
    - Database operations use SQLite in WAL mode with append-only schema migrations.
    - All state, keys, databases, and downloads are restricted to owner-only permissions (POSIX `0700` home, `0600` files; Windows protected owner-only ACLs via `internal/secfile`).

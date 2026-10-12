@@ -45,8 +45,8 @@ func TestArchiveHeldNoticeSnapshot(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT (SELECT count(*) FROM quarantine),(SELECT count(*) FROM inbox)+(SELECT count(*) FROM outbox),(SELECT sum(acked) FROM quarantine)`).Scan(&retained, &jobs, &receipts); err != nil || retained != 4 || jobs != 0 || receipts != 0 {
 		t.Fatal("archive changed admission or receipts", retained, jobs, receipts, err)
 	}
-	if _, err := a.ArchiveHeldNotices([]HeldNoticeRef{{ID: changed, Reason: reasonKeyChanged}}); err == nil {
-		t.Fatal("security hold archived")
+	if n, err := a.ArchiveHeldNotices([]HeldNoticeRef{{ID: changed, Reason: reasonKeyChanged}}); err != nil || n != 0 {
+		t.Fatal("mismatched snapshot hid changed notice", n, err)
 	}
 	if _, err := a.ArchiveHeldNotices(make([]HeldNoticeRef, MaxHeldNoticeBatch+1)); err == nil {
 		t.Fatal("unbounded archive")

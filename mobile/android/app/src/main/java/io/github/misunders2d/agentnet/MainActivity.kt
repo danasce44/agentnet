@@ -210,9 +210,14 @@ class MainActivity : Activity() {
             if (consumed != "true") finish()
         }
     }
-    private fun permitted(): Boolean = Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    private fun permitted(): Boolean = host.notificationsPermitted()
     private fun askPermission(done: (Boolean) -> Unit) {
         if (permitted()) { done(true); return }
+        if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            // The app or activity channel was disabled in Android settings.
+            // Runtime permission cannot re-enable it, and we never change it.
+            done(false); return
+        }
         if (permissionReply != null) { done(false); return }
         permissionReply = done; requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATIONS)
     }

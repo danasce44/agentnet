@@ -285,7 +285,6 @@ export class Store {
     const dm = this.state.overview?.dms?.find(d => d.id === o.id);
     const main = dm && this.personMain(dm);
     if (!main) return this.open(o);
-    this.setDraft(main, { ...this.draft(main), topic: undefined, newTopic: false, replyTo: undefined });
     return this.open({ kind: "dm", id: main });
   }
 
@@ -489,12 +488,16 @@ export class Store {
     } finally { this.namesLoading = false; }
   }
 
-  // ---- drafts, kept per workspace and conversation (text only survives a reload)
+  // ---- drafts, kept per workspace and conversation; File objects stay in memory
   private loadDrafts(): Record<string, Draft> {
     try {
       const raw = JSON.parse(localStorage.getItem(draftsKey(this.host.workspace.id)) || "{}");
       const out: Record<string, Draft> = {};
-      for (const [k, v] of Object.entries(raw as Record<string, Draft>)) if (v && typeof v.text === "string") out[k] = { text: v.text, replyTo: v.replyTo, agent: v.agent };
+      for (const [k, v] of Object.entries(raw as Record<string, Draft>)) if (v && typeof v.text === "string") out[k] = {
+        text: v.text, replyTo: typeof v.replyTo === "string" ? v.replyTo : undefined,
+        agent: typeof v.agent === "string" ? v.agent : undefined,
+        topic: typeof v.topic === "string" ? v.topic : undefined, newTopic: v.newTopic === true,
+      };
       return out;
     } catch { return {}; }
   }
@@ -502,7 +505,7 @@ export class Store {
   private saveDrafts(drafts: Record<string, Draft>) {
     try {
       const keep: Record<string, Draft> = {};
-      for (const [k, d] of Object.entries(drafts)) if (d.text || d.replyTo || d.agent) keep[k] = { text: d.text, replyTo: d.replyTo, agent: d.agent };
+      for (const [k, d] of Object.entries(drafts)) if (d.text || d.replyTo || d.agent || d.topic || d.newTopic) keep[k] = { text: d.text, replyTo: d.replyTo, agent: d.agent, topic: d.topic, newTopic: d.newTopic };
       localStorage.setItem(draftsKey(this.host.workspace.id), JSON.stringify(keep));
     } catch { /* a convenience only */ }
   }

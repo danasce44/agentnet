@@ -9,6 +9,10 @@ import (
 // It is not implied by grp1 or rm1.
 const CapGroupInvitationControl = "gic1"
 
+// CapGroupInvitationManage adds cancellation by another current human device of
+// the inviting person. It implies gic1; gic1 alone does not imply it.
+const CapGroupInvitationManage = "gic2"
+
 // GroupInvitation is a proposal, not membership. Original public authority
 // records arrive separately through bounded GroupJournalPage carriers. The
 // semantic ID is shared by all devices of the invited person; delivery keys

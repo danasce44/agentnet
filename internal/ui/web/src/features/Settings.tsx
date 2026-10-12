@@ -15,7 +15,7 @@ import { useStore } from "../store";
 import { PersonAvatar } from "../ui/Avatar";
 import { AppearanceSection, applyTheme, savedTheme, themeWords, useTheme, type Theme } from "./Settings.appearance";
 import { AssistantSection, harnessName, PermissionsSection } from "./Settings.assistant";
-import { NotificationsSection, notifySummary } from "./Settings.notify";
+import { NotificationsSection, NotificationSummary } from "./Settings.notify";
 import { GroupLabel, Tile } from "./Settings.parts";
 import { DeviceGlyph, DevicesSection, devicesOf, pendingLinks, ProfileSection } from "./Settings.profile";
 import { AboutSection, StorageSection, WorkspacesSection } from "./Settings.system";
@@ -185,7 +185,7 @@ function summary(id: RowId, o: T.Overview | null, workspace: string, theme: Them
       return n ? String(n) : null;
     }
     case "assistant": return o.me.responder ? harnessName(o.me.responder) : "You answer";
-    case "notifications": return notifySummary(o.notify);
+    case "notifications": return <NotificationSummary n={o.notify} />;
     case "appearance": return themeWords[theme];
     case "workspaces": return workspace;
     case "about": return o.release ? <span className="rounded-full bg-agent px-2 py-0.5 text-[12px] font-bold text-agent-ink">Update</span> : o.version;

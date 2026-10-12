@@ -1,5 +1,18 @@
 # AgentNet Revival — Architectural Decision Records & Linear Roadmap
 
+## 2026-10-12 — universal own-human consent (v0.8.23)
+
+Owner explicitly superseded the original D3 native-only trust set and the
+extra task-grant prerequisite: all current verified human devices of any
+person, including phones and browsers, can invite, question and task that
+person's own agents across hosts without another AgentNet OK. The signed
+roster, human role, exact current pin, revocation, pending-key and freeze
+checks remain. Agent-host keys cannot claim human authority. The normal
+harness tools, configuration and permissions remain unchanged. Pending
+never-run requests may recover after upgrade; terminal work and history do
+not rerun. See ROOM_V1 §5 and V0_8_23.md for implementation and evidence.
+
+
 ## October 11, 2026 — own-human questions and permanent offboarding
 
 The owner restated that their current verified human devices are them: direct
@@ -648,3 +661,31 @@ private-channel self-join. Listed/unlisted Project metadata is not a private
 channel ACL. This supports separating catalog metadata from authority; it
 does not establish selected-message guest access or AgentNet's encrypted
 participation/file semantics. No Buzz live deployment behavior was tested.
+
+
+## October 12, 2026 — exact linked-human cancellation (v0.8.23 candidate)
+
+The owner chose to keep unrelated invitations unaffected by cancellation. A
+shared group-head advance was therefore rejected. The existing relay journal
+transaction instead stores one immutable published/cancelled outcome per exact
+invitation, group root and inviting person. The actor must be a current signed
+human key of the same administrator person in that transaction.
+
+`POST /publish` signs an explicit invitation-binding wrapper around the original
+GroupCommit. No existing commit or encrypted payload is rebuilt or re-signed.
+Legacy `POST /chain` returns receipts for exact already-committed bytes only;
+it cannot append even during the old-client grace interval. This closes both
+the optional-header bypass and the journal-absence/in-flight-publication race.
+Uncommitted legacy local publications retain their bytes and recover an exact
+unique binding from their saved proposal; ambiguity stays blocked. Cancel
+never advances the group head. A passive own-device mirror grants no automatic
+publication/consent; only the explicit human action may create its terminal row.
+Cancellation carriers use gic2 (which reads gic1) so an older recipient keeps its
+exact queued copy until upgrade. Existing signed group journal format is intact.
+
+Owner Stop reuses the durable decision subtype and existing safe process-group
+termination, naming request ID/key and execution attempt. Current own human keys
+need no operator report. Wrong/removed/pending/frozen or agent-host keys cannot
+exercise owner authority. Queueing or host acceptance of Stop is not process
+termination; only its terminal state confirms that. Prior tool effects are not
+undone, and an old decision never cancels a subsequent attempt or another job.

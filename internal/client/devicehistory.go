@@ -18,6 +18,7 @@ import (
 type deviceHistoryRow struct {
 	storage, id, to, toKey, peer, dir string
 	item                              HistoryItem
+	replica                           bool
 }
 
 var errDeviceHistoryBlocked = errors.New("device history source unavailable")
@@ -71,7 +72,7 @@ func (a *Agent) deviceHistorySource(q dbq, storage, id string) (deviceHistoryRow
 	in := envelope.Inner{ID: id, LID: id}
 	var err error
 	if storage == "in" {
-		err = q.QueryRow(`SELECT sender,coalesce(verified_by,claimed_fp,''),ts,kind,body,coalesce(reply_to,''),coalesce(status,''),coalesce(sub,''),coalesce(origin,''),coalesce(target,''),coalesce(ref_id,''),coalesce(ref_fp,''),CASE WHEN kind IN ('question','task') THEN '' ELSE coalesce(agent_id,'') END,coalesce(received_ms,received_at*1000) FROM inbox WHERE id=? AND conv IS NULL AND local=0 AND (receiver_route IS NULL OR json_extract(receiver_route,'$.op')='request')`, id).Scan(&in.From, &key, &in.TS, &in.Kind, &in.Body, &in.ReplyTo, &in.Status, &in.Sub, &in.Origin, &target, &refID, &refFP, &in.AgentID, &at)
+		err = q.QueryRow(`SELECT sender,coalesce(verified_by,claimed_fp,''),ts,kind,body,coalesce(reply_to,''),coalesce(status,''),coalesce(sub,''),coalesce(origin,''),coalesce(target,''),coalesce(ref_id,''),coalesce(ref_fp,''),CASE WHEN kind IN ('question','task') THEN '' ELSE coalesce(agent_id,'') END,coalesce(received_ms,received_at*1000),replica FROM inbox WHERE id=? AND conv IS NULL AND local=0 AND (receiver_route IS NULL OR json_extract(receiver_route,'$.op')='request')`, id).Scan(&in.From, &key, &in.TS, &in.Kind, &in.Body, &in.ReplyTo, &in.Status, &in.Sub, &in.Origin, &target, &refID, &refFP, &in.AgentID, &at, &r.replica)
 		r.to, r.toKey = a.Address, a.Self().Fingerprint()
 	} else if storage == "out" {
 		// Catalog, delegation and ready records are private receiver setup.
@@ -221,6 +222,13 @@ func (a *Agent) deviceHistoryProjection(q dbq, r *deviceHistoryRow, person strin
 }
 
 func storeDeviceHistoryMetadata(q *sql.Tx, r deviceHistoryRow) error {
+	// A local original keeps its transport peer. History projects a different
+	// device's view only for imported replicas; it never redirects native replies.
+	if r.storage == "out" {
+		r.peer, r.dir = r.to, "out"
+	} else if !r.replica {
+		r.peer, r.dir = r.item.From, "in"
+	}
 	_, err := q.Exec(`INSERT INTO device_history_rows(storage,id,recipient,recipient_fp,peer,direction,author_fp,hash,reply_to,at) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(storage,id) DO UPDATE SET peer=excluded.peer,direction=excluded.direction`, r.storage, r.id, r.to, r.toKey, r.peer, r.dir, r.item.FromKey, deviceHistoryHash(r), r.item.ReplyTo, r.item.At/1000)
 	return err
 }
@@ -230,7 +238,7 @@ func (a *Agent) admitDeviceHistory(ctx context.Context, env envelope.Envelope, i
 	if err != nil {
 		return hold(reasonInvalid, err.Error())
 	}
-	r := deviceHistoryRow{storage: "in", to: w.Recipient, toKey: w.RecipientKey}
+	r := deviceHistoryRow{storage: "in", to: w.Recipient, toKey: w.RecipientKey, replica: true}
 	if err = decodeStrict(w.Item, &r.item); err != nil {
 		return hold(reasonInvalid, "device history: malformed original")
 	}

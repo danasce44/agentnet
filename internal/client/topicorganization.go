@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
-	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 // Organization is a full member's human action, never a guest/agent scope
@@ -49,20 +48,8 @@ func (a *Agent) prepareTopicOrganization(ctx context.Context, conv string, m *Co
 	if err := topicOrganizationAuthor(a.store.db, conv, a.Address, a.Self().Fingerprint()); err != nil {
 		return err
 	}
-	members, err := a.dmMembers(conv)
-	if err != nil {
-		return err
-	}
-	// Reject an incompatible audience before a local assignment is stored.
-	for _, person := range members.persons {
-		for _, dev := range person.roster.Devices {
-			if dev.Address != a.Address {
-				if err := a.requireParticipationCaps(ctx, dev, protocol.CapTopicOrganization); err != nil {
-					return err
-				}
-			}
-		}
-	}
+	// Capability belongs to each sealed copy, not to the author's operation.
+	// Older readers retain their copy until the normal delivery gate opens.
 	prior := m.claim
 	m.claim = func(tx *sql.Tx, id string) error {
 		if err := topicOrganizationAuthor(tx, conv, a.Address, a.Self().Fingerprint()); err != nil {

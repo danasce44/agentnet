@@ -49,7 +49,7 @@ func (a *Agent) groupLifecycleCopy(root protocol.ConvRoot, sub string, descripto
 		copy.required = protocol.CapGroupInvitationControl
 	}
 	if c, ok := value.(protocol.GroupConsent); ok && c.Decision == "cancelled" {
-		copy.required = protocol.CapGroupInvitationControl
+		copy.required = protocol.CapGroupInvitationManage
 	}
 	path, cleanup, err := a.StageUpload(sub+".json", bytes.NewReader(raw))
 	if err != nil {
@@ -186,7 +186,7 @@ func (a *Agent) mayDeliverGroupLifecycle(env envelope.Envelope) (bool, bool, err
 	if state != stateQueued {
 		return true, false, nil
 	}
-	if required == protocol.CapGroupInvitationControl {
+	if required == protocol.CapGroupInvitationControl || required == protocol.CapGroupInvitationManage {
 		key, e := a.sendKey(context.Background(), env.To)
 		if e == nil && key.Fingerprint() == fp {
 			e = a.requireParticipationCaps(context.Background(), key, required)
@@ -374,7 +374,7 @@ func (a *Agent) admitGroupLifecycle(ctx context.Context, env envelope.Envelope, 
 			if e != nil && !errors.Is(e, sql.ErrNoRows) {
 				return e
 			}
-			cancelled, e := groupInvitationCancelledIn(tx, proposal.ID(), root.ID(), person.roster.Person, env.From, sender.Fingerprint(), proposal.Seq, proposal.Prev)
+			cancelled, e := groupInvitationCancelledIn(tx, proposal.ID(), root.ID(), person.roster.Person, proposal.Seq, proposal.Prev)
 			if e != nil {
 				return e
 			}

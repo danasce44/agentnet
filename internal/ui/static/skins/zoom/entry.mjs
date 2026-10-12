@@ -3133,18 +3133,33 @@ function renderQuarantine(items) {
   const box = $("quarantine");
   box.hidden = !items.length;
   if (!items.length) return;
-  $("quarantine-summary").textContent = items.length === 1 ? "1 message held back" : items.length + " messages held back";
-  fill($("quarantine-list"), ...items.map((q) => {
-    const known = Object.hasOwn(heldWords, q.code || "");
-    return el("li", {},
+  $("quarantine-summary").textContent = items.length === 1 ? "1 retained sync record" : items.length + " retained sync records";
+  // Capture the displayed reasons before any request. A changed or new record
+  // is not part of this dismissal, even if it arrives during a later batch.
+  const archive = (rows, label) => {
+    const held=rows.filter(q=>q.can_archive).map(q=>({id:q.id,reason:q.notice_reason||q.code,detail_code:q.detail_code||""}));
+    if(!held.length)return null;
+    return el("button", {type:"button",class:"text-btn",onclick:async e=>{
+      const button=e.currentTarget,host=currentHost;button.disabled=true;
+      try {
+        for(let i=0;i<held.length;i+=256)await act({do:"archive_held_batch",held:held.slice(i,i+256)},host);
+        if(host===currentHost)await refetch(false);
+      }catch(err){announce(err.message);}finally{if(button.isConnected)button.disabled=false;}
+    }},label);
+  };
+  const groups=new Map();
+  for(const q of items){const key=JSON.stringify([q.peer,q.notice_reason||q.code,q.detail_code||""]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(q);}
+  const row=q=>{
+    const known=Object.hasOwn(heldWords,q.code||"");
+    return el("div", {},
       el("span", {}, q.code === "invalid" ? "A message that couldn't be accepted" : known ? who(q.peer) : ["Unverified, says it's from ", who(q.peer)], " · ", when(q.at)),
-      el("span", { class: "hint" }, q.detail || (known ? heldWords[q.code](who(q.peer)) : "It couldn't be verified, so it isn't shown.")),
-      q.recovery && el("span", { class: "hint" }, q.recovery),
-      q.can_archive && el("button", { type: "button", class: "text-btn", onclick: async e => {
-        const button=e.currentTarget;button.disabled=true;
-        try { const host=currentHost; await act({do:"archive_held",id:q.id},host); if(host===currentHost)await refetch(false); } catch(err) { announce(err.message); } finally { if(button.isConnected)button.disabled=false; }
-      } }, "Archive notice"));
-  }));
+      el("span", {class:"hint"},q.detail||(known?heldWords[q.code](who(q.peer)):"It couldn't be verified, so it isn't shown.")),
+      q.recovery&&el("span",{class:"hint"},q.recovery),archive([q],"Archive notice"));
+  };
+  fill($("quarantine-list"), ...[...groups.values()].map(rows=>el("li",{},...(rows.length===1?[row(rows[0])]:[
+    el("span",{},rows.length+" retained records · ",who(rows[0].peer)),
+    archive(rows,"Archive "+rows.filter(q=>q.can_archive).length+" notices"),
+    el("details",{},el("summary",{},"Show copies"),...rows.map(row))]))));
 }
 
 // ---- thread -----------------------------------------------------------------
@@ -3492,7 +3507,20 @@ function execLine(m, t) {
   const text = word + " on " + e.host + (e.state === "running" && e.at ? " since " + when(e.at) : "") + (detail ? ": " + detail : "");
   return el("span", { class: "exec " + e.state + (e.stale ? " stale" : ""), title: "Asserted by " + e.host + (e.at ? " at " + new Date(e.at).toLocaleString() : "") },
     e.state === "running" && !e.stale && el("span", {class: "working-dots", "aria-hidden": "true"}, "···"), text, e.stale && el("span", { class: "exec-stale" }, " · last known " + (e.at ? ago(e.at) : "earlier") + ", not confirmed now"),
-    e.refused && el("span", { class: "exec-refused" }, " · refused: " + e.refused));
+    e.refused && el("span", { class: "exec-refused" }, " · refused: " + e.refused), remoteStop(m));
+}
+
+function remoteStop(m) {
+  if(!m.stop)return null;
+  const c={...m.stop},host=currentHost,id=sendID(),accepted=c.result&&!c.result.refused;
+  const button=el("button",{type:"button",class:"btn",disabled:c.pending||accepted,onclick:async()=>{
+    button.disabled=true;
+    try{
+      const result=await api("/api/operator/decide",{host:c.host,id:c.id,key:c.key,attempt:c.attempt,action:"cancel",expect:"running",report:"",send_id:id},host);
+      button.textContent="Stop queued";announce(result.note||"Stop queued. Waiting for the host to confirm; prior actions are not undone.");await refetch(false);
+    }catch(e){button.disabled=false;announce(e.message);}
+  }},c.pending?"Stop queued":accepted?c.result.state==="cancelled"?"Stopped":"Stopping…":"Stop");
+  return el("span",{},button,c.result?.refused&&el("span",{role:"status"},c.result.refused));
 }
 
 // A version 2 report: what a machine said about its own requests at that

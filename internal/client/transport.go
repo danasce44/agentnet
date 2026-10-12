@@ -67,7 +67,7 @@ func retryable(err error) bool {
 	if errors.As(err, &he) {
 		// A Hub that requires a newer AgentNet takes the same request from
 		// the updated program: it waits, never fails (updaterequired.go).
-		return he.Status >= 500 || he.Code == codeUpdateRequired
+		return he.Status >= 500 || he.Status == http.StatusTooManyRequests || he.Code == codeUpdateRequired
 	}
 	return err != nil
 }

@@ -454,6 +454,7 @@ type DMThread struct {
 // DMMessage is one message of a DM.
 type DMMessage struct {
 	Continuation      *client.ContinuationAction `json:"continuation,omitempty"`
+	Stop              *client.StopAction         `json:"stop,omitempty"`
 	SendGroup         string                     `json:"send_group,omitempty"`
 	SendGroupAuthor   string                     `json:"send_group_author,omitempty"`
 	Status            string                     `json:"status,omitempty"`
@@ -1054,15 +1055,16 @@ func IsReviewNotice(kind, status, replyTo string, files int) bool {
 // sender's name from its people list; Reason is the provider's own
 // sentence, a fallback that names the sender's address.
 type QuarantineItem struct {
-	CanArchive bool      `json:"can_archive"`
-	DetailCode string    `json:"detail_code,omitempty"`
-	Detail     string    `json:"detail"`
-	Recovery   string    `json:"recovery"`
-	ID         string    `json:"id"`
-	Peer       string    `json:"peer"`
-	Code       string    `json:"code"`
-	Reason     string    `json:"reason"` // plain text
-	At         time.Time `json:"at"`
+	CanArchive   bool      `json:"can_archive"`
+	NoticeReason string    `json:"notice_reason,omitempty"` // exact retained snapshot for dismissal, never authority
+	DetailCode   string    `json:"detail_code,omitempty"`
+	Detail       string    `json:"detail"`
+	Recovery     string    `json:"recovery"`
+	ID           string    `json:"id"`
+	Peer         string    `json:"peer"`
+	Code         string    `json:"code"`
+	Reason       string    `json:"reason"` // plain text
+	At           time.Time `json:"at"`
 	// Copies: later envelopes of this same record from the same sender,
 	// held with it rather than listed (client.Quarantined); LastAt the newest.
 	// Each is this one's content under other transport IDs, so it carries
@@ -1146,6 +1148,7 @@ type Message struct {
 	SyncedFrom        string                     `json:"synced_from,omitempty"`
 	FromKey           string                     `json:"from_key,omitempty"`
 	Continuation      *client.ContinuationAction `json:"continuation,omitempty"`
+	Stop              *client.StopAction         `json:"stop,omitempty"`
 	Target            *envelope.Target           `json:"target,omitempty"`
 	AgentID           string                     `json:"agent_id,omitempty"`
 	ID                string                     `json:"id"`

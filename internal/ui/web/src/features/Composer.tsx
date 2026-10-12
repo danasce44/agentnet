@@ -1,7 +1,7 @@
 import { saveBatch, acknowledge, recordFailure, type JournalEntry } from "../send-journal.mjs";
 import { sendID } from "../optimistic.mjs";
 import { pastePictures } from "../pictures.mjs";
-// The message composer: one row of "+", the text and send. Typing @ offers
+// The message composer: attachments, @ picker, text and send. Typing @ offers
 // the people and agents here; picking an agent asks it ("Zen should Answer |
 // Do it") instead of writing to everyone. In a device conversation, replying
 // to a request that waits for you answers it by hand (act reply: it takes the
@@ -72,6 +72,8 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   const [caret, setCaret] = useState<number | null>(null);            // null while the field is not focused
   const [dismissed, setDismissed] = useState(-1);                     // the "@" whose picker was closed
   const [active, setActive] = useState(0);
+  const [mentionRange, setMentionRange] = useState<{from: number; to: number} | null>(null);
+  useEffect(() => setMentionRange(null), [conv]);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [zone, setZone] = useState<HTMLElement | null>(null);
@@ -99,6 +101,9 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   // Chosen to answer by hand, but handled meanwhile (accepted, answered,
   // closed): sending now would ask the device something new instead.
   const handled = !!thread && !!draft.replyTo && !answerable && answering.current.has(draft.replyTo);
+  const missingReply = !!draft.replyTo && !messageOf(draft.replyTo, words, dm, thread);
+  const missingTopic = !!dm && !draft.newTopic && !!draft.topic && !(dm.topics || []).some(t => t.id === draft.topic);
+
 
   const selectedPIDs = agentTargets(text, spans, draft.agent);
   const target: Target = useMemo(() => {
@@ -138,14 +143,14 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   const sending = store.host.platform === "android" && !!busy[conv]; // Android exposes pre-admission progress without a queued receipt
   const gone = target.kind === "agent" && !target.canAsk;
   const needsAgent = visitor && target.kind !== "agent";
-  const ready = !closed && !sending && !gone && !needsAgent && !handled && !limit && (!!text.trim() || (files.length > 0 && target.kind !== "answer"));
+  const ready = !closed && !sending && !gone && !needsAgent && !handled && !missingReply && !missingTopic && !limit && (!!text.trim() || (files.length > 0 && target.kind !== "answer"));
 
   const typingScope = dm && !closed && !visitor && !(dm.kind === "group" && target.kind === "agent") ? { conv: dm.id } : null;
   const typing = useTypingSignal(store.api, typingScope, typingView);
 
   // ---- the @ picker
-  const trig = dm && caret != null && !closed ? trigger(text, caret) : null;
-  const open = !!trig && trig.start !== dismissed;
+  const trig = dm && !closed ? mentionRange ? {start: mentionRange.from, query: ""} : caret != null ? trigger(text, caret) : null : null;
+  const open = !!trig && (!!mentionRange || trig.start !== dismissed);
   const offered = useMemo(() => (open && trig ? matches(people, trig.query) : []), [open, trig?.query, people]);
   const listId = "mentions-" + conv.slice(0, 12);
   useEffect(() => setActive(0), [trig?.query, open]);
@@ -200,18 +205,28 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   }
 
   function pick(c: Candidate) {
-    if (!trig || caret == null) return;
+    if (!trig || (caret == null && !mentionRange)) return;
     const d = latest();
     const selected=(c.targets||[c]).filter((p):p is Candidate & {kind: 'person'|'guest'|'agent'}=>p.kind!=='collective');
     if(c.kind==='collective'&&!collectiveHref(selected.map(p=>({kind:p.kind,id:p.id})))){announce('This tag cannot be selected.');return;}
-    const token='@'+c.name+' ';
-    const cur=text.slice(0,trig.start)+token+text.slice(caret);
+    const prefix = mentionRange && trig.start > 0 && !/\s/.test(text[trig.start-1]) ? ' ' : '';
+    const token=prefix+'@'+c.name+' ';
+    const cur=text.slice(0,trig.start)+token+text.slice(mentionRange?.to ?? caret!);
+    setMentionRange(null);
     const {kept}=shift(spans,text,cur,trig.start+token.length);
-    const added:Span=c.kind==='collective'?{start:trig.start,name:c.name,kind:'collective',id:'',refs:selected.map(p=>({kind:p.kind,id:p.id}))}:{start:trig.start,name:c.name,kind:c.kind,id:c.id};
+    const added:Span=c.kind==='collective'?{start:trig.start+prefix.length,name:c.name,kind:'collective',id:'',refs:selected.map(p=>({kind:p.kind,id:p.id}))}:{start:trig.start+prefix.length,name:c.name,kind:c.kind,id:c.id};
     const agent=agentTargets(cur,[...kept,added],d.agent)[0];
     write({...d,text:encode(cur,[...kept,added]),agent, ...(agent?{replyTo:undefined}:{})},trig.start+token.length);
     if(c.kind==='collective')announce('@'+c.name+' selects '+selected.length+' exact recipients.');
     else if(agent)announce('Asking '+c.name+'.');
+  }
+
+  function openMentions() {
+    const ta = field.current;
+    if (!dm || !ta || closed || sending) return;
+    setMentionRange({from: ta.selectionStart, to: ta.selectionEnd});
+    setDismissed(-1);
+    ta.focus({preventScroll: true});
   }
 
   function stopAsking() {
@@ -326,7 +341,8 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
       }
       progress(sent.length ? "Sending…" : "");
       const fileIds = ids.length ? (ids as string[]) : undefined;
-      const reply = d.replyTo && messageOf(d.replyTo, words, here, device) ? d.replyTo : undefined;
+      if (d.replyTo && !messageOf(d.replyTo, words, here, device)) throw Error("The message you were replying to is unavailable. Choose another message or cancel the reply.");
+      const reply = d.replyTo;
       let r: T.Sent | undefined;
       try {
         if (to.kind === "answer") announce((await store.api.act({ do: "reply", id: to.id, send_id: id, body })).note || "Answer sent.");
@@ -400,7 +416,8 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
           fileIDs.push(staged);
         }
         const files = fileIDs.length ? fileIDs : undefined;
-        const reply = captured.replyTo && messageOf(captured.replyTo, words, here, device) ? captured.replyTo : undefined;
+        if (captured.replyTo && !messageOf(captured.replyTo, words, here, device)) throw Error("The message you were replying to is unavailable. Choose another message or cancel the reply.");
+        const reply = captured.replyTo;
         let endpoint: JournalEntry["endpoint"], request: Record<string,unknown>;
         if (to.kind === "answer") {endpoint="/api/act";request={do:"reply",id:to.id,send_id:id,body};}
         else if (to.kind === "agent") {endpoint="/api/dm/agent/ask";request={id,send_group:group,pid:to.pid,kind:"question",body,topic,files};}
@@ -493,7 +510,7 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
   // ---- keys
   function keys(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (open) {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setDismissed(trig!.start); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setDismissed(trig!.start); setMentionRange(null); return; }
       if (offered.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         setActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + offered.length) % offered.length);
@@ -560,6 +577,10 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
       {open && <MentionList id={listId} items={offered} active={active} query={trig?.query || ""} onPick={pick} onHover={setActive} />}
       <p className="sr-only" aria-live="polite">{said}</p>
 
+      {missingReply && <ReplyChip title="Reply unavailable" text="Your draft is kept. Choose another message or cancel this reply." cancel="Cancel unavailable reply"
+        onCancel={() => { write({ ...latest(), replyTo: undefined }); focusField(); }} />}
+      {missingTopic && <ReplyChip title="Topic unavailable" text="Your draft is kept. Choose a topic above, or return to Main." cancel="Move draft to Main"
+        onCancel={() => { write({ ...latest(), topic: undefined, newTopic: false, replyTo: undefined }); focusField(); }} />}
       {replyMsg && (target.kind === "answer"
         ? <ReplyChip title={"Answering " + replyMsg.who} text={replyMsg.text} cancel="Don’t answer it here"
             note={target.task ? "You reply yourself; your agent won’t run this task." : "You answer this yourself; your agent won’t."}
@@ -582,13 +603,19 @@ export function Composer({ dm, thread }: { dm?: T.DMThread; thread?: T.Thread })
       <div ref={row} className="flex items-end gap-2">
         <PlusMenu actions={actions} disabled={sending} onOpenChange={setMenuOpen}
           finalFocus={() => !emojiAfterMenu.current} onClosed={() => { emojiAfterMenu.current = false; }} />
+        {dm && <button type="button" aria-label="Mention someone" title="Mention someone" aria-haspopup="listbox"
+          aria-expanded={open} aria-controls={open && offered.length ? listId : undefined} disabled={sending}
+          onMouseDown={(e) => e.preventDefault()} onClick={openMentions}
+          className="grid size-11 shrink-0 place-items-center rounded-full border-[1.5px] border-outline bg-surface text-text hover:bg-sunken focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-agent-ink disabled:opacity-40">
+          <IconAt size={22} aria-hidden="true" />
+        </button>}
         <Field ref={field} mirror={mirror} wide={wide} text={text} spans={spans} value={text} placeholder={placeholder} aria-label={placeholder}
           enterKeyHint={wide ? "send" : "enter"} autoComplete="off" spellCheck
           aria-autocomplete="list" aria-controls={open && offered.length ? listId : undefined}
           aria-activedescendant={open && offered.length ? optionId(listId, Math.min(active, offered.length - 1)) : undefined}
-          onChange={(e) => { edit(e.target.value, (e.nativeEvent as InputEvent).isComposing ? undefined : e.target.selectionStart); setCaret(e.target.selectionStart); setDismissed(-1); typing.typed(!!e.target.value.trim()); }}
+          onChange={(e) => { setMentionRange(null); edit(e.target.value, (e.nativeEvent as InputEvent).isComposing ? undefined : e.target.selectionStart); setCaret(e.target.selectionStart); setDismissed(-1); typing.typed(!!e.target.value.trim()); }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart === e.currentTarget.selectionEnd ? e.currentTarget.selectionStart : null)}
-          onBlur={() => { setCaret(null); typing.stop(); }}
+          onBlur={() => { setCaret(null); setMentionRange(null); typing.stop(); }}
           onScroll={(e) => { if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop; }}
           onKeyDown={keys} onPaste={paste} />
         <SendButton ready={ready} busy={sending} label={sendLabel} />

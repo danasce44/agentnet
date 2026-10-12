@@ -144,7 +144,7 @@ invitation is needed. This device waits for your approval on the existing
 device; it cannot send or receive messages yet. Start agentnet daemon here
 to wait for approval, and keep AgentNet running on the existing device.
 Approve there on its page, or with person links and person approve ID;
-person approve --native ID (only for a computer like this, never a browser)
+person approve ID (phones, browsers and computers use the same own-device rule)
 also lets this device's invites of your own agents there need no accept.
 Do not create a second person on the new device.
 
@@ -252,7 +252,7 @@ the agent may answer with the exact task it proposes instead
 text, as stored, as a task replying to it, to the same agent; there it runs
 under the usual task approval (it waits for their OK unless they let your
 tasks run; on your own computer it runs at once when that computer trusts
-this one: person approve --native). Confirming again shows the
+this one, including a phone or browser). Confirming again shows the
 task already sent; nothing runs twice. Refused for a proposal edited or
 deleted after it was made, one from a key whose change is pending, and
 from any device but the one that asked. Confirm with the person first
@@ -457,25 +457,18 @@ adds the requested device only after your confirmation, and refuse ID
 rejects it. Approval makes it you and grants access to your chats. Never
 approve a device you did not just ask to link. Private keys are not copied.
 
-Invites of your own agents need no accept when a trusted device of yours
-sends them (see agentnet help dm), and a task a trusted device of yours sends
-this device's agent runs without asking, as your own (its harness's normal
-permissions apply). This device trusts itself, and a device
-you approve with approve --native ID: say --native only for a computer that
-joined with the join command (running AgentNet), never for a browser. A
-browser's code comes from the server, so a browser must never be trusted;
-nothing in a link request tells the two apart, so only your --native says
-so. For an agent-only host, person approve --agent-host ID links it with
-person permissions but no authority to add devices. Only an own human device
-may enroll devices or change the signed human enrollment keys. Existing
-unannotated roster steps do not imply that every device is human.
+Every current verified human device of yours, including phones and browsers,
+can invite, question or task any of your own agents without another AgentNet
+OK. Their harnesses keep their native permissions. approve --native ID is a
+legacy alias: ordinary device approval already provides this access.
 
-approve ID without --native, approving on the page or on another
-device, and a request approved already add nothing, and no command trusts
-a browser. untrust ADDRESS removes a device; to trust it again, link it
-again. person marks trusted devices. A device whose key changes is no
-longer trusted. Invites stored before this version first ran here still
-wait for your accept.
+For an agent-only host, person approve --agent-host ID links it with person
+permissions but no authority to add devices or to authorize itself as you.
+Only own human keys enroll devices. Changed, revoked, removed or frozen
+identities cannot use own-device consent. To retire a device, use person
+remove ADDRESS. untrust cannot turn one of your current human devices into
+another person. Pending never-run own requests may proceed after upgrading;
+history and completed, failed or interrupted work never run again silently.
 
 Your other devices are never Hub admins on their own. On a device that is
 one, admin ADDRESS lets another of your linked devices change company

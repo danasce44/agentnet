@@ -71,7 +71,7 @@ func p7Stored(t *testing.T, at *Agent, from, fp, kind, want string) string {
 }
 
 func TestP7PersonGrantsCurrentFutureAndRemoval(t *testing.T) {
-	t.Run("own_human_questions", testOwnHumanQuestionApproval)
+	t.Run("own_human_questions", testOwnHumanRequestApproval)
 	w, r := p7Person(t)
 	p7Stored(t, w.bob, w.alice.Address, w.alice.Self().Fingerprint(), envelope.KindQuestion, stateHeld)
 	if e := w.bob.Approve(r.Person); e != nil {
@@ -398,7 +398,17 @@ func TestP7DeviceRevokeUnderPersonGrantRefused(t *testing.T) {
 	}
 }
 
-func testOwnHumanQuestionApproval(t *testing.T) {
+func testOwnHumanRequestApproval(t *testing.T) {
+	for _, kind := range []string{envelope.KindQuestion, envelope.KindTask} {
+		t.Run(kind, func(t *testing.T) { testOwnHumanRequestKind(t, kind) })
+	}
+}
+
+func testOwnHumanRequestKind(t *testing.T, kind string) {
+	held := stateHeld
+	if kind == envelope.KindTask {
+		held = stateAwaiting
+	}
 	w, r := p7Person(t)
 	r, phone := p7Added(t, w, r, "alice/phone", true)
 	p7PinStep(t, w.alice, r)
@@ -406,14 +416,14 @@ func testOwnHumanQuestionApproval(t *testing.T) {
 	if err := w.alice.store.pin(pub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.alice.store.db.Exec(`INSERT OR REPLACE INTO person_grants(person,questions,tasks,added_at) VALUES(?,0,1,0)`, r.Person); err != nil {
+	if _, err := w.alice.store.db.Exec(`INSERT OR REPLACE INTO person_grants(person,questions,tasks,added_at) VALUES(?,0,0,0)`, r.Person); err != nil {
 		t.Fatal(err)
 	}
 	q, _, err := w.alice.PermissionState(pub.Address, pub.Fingerprint())
 	if err != nil || !q {
 		t.Fatalf("own human effective questions=%v err=%v", q, err)
 	}
-	id := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), envelope.KindQuestion, statePending)
+	id := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), kind, statePending)
 	tx, err := w.alice.store.db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -429,17 +439,17 @@ func testOwnHumanQuestionApproval(t *testing.T) {
 		t.Fatalf("own question demoted: %s", got)
 	}
 	// An existing never-run hold is claimed once, with the own-person running fence.
-	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateHeld, id); err != nil {
+	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, held, id); err != nil {
 		t.Fatal(err)
 	}
 	j, ok, err := w.alice.store.claimJob("stub")
-	if err != nil || !ok || j.ID != id || j.PermissionPerson != r.Person || !j.OwnHumanQuestion {
+	if err != nil || !ok || j.ID != id || j.PermissionPerson != r.Person || !j.OwnHumanRequest {
 		t.Fatalf("held own claim: %+v %v %v", j, ok, err)
 	}
 	if _, ok, err = w.alice.store.claimJob("stub"); err != nil || ok {
 		t.Fatalf("repeated own claim %v %v", ok, err)
 	}
-	if q, err = questionApproved(w.alice.store.db, pub.Address, "wrong-key"); err != nil || q {
+	if q, err = ownDeviceHolds(w.alice.store.db, pub.Address, "wrong-key"); err != nil || q {
 		t.Fatalf("wrong key allowed=%v %v", q, err)
 	}
 	// Each negative changes only the synthetic current authority view.
@@ -475,7 +485,7 @@ func testOwnHumanQuestionApproval(t *testing.T) {
 			if w.alice.personGrantStop(j) == "" {
 				t.Fatalf("%s did not stop implicit own-human run", mode)
 			}
-			if ok, e := questionApproved(w.alice.store.db, pub.Address, pub.Fingerprint()); e != nil || ok {
+			if ok, e := ownDeviceHolds(w.alice.store.db, pub.Address, pub.Fingerprint()); e != nil || ok {
 				t.Fatalf("%s allowed=%v %v", mode, ok, e)
 			}
 			if _, err = w.alice.store.db.Exec(`UPDATE persons SET record=?,state='self' WHERE person=?`, string(raw), r.Person); err != nil {
@@ -499,18 +509,23 @@ func testOwnHumanQuestionApproval(t *testing.T) {
 	// may-finish semantics rather than inheriting the implicit human-role fence.
 	for _, accepted := range []bool{false, true} {
 		if !accepted {
-			if err = w.alice.Approve(pub.Address); err != nil {
+			if kind == envelope.KindTask {
+				_, err = w.alice.GrantTasks(pub.Address)
+			} else {
+				err = w.alice.Approve(pub.Address)
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 		}
-		next := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), envelope.KindQuestion, statePending)
+		next := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), kind, statePending)
 		if accepted {
 			if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateAccepted, next); err != nil {
 				t.Fatal(err)
 			}
 		}
 		explicit, ok, e := w.alice.store.claimJob("stub")
-		if e != nil || !ok || explicit.ID != next || explicit.OwnHumanQuestion {
+		if e != nil || !ok || explicit.ID != next || explicit.OwnHumanRequest {
 			t.Fatalf("explicit own claim %+v %v %v", explicit, ok, e)
 		}
 		rr := r
@@ -529,10 +544,24 @@ func testOwnHumanQuestionApproval(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// History and terminal states are never implicit upgrade candidates.
+	for _, state := range []string{stateHeld, stateAwaiting, stateFailed, stateInterrupt, stateAnswered} {
+		next := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), kind, statePending)
+		if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=?,attempts=1 WHERE id=?`, state, next); err != nil {
+			t.Fatal(err)
+		}
+	}
+	next := p7Stored(t, w.alice, pub.Address, pub.Fingerprint(), kind, statePending)
+	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=?,replica=1 WHERE id=?`, held, next); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err = w.alice.store.claimJob("stub"); err != nil || ok {
+		t.Fatalf("terminal/history replay: %v %v", ok, err)
+	}
 	if _, err = w.alice.store.db.Exec(`UPDATE peers SET pending=public WHERE address=?`, pub.Address); err != nil {
 		t.Fatal(err)
 	}
-	if q, err = questionApproved(w.alice.store.db, pub.Address, pub.Fingerprint()); err != nil || q {
+	if q, err = ownDeviceHolds(w.alice.store.db, pub.Address, pub.Fingerprint()); err != nil || q {
 		t.Fatalf("pending key allowed=%v %v", q, err)
 	}
 }

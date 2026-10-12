@@ -98,7 +98,7 @@ func TestGroupInvitationControlMixedVersionFinalHandoff(t *testing.T) {
 	if e = w.alice.store.db.QueryRow(`SELECT envelope,required_cap FROM outbox WHERE sub=? AND id IN(SELECT id FROM group_invitation_copies WHERE invitation=?)`, envelope.SubGroupConsent, inv.ID).Scan(&cancelRaw, &required); e != nil {
 		t.Fatal(e)
 	}
-	if required != protocol.CapGroupInvitationControl {
+	if required != protocol.CapGroupInvitationManage {
 		t.Fatal("cancel lacks explicit capability")
 	}
 	var cancelEnv envelope.Envelope
@@ -111,6 +111,20 @@ func TestGroupInvitationControlMixedVersionFinalHandoff(t *testing.T) {
 	x.profile.Caps = []json.RawMessage{newRaw}
 	if e = w.alice.requireParticipationCaps(tctx(t), w.bob.Self(), protocol.CapGroupInvitationControl); e != nil {
 		t.Fatal(e)
+	}
+	if current.Reads(protocol.CapGroupInvitationManage) {
+		t.Fatal("old gic1 implies new same-person cancellation")
+	}
+	current.Caps = []string{protocol.CapEnv2, protocol.CapGroupInvitationManage, protocol.CapRoom}
+	current.Sign(w.bob.id.Sign)
+	newRaw, _ = json.Marshal(current)
+	x.profile.Caps = []json.RawMessage{newRaw}
+	if e = w.alice.store.setOutboxState(cancelEnv.ID, stateQueued, "", ""); e != nil {
+		t.Fatal(e)
+	}
+	result, e = w.alice.deliver(tctx(t), cancelEnv, nil)
+	if e != nil || result.State != protocol.StateCustody || x.posts != 1 {
+		t.Fatalf("updated recipient did not get retained cancellation: %+v %v posts=%d", result, e, x.posts)
 	}
 	legacy := inv.Proposal
 	legacy.Nonce = ""
@@ -130,7 +144,7 @@ func TestGroupInvitationControlAdvertisementBound(t *testing.T) {
 	if agent {
 		t.Fatal("fixture unexpectedly advertises an agent")
 	}
-	if !slices.IsSorted(caps) || len(caps) > protocol.MaxAdvertisedCaps || !slices.Contains(caps, protocol.CapGroupInvitationControl) {
+	if !slices.IsSorted(caps) || len(caps) > protocol.MaxAdvertisedCaps || !slices.Contains(caps, protocol.CapGroupInvitationManage) {
 		t.Fatalf("invalid non-agent caps: %v", caps)
 	}
 }

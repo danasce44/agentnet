@@ -115,7 +115,6 @@ export interface Room {
   guests: Guest[];             // in the room now
   groupInvites: GroupInvite[]; // outbound member proposals, separate from guests
   invited: Guest[];            // verified invitation, not in yet
-  incomplete: { pid: string; stateText: string }[]; // held records without a verified invitation
   waiting: Waiting[];          // requests here that wait for an owner's OK
   past: Guest[];               // dismissed, left or declined
 }
@@ -210,7 +209,6 @@ export function room(t: T.DMThread, o: T.Overview | null, names: Record<string, 
     guests: all.filter((g) => LIVE.has(g.state)),
     groupInvites: pendingGroupInvites(t, o),
     invited: all.filter((g) => g.state === "invited"),
-    incomplete: [...(t.agents || []), ...(t.guests || [])].filter(g => g.state === "pending").map(g => ({ pid: g.pid, stateText: g.state_text })),
     waiting,
     // One row per person or agent: their latest visit.
     past: all.filter((g) => ENDED.has(g.state)).sort(byTime).filter((g, i, list) => list.findIndex((x) => x.who === g.who) === i),

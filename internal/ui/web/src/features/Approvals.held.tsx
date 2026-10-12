@@ -1,6 +1,6 @@
 // Held back (overview.quarantine): messages this device received but could
 // not let in, by who sent them and why, in plain words. Their content is
-// never shown, and they are not decisions: the OKs count leaves them out.
+// never shown. Only a supported local key decision belongs in OKs.
 // One held for a changed identity can be checked and trusted from here on
 // a computer, the same way as from the paused chat. One that didn't verify
 // proves nothing about who sent it: it only says who it claims to be from.
@@ -23,7 +23,13 @@ import { Button } from "../ui/Button";
 import { latestThreads } from "./AgentsView.grants";
 import { TrustSheet } from "./Trust";
 
-const background = (code: string) => ["invalid", "proof_pending"].includes(code);
+// A retained record is a diagnostic unless this installation can offer an
+// actual key decision. Frozen rosters and duplicate controls have no such action.
+export function heldDecisionPeers(o: T.Overview | null, local: boolean): Set<string> {
+  if (!o || !local) return new Set();
+  const peers = new Set(latestThreads(o).map(t => t.peer));
+  return new Set((o.quarantine || []).filter(q => q.code === "key_changed" && peers.has(q.peer)).map(q => q.peer));
+}
 const plural = (n: number, one: string, many: string) => n + " " + (n === 1 ? one : many);
 
 // archiveHeld hides exactly these notices here, every one of them: the
@@ -31,7 +37,7 @@ const plural = (n: number, one: string, many: string) => n + " " + (n === 1 ? on
 // larger group goes in several exact snapshots. A notice that changed or
 // arrived since stays visible; nothing is accepted, resent or run.
 async function archiveHeld(store: Store, rows: T.QuarantineItem[]) {
-  const refs = rows.filter(q => q.can_archive && background(q.code)).map(q => ({ id: q.id, reason: q.code, detail_code: q.detail_code || "" }));
+  const refs = rows.filter(q => q.can_archive).map(q => ({ id: q.id, reason: q.notice_reason || q.code, detail_code: q.detail_code || "" }));
   let sent = 0, archived = 0;
   for (let i = 0; i < refs.length; i += 256) {
     const held = refs.slice(i, i + 256), result = await store.run(api => api.act({ do: "archive_held_batch", held }));
@@ -47,16 +53,18 @@ export function HeldBack({ o, diagnostics = false }: { o: T.Overview; diagnostic
   const store = useApp();
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(12);
-  const items = (o.quarantine || []).filter(q => background(q.code) === diagnostics).sort((a, b) => b.at.localeCompare(a.at));
+  const decisionPeers = heldDecisionPeers(o, store.host.platform === "daemon");
+  const canDecide = (q: T.QuarantineItem) => q.code === "key_changed" && decisionPeers.has(q.peer);
+  const items = (o.quarantine || []).filter(q => !canDecide(q) === diagnostics).sort((a, b) => b.at.localeCompare(a.at));
   const groups = new Map<string, T.QuarantineItem[]>();
   for (const q of items) {
     const key = JSON.stringify([q.code, q.detail_code || "", q.peer]);
     const group = groups.get(key);
     if (group) group.push(q); else groups.set(key, [q]);
   }
-  const backgrounds = [...groups].filter(([, rows]) => background(rows[0].code));
-  const decisions = [...groups].filter(([, rows]) => !background(rows[0].code));
-  const archiveable = items.filter(q => q.can_archive && background(q.code));
+  const backgrounds = [...groups].filter(([, rows]) => !canDecide(rows[0]));
+  const decisions = [...groups].filter(([, rows]) => canDecide(rows[0]));
+  const archiveable = items.filter(q => q.can_archive);
   const archive = async (rows: T.QuarantineItem[]) => {
     if (busy) return;
     setBusy(true);
@@ -67,7 +75,7 @@ export function HeldBack({ o, diagnostics = false }: { o: T.Overview; diagnostic
   return (
     <section className={diagnostics ? "min-w-0 pt-3" : "px-4 pt-6"} aria-labelledby={diagnostics ? "sync-diagnostics" : "oks-heldback"}>
       <h2 id={diagnostics ? "sync-diagnostics" : "oks-heldback"} className="text-[12px] font-extrabold uppercase tracking-[.08em] text-muted">{diagnostics ? "Sync diagnostics" : "Held back"}</h2>
-      {decisions.length > 0 && <ul className="flex flex-col gap-3 pt-3">{decisions.slice(0, visible).map(([key, rows]) => rows.length === 1 ? <HeldRow key={key} q={rows[0]} o={o} /> : <HeldGroup key={key} rows={rows} o={o} />)}</ul>}
+      {decisions.length > 0 && <ul className="flex flex-col gap-3 pt-3">{decisions.slice(0, visible).map(([key, rows]) => rows.length === 1 ? <HeldRow key={key} q={rows[0]} o={o} /> : <HeldGroup key={key} rows={rows} o={o} busy={busy} onArchive={archive} />)}</ul>}
       {backgrounds.length > 0 && <details className="mt-3 rounded-2xl bg-surface p-3.5 stroke">
         <summary className="cursor-pointer font-bold">Retained sync records <span className="font-normal text-text-2">· {plural(backgrounds.length, "group", "groups")}</span></summary>
         <p className="pt-1 text-[14px] text-text-2">{plural(copies, "copy", "copies")} waiting for verification or blocked by a recorded check. These are diagnostic records, not approval requests. They stay retained; nothing in them runs.</p>
@@ -86,16 +94,17 @@ export function HeldBack({ o, diagnostics = false }: { o: T.Overview; diagnostic
 function HeldGroup({ rows, o, busy, onArchive }: { rows: T.QuarantineItem[]; o: T.Overview; busy?: boolean; onArchive?: (rows: T.QuarantineItem[]) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(20);
+  const store = useApp();
   const first = rows[0], action = heldAction(first, o);
-  const quiet = background(first.code);
-  const archiveable = quiet ? rows.filter(q => q.can_archive) : [], noun = quiet ? "copies" : "messages";
+  const quiet = first.code !== "key_changed" || !heldDecisionPeers(o, store.host.platform === "daemon").has(first.peer);
+  const archiveable = rows.filter(q => q.can_archive), noun = quiet ? "copies" : "messages";
   return <li className="rounded-2xl bg-surface p-3.5 stroke">
     <p className="font-bold">{heldStatus(rows, o)}<span className="font-normal text-text-2"> · last {when(heldLast(rows))}{action ? " · " + action : ""}</span></p>
     <p className="mt-1 text-[14px] text-text-2">{first.detail || holdSentence(first.code, nameOf(first.peer, o), true)}</p>
     {first.recovery && <p className="mt-1 text-[13px] text-muted">{first.recovery}</p>}
     <details className="mt-2" onToggle={e => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer text-[13px] font-bold text-text-2">Show {noun} ({heldCopies(rows)})</summary>
-      {open && <><ul className="mt-2 flex flex-col gap-2">{rows.slice(0, visible).map(q => quiet ? <li key={q.id} className="min-w-0 text-[13px] text-muted"><time dateTime={q.at}>{when(q.at)}</time>{q.size ? " · " + size(q.size) : ""}{q.logical ? " · record " + q.logical.slice(0, 8) : ""}{q.copies ? " · re-sent " + plural(q.copies, "more time", "more times") + (q.last_at ? ", last " + when(q.last_at) : "") : ""}<span className="block break-all font-mono">{q.id}</span></li> : <HeldRow key={q.id} q={q} o={o} />)}</ul>{rows.length > visible && <Button className="mt-2" size="sm" variant="ghost" onClick={() => setVisible(n => n + 20)}>Show more {noun} ({rows.length - visible})</Button>}</>}
+      {open && <><ul className="mt-2 flex flex-col gap-2">{rows.slice(0, visible).map(q => quiet ? <li key={q.id} className="min-w-0 text-[13px] text-muted"><time dateTime={q.at}>{when(q.at)}</time>{q.size ? " · " + size(q.size) : ""}{q.logical ? " · record " + q.logical.slice(0, 8) : ""}{q.copies ? " · re-sent " + plural(q.copies, "more time", "more times") + (q.last_at ? ", last " + when(q.last_at) : "") : ""}<span className="block break-all font-mono">{q.id}</span>{q.can_archive && onArchive && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void onArchive([q])}>Archive notice</Button>}</li> : <HeldRow key={q.id} q={q} o={o} />)}</ul>{rows.length > visible && <Button className="mt-2" size="sm" variant="ghost" onClick={() => setVisible(n => n + 20)}>Show more {noun} ({rows.length - visible})</Button>}</>}
     </details>
     {onArchive && archiveable.length > 0 && <Button size="sm" variant="ghost" className="mt-2" disabled={busy} onClick={() => void onArchive(archiveable)}>{archiveable.length === 1 ? "Archive this notice" : "Archive these " + archiveable.length + " notices"}</Button>}
   </li>;
@@ -128,7 +137,7 @@ function HeldRow({ q, o }: { q: T.QuarantineItem; o: T.Overview }) {
   const archive = async () => {
     setBusy(true);
     try {
-      const result = await store.api.act({ do: "archive_held", id: q.id });
+      const result = await store.api.act({ do: "archive_held_batch", held: [{ id: q.id, reason: q.notice_reason || q.code, detail_code: q.detail_code || "" }] });
       store.toast(result.note || "Notice archived on this device.");
       await store.refetch();
     } catch (e) { store.toast(errorText(e), "error"); }

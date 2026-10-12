@@ -49,7 +49,7 @@ func TestQuarantineCode(t *testing.T) {
 	}
 	for _, q := range items {
 		reason := strings.TrimPrefix(q.ID, "held-")
-		if q.CanArchive != (reason == "invalid" || reason == "proof_pending") {
+		if !q.CanArchive {
 			t.Errorf("archive eligibility for %s: %v", reason, q.CanArchive)
 		}
 		if q.Code != reasons[reason] || q.Peer != "alice/laptop" || !q.At.Equal(at) || q.Reason != holdReason(reason, "alice/laptop") {

@@ -70,6 +70,7 @@ type threadRow struct {
 	localJob  bool   // local execution state without changing reply direction
 	execState string // exact target's admitted execution report
 	execStale bool   // that report may be old news (ExecView.Stale)
+	key       string // admitted original author key, including own-history replicas
 	in        bool
 	kind      string
 	state     string
@@ -103,6 +104,24 @@ func (a *Agent) peerThreadGroups(peer string) ([][]string, map[string]threadRow,
 	rows, err := a.store.threadRows(peer, a.Self().Fingerprint())
 	if err != nil {
 		return nil, nil, err
+	}
+	controls, err := a.store.legacyControls(peer, a.Address, a.Self().Fingerprint())
+	if err != nil {
+		return nil, nil, err
+	}
+	execs := execViews(controls)
+	for id, r := range rows {
+		if r.in || (r.kind != envelope.KindQuestion && r.kind != envelope.KindTask) {
+			continue
+		}
+		if e, ok := execs[ControlRef{ID: id, Fingerprint: r.key}]; ok && e.Host == peer {
+			e.settle(a.hostConnected(peer), "", 0, time.Now().Unix())
+			if err := a.projectRevokedExec(&e, e.sourceKey); err != nil {
+				return nil, nil, err
+			}
+			r.execState, r.execStale = e.State, e.Stale
+			rows[id] = r
+		}
 	}
 	var links []link // device history only: rows has no conversation messages
 	for _, l := range all {
@@ -180,7 +199,7 @@ func (s *store) threadRows(peer, selfFP string) (map[string]threadRow, error) {
 	// A review notice is exactly the shape the store files as one (see
 	// receivedNotice); a reply or a message with files never is.
 	rows, err := s.db.Query(`SELECT id, kind, state, read_at IS NULL, coalesce(reply_to, ''), coalesce(status, ''), (`+receivedNotice+`), EXISTS(SELECT 1 FROM reply_receiver_inputs x WHERE x.inbox_id=inbox.id),
-		CASE WHEN kind IN ('`+envelope.KindQuestion+`', '`+envelope.KindTask+`') THEN coalesce(json_extract(target, '$.agent_id'), '') ELSE coalesce(agent_id, '') END,topic_done,
+		CASE WHEN kind IN ('`+envelope.KindQuestion+`', '`+envelope.KindTask+`') THEN coalesce(json_extract(target, '$.agent_id'), '') ELSE coalesce(agent_id, '') END,topic_done,coalesce(verified_by,claimed_fp,''),
 		(SELECT direction FROM device_thread_links l WHERE l.id=inbox.id AND l.storage='in')
 		FROM inbox WHERE id IN (SELECT id FROM device_thread_links WHERE peer=? AND storage='in') AND conv IS NULL AND ref_id IS NULL AND coalesce(sub,'') NOT IN `+recordSubs+` AND NOT `+erasedInFor("inbox"),
 		envelope.KindMessage, envelope.StatusReviewNotice, peer)
@@ -192,7 +211,7 @@ func (s *store) threadRows(peer, selfFP string) (map[string]threadRow, error) {
 		var r threadRow
 		var status string
 		var direction string
-		if err := rows.Scan(&r.id, &r.kind, &r.state, &r.unread, &r.replyTo, &status, &r.notice, &r.selected, &r.agent, &r.topicDone, &direction); err != nil {
+		if err := rows.Scan(&r.id, &r.kind, &r.state, &r.unread, &r.replyTo, &status, &r.notice, &r.selected, &r.agent, &r.topicDone, &r.key, &direction); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -221,6 +240,7 @@ func (s *store) threadRows(peer, selfFP string) (map[string]threadRow, error) {
 			return nil, err
 		}
 		r.in = direction == "in"
+		r.key = selfFP
 		if r.in && r.replyTo != "" && r.status != envelope.StatusProgress {
 			replies[r.replyTo] = true
 		}

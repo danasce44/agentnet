@@ -7,10 +7,13 @@ export const directHistoryRow=r=>!!r&&!r.conv&&!r.local&&Number.isFinite(r.at)&&
 // A mapped request is relative to its preserved peer, even when its parent is
 // an incoming answer. Also correct retained rows without rewriting originals.
 export const deviceHistoryDirection=(row,fallback,from=row.from)=>{
- const meta=row.device_history;
+ const meta=(row.history||row.replica)?row.device_history:null;
  if(meta?.peer&&from&&["question","task"].includes(row.kind))return from===meta.peer?"in":"out";
  return meta?.direction||fallback;
 };
+// Native transport endpoints win even for metadata saved by older versions.
+export const deviceHistoryPeer=(row,fallback)=>(row.history||row.replica)&&row.device_history?.peer||fallback;
+const localProjection=(row,here,meta)=>here?{...meta,peer:row.to,direction:"out"}:row.history||row.replica?meta:{...meta,peer:row.from,direction:"in"};
 const prefix="device-history/",page=50;
 const fileEqual=(a,b)=>["lid","author","hash","index","name","size","sha256"].every(k=>a[k]===b[k]);
 
@@ -102,7 +105,7 @@ export function deviceHistory(e,Hold){
    r.recipient_key=old.recipient_key;
   }
   const meta=await project(r,own,checks,[],admission);
-  if(old){ops.push({s:old.here?"outbox":"inbox",k:item.id,v:{...old.row,device_history:meta}});ops.checks=checks;return ops;}
+  if(old){ops.push({s:old.here?"outbox":"inbox",k:item.id,v:{...old.row,device_history:localProjection(old.row,old.here,meta)}});ops.checks=checks;return ops;}
   const fromOwn=await human(own,item.from,item.from_key,admission),row={...item,v:item.sub?3:1,lid:"",id:item.id,fp:item.from_key,history:true,synced_from:env.from,synced_key:pin.fingerprint,device_history:meta,replica:true,own:fromOwn,read:meta.direction==="out",state:"",at:Math.min(item.at||e.now(),e.now()),attachments:item.attachments.map(a=>({...a,availability:"requestable"})),...(item.sub?{control:true,aside:true}:{})};
   ops.push({s:"inbox",k:row.id,v:row});ops.checks=checks;ops.directHistory=true;return ops;
  }
@@ -128,7 +131,7 @@ export function deviceHistory(e,Hold){
     if(!available&&!ref.fresh_live)fail("history window is full.","proof_pending");
     const r=await source(current,ref.here),parent=r.item.ref?.id||r.item.reply_to;
     if(parent&&parent!==id){const p=await original(parent,checks,ops);if(p)await queue({row:p.row,here:p.here,fresh_live:ref.fresh_live});}
-    const meta=await project(r,own,checks,ops);if(JSON.stringify(current.device_history)!==JSON.stringify(meta))ops.push({s,k:id,v:{...current,device_history:meta}});
+    const meta=localProjection(current,ref.here,await project(r,own,checks,ops));if(JSON.stringify(current.device_history)!==JSON.stringify(meta))ops.push({s,k:id,v:{...current,device_history:meta}});
     const ledger=prefix+"copy/"+dev.fingerprint+"/"+r.item.from_key+"/"+id,previous=await read(checks,"kv",ledger);
     if(previous){if(previous.hash!==r.hash)fail("copy ledger conflicts with original.","conflicting_copy");const copy=await read(checks,"outbox",previous.carrier);if(copy&&!["expired","not_delivered"].includes(copy.state)){done.add(k);return;}}
     // Nor the own device that forwarded it here: it holds it (native parity).

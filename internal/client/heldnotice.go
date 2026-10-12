@@ -130,7 +130,7 @@ func (a *Agent) ArchiveHeldNotice(id string) error {
 	return a.store.archiveHeldNotice(id)
 }
 func (s *store) archiveHeldNotice(id string) error {
-	result, err := s.db.Exec(`UPDATE quarantine SET notice_archived=1 WHERE id=? AND reason IN ('invalid','proof_pending')`, id)
+	result, err := s.db.Exec(`UPDATE quarantine SET notice_archived=1 WHERE id=?`, id)
 	if err == nil {
 		count, e := result.RowsAffected()
 		if e != nil {

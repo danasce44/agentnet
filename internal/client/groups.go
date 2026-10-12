@@ -291,7 +291,7 @@ func (a *Agent) decodeGroupCommit(ctx context.Context, c protocol.GroupCommit, p
 
 // PublishGroup persists the exact ciphertext before attempting CAS. A lost
 // response retries those same bytes; it never creates a replacement admission.
-func (a *Agent) PublishGroup(ctx context.Context, c protocol.GroupCommit, packet GroupContext) (protocol.GroupJournalResult, error) {
+func (a *Agent) PublishGroup(ctx context.Context, c protocol.GroupCommit, packet GroupContext, invitationID ...string) (protocol.GroupJournalResult, error) {
 	var result protocol.GroupJournalResult
 	// Completed exact attempts are receipts, never a second fan-out or an
 	// opportunity to reinstall an older current snapshot.
@@ -349,7 +349,26 @@ func (a *Agent) PublishGroup(ctx context.Context, c protocol.GroupCommit, packet
 		return result, err
 	}
 	raw, _ := json.Marshal(c)
-	_, err = a.store.db.Exec("INSERT INTO group_publications(conv,bootstrap,seq,record,payload)VALUES(?,?,?,?,?) ON CONFLICT(conv,bootstrap,seq) DO NOTHING", c.Conv, c.Bootstrap, c.Seq, raw, want)
+	var invitation string
+	var bound sql.NullString
+	err = a.store.db.QueryRow(`SELECT invitation FROM group_publications WHERE conv=? AND bootstrap=? AND seq=?`, c.Conv, c.Bootstrap, c.Seq).Scan(&bound)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return result, err
+	}
+	if bound.Valid {
+		invitation = bound.String
+	} else if len(invitationID) > 0 {
+		invitation = invitationID[0]
+	} else {
+		invitation, err = a.groupPublicationInvitation(c, packet)
+		if err != nil {
+			return result, err
+		}
+	}
+	if len(invitationID) > 0 && invitationID[0] != invitation {
+		return result, errors.New("group: pending publication invitation differs")
+	}
+	_, err = a.store.db.Exec("INSERT INTO group_publications(conv,bootstrap,seq,record,payload,invitation)VALUES(?,?,?,?,?,?) ON CONFLICT(conv,bootstrap,seq) DO NOTHING", c.Conv, c.Bootstrap, c.Seq, raw, want, invitation)
 	if err != nil {
 		return result, err
 	}
@@ -360,7 +379,27 @@ func (a *Agent) PublishGroup(ctx context.Context, c protocol.GroupCommit, packet
 	if !bytes.Equal(saved, raw) {
 		return result, errors.New("group: another publication is pending at this sequence")
 	}
-	if err = a.hub.do(ctx, "POST", "/v1/groups/"+c.Conv+"/chain?creator="+c.Bootstrap, c, &result); err != nil {
+	// Binding metadata may be added to a legacy attempt; its original signed
+	// bytes and ciphertext never change. The new relay refuses all legacy appends.
+	if !bound.Valid {
+		if _, err = a.store.db.Exec(`UPDATE group_publications SET invitation=? WHERE conv=? AND bootstrap=? AND seq=? AND record=? AND invitation IS NULL`, invitation, c.Conv, c.Bootstrap, c.Seq, raw); err != nil {
+			return result, err
+		}
+	}
+	var savedBinding string
+	if err = a.store.db.QueryRow(`SELECT invitation FROM group_publications WHERE conv=? AND bootstrap=? AND seq=?`, c.Conv, c.Bootstrap, c.Seq).Scan(&savedBinding); err != nil {
+		return result, err
+	}
+	if savedBinding != invitation {
+		return result, errors.New("group: concurrent publication binding differs")
+	}
+	publication := protocol.GroupPublication{V: 1, Commit: c, Invitation: &invitation}
+	if err = a.hub.do(ctx, "POST", "/v1/groups/"+c.Conv+"/publish?creator="+c.Bootstrap, publication, &result); err != nil {
+		var he *HubError
+		if invitation != "" && errors.As(err, &he) && he.Code == "group_invitation_cancelled" {
+			_, storeErr := a.store.db.Exec(`UPDATE group_invitations SET state='cancelled' WHERE id=? AND direction='out' AND state IN ('pending','accepted','stale','reissue')`, invitation)
+			return result, errors.Join(err, storeErr)
+		}
 		retired, proofErr := a.retireGroupLoser(ctx, c, packet, raw)
 		if retired {
 			return result, fmt.Errorf("group %s: competing committed record won sequence %d; pending attempt retired, fetch current state and explicitly retry with fresh consent: %w", c.Conv, c.Seq, err)
@@ -513,7 +552,7 @@ func (a *Agent) retireGroupLoser(ctx context.Context, attempted protocol.GroupCo
 // RecoverGroupPublications runs once on daemon start/reconnect. The existing
 // push loop triggers synchronization thereafter; no polling is introduced.
 func (a *Agent) RecoverGroupPublications(ctx context.Context) error {
-	rows, err := a.store.db.Query("SELECT record,payload FROM group_publications WHERE published=0 ORDER BY conv,seq")
+	rows, err := a.store.db.Query("SELECT record,payload FROM group_publications p WHERE published=0 AND NOT EXISTS(SELECT 1 FROM group_invitations i WHERE i.id=p.invitation AND i.direction='out' AND i.state='cancelled') ORDER BY conv,seq")
 	if err != nil {
 		return err
 	}

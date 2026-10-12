@@ -123,7 +123,7 @@ func (l *Live) Approvals() (ApprovalsView, error) {
 	for _, g := range ts {
 		v.Tasks = append(v.Tasks, TaskGrantView{Address: g.Address, Fingerprint: g.Fingerprint, Status: g.Status})
 	}
-	native, err := l.a.NativeTaskPermissions()
+	native, err := l.a.OwnHumanPermissions()
 	if err != nil {
 		return v, err
 	}
@@ -173,7 +173,7 @@ func (l *Live) Approvals() (ApprovalsView, error) {
 					row.Tasks = "device"
 				}
 				if slices.ContainsFunc(native, func(g client.Grant) bool { return g.Address == d.Address && g.Status == "active" }) {
-					row.Tasks = "native"
+					row.Questions, row.Tasks = "own", "own"
 				}
 				if pq {
 					row.Questions = "person"
@@ -183,6 +183,9 @@ func (l *Live) Approvals() (ApprovalsView, error) {
 				}
 				if pt {
 					row.Tasks = "person"
+				}
+				if t && d.Human {
+					row.Tasks = "own"
 				}
 			}
 			v.OwnDevices = append(v.OwnDevices, row)

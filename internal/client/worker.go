@@ -387,8 +387,9 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	var stdout, stderr limitedBuffer
 	stdout.max, stderr.max = maxOutput, 4<<10
 	outPath := ""
+	nativeCodex := h.sessions == codexSessions
 	roomCodex := a.codexRoomEligible(j, r, plan)
-	if h.out != "" && !roomCodex {
+	if h.out != "" && !nativeCodex {
 		f, err := os.CreateTemp(a.home, outFilePrefix+"*")
 		if err != nil {
 			a.endJob(j.ID, stateJobFailed, err.Error())
@@ -399,11 +400,15 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		defer os.Remove(outPath)
 		args = append(args, h.out, outPath)
 	}
-	args = append(args, plan.tail...)
 	if !h.stdin {
 		args = append(args, "--", prompt)
 	}
-	cmd := exec.CommandContext(runCtx, h.bin, args...)
+	launch, err := resolveNativeLaunch(h.bin)
+	if err != nil {
+		a.endJob(j.ID, stateJobFailed, "native launcher unavailable: "+err.Error())
+		return
+	}
+	cmd := exec.CommandContext(runCtx, launch.Path, args...)
 	cmd.Dir = r.Dir
 	// cmd.Environ, after Dir, keeps the PWD=Dir that exec sets when Env is
 	// nil; AgentNet's own hooks stay out of this session.
@@ -441,21 +446,16 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		}
 		cmd.Stdin = strings.NewReader(input)
 	}
-	// A codex session run reports on stdout as JSON events; the answer is
-	// taken from them (codexstream.go).
+	// Native session adapters keep completed answers separate from tool output.
 	var firstOutput sync.Once
 	first := func() {
 		firstOutput.Do(func() {
 			a.Logf("%s %s: first output: worker_elapsed_ms=%d", j.Kind, j.ID, time.Since(selectedAt).Milliseconds())
 		})
 	}
-	var events *codexStream
 	var agy *agyStream
 	var agyErr agyDiagnostics
-	if plan.ref != nil && h.sessions == codexSessions {
-		events = &codexStream{}
-		cmd.Stdout = activityWriter{Writer: events, activity: activity, first: first}
-	} else if h.sessions == agySessions {
+	if h.sessions == agySessions {
 		agy = &agyStream{}
 		if plan.ref != nil {
 			agy.expected = plan.ref.ID
@@ -470,8 +470,16 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	}
 	var roomBridge *codexRoomBridge
 	var stopNativeFollowups func()
-	if roomCodex {
-		roomBridge = newCodexRoomBridge(runCtx, cmd, prompt, cmd.Stdout, func(ctx context.Context, raw json.RawMessage) (string, error) { return a.codexRoomTool(ctx, j.ID, raw) })
+	if nativeCodex {
+		var roomCall func(context.Context, json.RawMessage) (string, error)
+		if roomCodex {
+			roomCall = func(ctx context.Context, raw json.RawMessage) (string, error) { return a.codexRoomTool(ctx, j.ID, raw) }
+		}
+		roomBridge, err = newCodexRoomBridge(runCtx, cmd, prompt, cmd.Stdout, roomCall, plan)
+		if err != nil {
+			a.endJob(j.ID, stateJobFailed, "native transport unavailable: "+err.Error())
+			return
+		}
 		cmd.Stdout = activityWriter{Writer: roomBridge, activity: activity, first: first}
 		defer roomBridge.close()
 		followupCtx, stopFollowups := context.WithCancel(runCtx)
@@ -533,9 +541,6 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	if stopWhy == "" {
 		stopWhy = a.personGrantStop(j)
 	}
-	if events != nil {
-		events.flush()
-	}
 	if agy != nil {
 		agy.flush()
 		if plan.ref != nil && plan.ref.ID == "" && agy.complete && !agy.damaged && ctx.Err() == nil {
@@ -546,10 +551,10 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 			}
 		}
 	}
-	if events != nil && plan.ref.ID == "" && ctx.Err() == nil {
+	if roomBridge != nil && plan.ref != nil && plan.ref.ID == "" && ctx.Err() == nil {
 		// Codex names a new session only once it has run; record it before
 		// the result is used.
-		if plan.ref.ID = events.threadID; plan.ref.ID == "" {
+		if plan.ref.ID = roomBridge.thread; plan.ref.ID == "" {
 			a.Logf("%s %s: %s reported no session id; the next job of this conversation starts a new session", j.Kind, j.ID, r.Harness)
 		} else if err := a.store.setSessionRef(j.ID, *plan.ref); err != nil {
 			a.endJob(j.ID, stateJobFailed, fmt.Sprintf("%s ran, but its background session could not be recorded (%v); its result was not used and it is not run again", r.Harness, err))
@@ -557,16 +562,7 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		}
 	}
 
-	// A codex session run's answer is its completed turn's last agent
-	// message; its -o file counts only for a completed turn without one.
-	failure, useFile := "", outPath != ""
-	if events != nil {
-		text, ok, why := events.result()
-		failure, useFile = why, !ok && why == "" && outPath != ""
-		if ok {
-			stdout.Write([]byte(text))
-		}
-	}
+	useFile := outPath != ""
 	if useFile {
 		stdout.Reset()
 		stdout.truncated = false
@@ -615,8 +611,6 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		if plan.resume {
 			body = "resuming the background session " + plan.ref.ID + " failed; not retried automatically. " + body
 		}
-	case failure != "":
-		status, body = envelope.StatusFailed, failure
 	case body == "":
 		// The peer gets a generic reason; the harness's own words stay in
 		// the local daemon log.

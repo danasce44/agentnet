@@ -181,7 +181,7 @@ func TestGroupInvitationCancelRefusesPublicationCustody(t *testing.T) {
 	if _, err = w.alice.PublishGroup(tctx(t), commit, next); err != nil {
 		t.Fatal(err)
 	}
-	if err = w.alice.CancelGroupInvitation(tctx(t), inv.ID); err == nil || !strings.Contains(err.Error(), "publication already started") {
+	if err = w.alice.CancelGroupInvitation(tctx(t), inv.ID); err == nil || !strings.Contains(err.Error(), "publication already committed") {
 		t.Fatalf("published membership cancellation: %v", err)
 	}
 	row, err := groupInvitationIn(w.alice.store.db, inv.ID, "out")

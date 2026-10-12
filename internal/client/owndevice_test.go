@@ -8,14 +8,8 @@ import (
 	"github.com/misunders2d/agentnet/internal/envelope"
 )
 
-// "My devices are me" (owner rule 2026-10-05), as far as X4 allows: a task
-// from another device of this person that this host trusts (person approve
-// --native) to this device's agent runs without asking, as the person's
-// own, and the worker claims it (D9 for device threads). A device of the
-// person approved without --native (a browser or phone is linked that way)
-// is not trusted: its task waits for the OK here, as someone else's does
-// (owner question 1 of the P4 spec is open). Untrusting the device makes
-// its tasks wait again.
+// Any current verified own human device runs tasks without a second approval;
+// unrelated people still wait. Native harness arguments are unchanged.
 func TestOwnTrustedDeviceTaskRunsAndIsClaimed(t *testing.T) {
 	st := installStub(t, "answer")
 	w := newWorld(t, "")
@@ -31,12 +25,12 @@ func TestOwnTrustedDeviceTaskRunsAndIsClaimed(t *testing.T) {
 	waitState(t, w.alice, task.ID, stateAnswered)
 	eventually(t, "the result on the desk", func() bool { r, ok := findReply(desk, task.ID); return ok && r.Kind == envelope.KindResult })
 
-	phone := linkedVia(t, w.alice, "phone", approveLink(w.alice)) // one of hers, not trusted here
+	phone := linkedVia(t, w.alice, "phone", approveLink(w.alice)) // ordinary human link, no native grant
 	fromPhone, err := phone.SendMessage(tctx(t), Outgoing{To: w.alice.Address, Body: "clear the downloads", Kind: envelope.KindTask})
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitState(t, w.alice, fromPhone.ID, stateAwaiting)
+	waitState(t, w.alice, fromPhone.ID, stateAnswered)
 
 	other, err := w.bob.SendMessage(tctx(t), Outgoing{To: w.alice.Address, Body: "someone else's task", Kind: envelope.KindTask})
 	if err != nil {
@@ -44,15 +38,12 @@ func TestOwnTrustedDeviceTaskRunsAndIsClaimed(t *testing.T) {
 	}
 	waitState(t, w.alice, other.ID, stateAwaiting)
 
-	if err := w.alice.UntrustOwnDevice(desk.Address); err != nil {
-		t.Fatal(err)
-	}
 	again, err := desk.SendMessage(tctx(t), Outgoing{To: w.alice.Address, Body: "and the cache", Kind: envelope.KindTask})
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitState(t, w.alice, again.ID, stateAwaiting)
-	if st.count() != 1 {
+	waitState(t, w.alice, again.ID, stateAnswered)
+	if st.count() != 3 {
 		t.Fatalf("ran %d time(s)", st.count())
 	}
 }
@@ -69,30 +60,25 @@ func ownPendingTask(t *testing.T, a, desk *Agent, body string) string {
 	return task.ID
 }
 
-// A device-thread task pending to run from an own device waits again when
-// the person untrusts that device; the predicate is the one SQL form for
-// insertion and claim.
-func TestUntrustDemotesDeviceTask(t *testing.T) {
+// Removing an obsolete native trust record does not change current human
+// authority. Signed device removal, key changes and person loss do.
+func TestOwnHumanTaskDoesNotDependOnNativeTrust(t *testing.T) {
 	w := newWorld(t, "")
 	runAgent(t, w.alice)
 	persons(t, w.alice)
-	desk := linkedVia(t, w.alice, "desk", w.alice.ApproveNativeLink)
-	task := ownPendingTask(t, w.alice, desk, "rotate the logs")
-	if ok, err := ownDeviceHolds(w.alice.store.db, desk.Address, desk.Self().Fingerprint()); err != nil || !ok {
-		t.Fatalf("own device %v %v", ok, err)
-	}
-	if ok, _ := ownDeviceHolds(w.alice.store.db, desk.Address, w.bob.Self().Fingerprint()); ok {
-		t.Fatal("a key the roster does not list holds")
-	}
-	if err := w.alice.UntrustOwnDevice(desk.Address); err != nil {
+	phone := linkedVia(t, w.alice, "phone", approveLink(w.alice))
+	id := ownPendingTask(t, w.alice, phone, "rotate the logs")
+	if err := w.alice.store.setConfig(map[string]string{"self_consent": "[]"}); err != nil {
 		t.Fatal(err)
 	}
-	m := inboxRow(t, w.alice, task)
-	if m.State != stateAwaiting || !strings.Contains(m.Detail, "untrusted") {
-		t.Fatalf("after untrust %+v", m)
+	if ok, err := ownDeviceHolds(w.alice.store.db, phone.Address, phone.Self().Fingerprint()); err != nil || !ok {
+		t.Fatalf("own authority %v %v", ok, err)
 	}
-	if ok, _ := ownDeviceHolds(w.alice.store.db, desk.Address, desk.Self().Fingerprint()); ok {
-		t.Fatal("an untrusted device still holds")
+	if ok, _ := ownDeviceHolds(w.alice.store.db, phone.Address, w.bob.Self().Fingerprint()); ok {
+		t.Fatal("wrong key allowed")
+	}
+	if m := inboxRow(t, w.alice, id); m.State != statePending {
+		t.Fatalf("lost pending task %+v", m)
 	}
 }
 

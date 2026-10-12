@@ -32,7 +32,15 @@ func (a *App) phone(id string, s *Session) *phoneProvider {
 	}
 	s.mu.Unlock()
 	s.live.SetApp(true)
-	return &phoneProvider{Live: s.live, available: a.notificationsAvailable, address: s.a.Address, session: s}
+	return &phoneProvider{Live: s.live, available: a.notificationsAvailable, address: s.a.Address, session: s,
+		dismiss: func(fragment string) {
+			a.mu.Lock()
+			n, closed := a.notifier, a.closed
+			a.mu.Unlock()
+			if n != nil && !closed {
+				n.Dismiss(id, fragment)
+			}
+		}}
 }
 func (a *App) messenger(defaultSession *Session) (handler http.Handler, failure error) {
 	defer func() {

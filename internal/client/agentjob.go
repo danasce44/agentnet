@@ -180,21 +180,23 @@ func agentVerdict(q dbq, r agentReq, self, selfFP string, output bool, views map
 		} else if own {
 			return verdictRun, "", nil
 		}
+		if own, err := ownDeviceHolds(q, r.Sender, r.Key); err != nil || own {
+			return verdictRun, "", err
+		}
 		if granted, err := taskGranted(q, r.Sender, r.Key); err != nil || granted {
 			return verdictRun, "", err
 		}
 		return verdictAsk, "a task for your agent from a guest without standing permission for tasks: accept it to run it once (agentnet accept ID)", nil
 	}
+	if own, err := ownDeviceHolds(q, r.Sender, r.Key); err != nil || own {
+		return verdictRun, "", err
+	}
 	if v.m.group != nil && r.Kind == envelope.KindQuestion && !output && !r.Local && r.State != stateAccepted {
-		own := false
-		for _, p := range v.m.persons {
-			own = own || p.info.Person == info.Host.Person && p.has(r.Sender, r.Key)
-		}
 		approved, err := questionApproved(q, r.Sender, r.Key) // the device's or its person's grant (P7)
 		if err != nil {
 			return 0, "", err
 		}
-		if !own && !approved {
+		if !approved {
 			return verdictAsk, "a group member asks your agent; your approval is needed", nil
 		}
 	}

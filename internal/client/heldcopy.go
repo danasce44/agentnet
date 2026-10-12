@@ -98,7 +98,7 @@ func (s *store) holdCopy(env envelope.Envelope, key, logical, reason, why string
 		relay_ingress = CASE WHEN quarantine.envelope=excluded.envelope THEN max(quarantine.relay_ingress,excluded.relay_ingress) ELSE quarantine.relay_ingress END,
 		copy_key = CASE WHEN excluded.copy_key<>'' THEN excluded.copy_key ELSE quarantine.copy_key END,
 		logical = CASE WHEN excluded.logical<>'' THEN excluded.logical ELSE quarantine.logical END,
-		notice_archived = CASE WHEN excluded.reason IN ('invalid','proof_pending') AND quarantine.reason=excluded.reason AND (excluded.reason='proof_pending' OR quarantine.detail_code=excluded.detail_code) THEN quarantine.notice_archived ELSE 0 END`,
+		notice_archived = CASE WHEN quarantine.reason=excluded.reason AND (excluded.reason='proof_pending' OR quarantine.detail_code=excluded.detail_code) THEN quarantine.notice_archived ELSE 0 END`,
 		env.ID, env.From, reason, string(raw), time.Now().Unix(), code, key, logical, marked); err != nil {
 		return "", false, err
 	}

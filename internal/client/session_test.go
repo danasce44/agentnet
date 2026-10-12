@@ -14,49 +14,17 @@ import (
 	"github.com/misunders2d/agentnet/internal/envelope"
 )
 
-// sessionStub registers "cstyle" (claude-style sessions) on the shell stub
-// and "xstyle" (codex-style) on a stand-in that, asked for JSON, reports
-// $STUB_THREAD as its thread id, $STUB_NOISE bytes of other events, then an
-// agent message and a completed turn ($STUB_TURN=fail: a failed turn after a
-// partial message; cut: the stream ends after a partial message;
-// $STUB_NO_AGENT: no agent message), and writes $STUB_O
-// (possibly nothing) to the -o file.
+// sessionStub exercises Claude session flags and Codex's native app-server.
 func sessionStub(t *testing.T) *stub {
 	st := installStub(t, "answer")
-	x := filepath.Join(t.TempDir(), "codex.sh")
-	os.WriteFile(x, []byte(`#!/bin/sh
-echo "run $*" >> "$STUB_LOG"
-cat > /dev/null
-case " $* " in *" --json "*)
-  [ -n "$STUB_THREAD" ] && echo "{\"type\":\"thread.started\",\"thread_id\":\"$STUB_THREAD\"}"
-  echo '{"type":"turn.started"}'
-  if [ "$STUB_NOISE" -gt 0 ] 2>/dev/null; then
-    printf '{"type":"item.completed","item":{"type":"reasoning","text":"'; head -c "$STUB_NOISE" /dev/zero | tr '\0' x; printf '"}}\n'
-    echo 'not json at all'
-  fi
-  if [ "$STUB_TURN" = fail ]; then
-    echo '{"type":"item.completed","item":{"type":"agent_message","text":"partial commentary"}}'
-    echo '{"type":"turn.failed","error":{"message":"boom"}}'
-  elif [ "$STUB_TURN" = cut ]; then
-    echo '{"type":"item.completed","item":{"type":"agent_message","text":"partial commentary"}}'
-  else
-    [ -z "$STUB_NO_AGENT" ] && echo '{"type":"item.completed","item":{"type":"agent_message","text":"codex json answer"}}'
-    printf '{"type":"turn.completed","usage":{}}'
-  fi;;
-esac
-while [ $# -gt 0 ]; do [ "$1" = -o ] && [ -n "$STUB_O" ] && printf '%s' "$STUB_O" > "$2"; shift; done
-`), 0o700)
+	x := installCodexSessionStub(t, st.log)
 	t.Setenv("STUB_THREAD", "thread-1")
-	t.Setenv("STUB_O", "codex answer")
 	t.Setenv("STUB_NOISE", "0")
 	t.Setenv("STUB_TURN", "")
 	t.Setenv("STUB_NO_AGENT", "")
-	Harnesses["cstyle"] = harness{bin: Harnesses["stub"].bin, question: []string{"--question-mode", sessionOneShot},
-		task: []string{"--task-mode", sessionOneShot}, stdin: true, sessions: claudeSessions}
-	Harnesses["cstyle2"] = harness{bin: Harnesses["stub"].bin, question: []string{"--other-flags", sessionOneShot},
-		task: []string{"--task-mode", sessionOneShot}, stdin: true, sessions: claudeSessions}
-	Harnesses["xstyle"] = harness{bin: x, question: []string{"exec", "--ephemeral", "--sandbox", "read-only", "--color", "never", "--disable", "shell_tool"},
-		task: []string{"exec", "--ephemeral", "--color", "never"}, stdin: true, out: "-o", sessions: codexSessions}
+	Harnesses["cstyle"] = harness{bin: Harnesses["stub"].bin, question: []string{"--question-mode", sessionOneShot}, task: []string{"--task-mode", sessionOneShot}, stdin: true, sessions: claudeSessions}
+	Harnesses["cstyle2"] = harness{bin: Harnesses["stub"].bin, question: []string{"--other-flags", sessionOneShot}, task: []string{"--task-mode", sessionOneShot}, stdin: true, sessions: claudeSessions}
+	Harnesses["xstyle"] = harness{bin: x, question: []string{"app-server"}, task: []string{"app-server"}, stdin: true, sessions: codexSessions}
 	t.Cleanup(func() { delete(Harnesses, "cstyle"); delete(Harnesses, "cstyle2"); delete(Harnesses, "xstyle") })
 	return st
 }
@@ -263,8 +231,7 @@ func TestSessionAfterInterruption(t *testing.T) {
 	}
 }
 
-// Codex style: the thread id is taken from the first run's JSON output and
-// the resume re-applies the question restrictions in the form resume takes.
+// Codex saves the native thread ID, then resumes only the exact owned thread.
 func TestCodexStyleSession(t *testing.T) {
 	st := sessionStub(t)
 	w := newWorld(t, "")
@@ -278,22 +245,25 @@ func TestCodexStyleSession(t *testing.T) {
 	}
 	q2, a2 := ask(t, w, a1)
 	runs := st.runs()
-	if !strings.HasPrefix(runs[0], "run exec --sandbox read-only --color never --disable shell_tool --json -o ") || !strings.HasSuffix(runs[0], " -") {
-		t.Fatalf("first run: %s", runs[0])
+	if len(runs) != 2 || runs[0] != "run app-server" || runs[1] != "run app-server" {
+		t.Fatalf("native launch %v", runs)
 	}
-	if !strings.HasPrefix(runs[1], `run exec resume thread-1 --json -c sandbox_mode="read-only" --disable shell_tool -o `) || !strings.HasSuffix(runs[1], " -") {
-		t.Fatalf("resume: %s", runs[1])
+	raw, _ := os.ReadFile(st.log + ".rpc")
+	if !strings.Contains(string(raw), "thread/start") || !strings.Contains(string(raw), "thread/resume thread-1") {
+		t.Fatalf("missing owned resume: %s", raw)
 	}
-	if m, _ := w.alice.store.inboxMessage(a2); m == nil || m.Body != "codex json answer" || sessionOf(t, w.bob, q2).ID != "thread-1" {
+	if m, _ := w.alice.store.inboxMessage(a2); m == nil || m.Body != "codex native answer" || sessionOf(t, w.bob, q2).ID != "thread-1" {
 		t.Fatalf("resumed answer %+v", m)
 	}
-
-	// No thread id reported: the answer stands, nothing is recorded, and the
-	// conversation's next job starts a new session.
+	// Missing thread identity cannot be treated as a completed anonymous run.
 	t.Setenv("STUB_THREAD", "")
-	q3, _ := ask(t, w, "")
-	if ref := sessionOf(t, w.bob, q3); ref != nil {
-		t.Fatalf("recorded without an id: %+v", ref)
+	q, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: "missing identity", Kind: envelope.KindQuestion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w.bob, q.ID, stateNeedHuman)
+	if ref := sessionOf(t, w.bob, q.ID); ref != nil {
+		t.Fatalf("recorded without ID: %+v", ref)
 	}
 }
 
@@ -443,10 +413,8 @@ func TestCheckReplyTo(t *testing.T) {
 	}
 }
 
-// Codex's answer comes from its JSON events, even when its -o file stays
-// empty and more than the output limit of other events comes first; a
-// turn that fails after a partial message is a failure, not an answer; a
-// completed turn without an agent message falls back to the -o file.
+// Tool/reasoning events never become the answer, and an incomplete native turn
+// cannot publish a partial answer or silently replay.
 func TestCodexAnswerFromEvents(t *testing.T) {
 	st := sessionStub(t)
 	w := newWorld(t, "")
@@ -454,84 +422,28 @@ func TestCodexAnswerFromEvents(t *testing.T) {
 	w.bob.Approve(w.alice.Address)
 	runWith(t, w, w.bob, RunOptions{})
 	runWith(t, w, w.alice, RunOptions{})
-	body := func(answer string) string { m, _ := w.alice.store.inboxMessage(answer); return m.Body }
-
-	t.Setenv("STUB_O", "")
 	t.Setenv("STUB_NOISE", "200000")
-	q1, a1 := ask(t, w, "")
-	if body(a1) != "codex json answer" || sessionOf(t, w.bob, q1).ID != "thread-1" {
-		t.Fatalf("answer %q", body(a1))
+	q, a := ask(t, w, "")
+	m, _ := w.alice.store.inboxMessage(a)
+	if m.Body != "codex native answer" || sessionOf(t, w.bob, q).ID != "thread-1" {
+		t.Fatalf("answer %+v", m)
 	}
-
-	t.Setenv("STUB_NOISE", "0")
-	t.Setenv("STUB_TURN", "fail")
-	t.Setenv("STUB_O", "partial commentary")
-	q2, a2 := ask(t, w, "")
-	if m, _ := w.alice.store.inboxMessage(a2); m.Status != envelope.StatusFailed || strings.Contains(m.Body, "partial") {
-		t.Fatalf("failed turn became %+v", m)
-	}
-	if s, _ := w.bob.store.jobState(q2); s != stateJobFailed {
-		t.Fatalf("state %s", s)
-	}
-
-	// The stream ends without a completed turn: a failure, even though the
-	// -o file has text.
-	t.Setenv("STUB_TURN", "cut")
-	t.Setenv("STUB_O", "file text after a cut stream")
-	_, a4 := ask(t, w, "")
-	if m, _ := w.alice.store.inboxMessage(a4); m.Status != envelope.StatusFailed || m.Body != "codex did not report a completed turn" {
-		t.Fatalf("cut stream became %+v", m)
-	}
-
-	t.Setenv("STUB_TURN", "")
-	t.Setenv("STUB_NO_AGENT", "1")
-	t.Setenv("STUB_O", "from the file")
-	_, a3 := ask(t, w, "")
-	if body(a3) != "from the file" {
-		t.Fatalf("fallback %q", body(a3))
-	}
-}
-
-func TestCodexStreamParsing(t *testing.T) {
-	run := func(parts ...string) *codexStream {
-		var c codexStream
-		for _, p := range parts {
-			c.Write([]byte(p))
+	for _, mode := range []string{"fail", "cut", "empty", "approval"} {
+		t.Setenv("STUB_TURN", mode)
+		sent, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: mode, Kind: envelope.KindQuestion})
+		if err != nil {
+			t.Fatal(err)
 		}
-		c.flush()
-		return &c
-	}
-	msg := func(text string) string {
-		return `{"type":"item.completed","item":{"type":"agent_message","text":"` + text + `"}}` + "\n"
-	}
-	done := `{"type":"turn.completed"}`
-	oversized := `{"type":"item.completed","item":{"type":"agent_message","text":"` + strings.Repeat("x", codexLineMax) + `"}}` + "\n"
-
-	events := `{"type":"thread.started","thread_id":"T1"}` + "\n" + msg("first") +
-		`{"type":"item.completed","item":{"type":"command_execution","text":"ignored"}}` + "\n" + "\n" + msg("final") + done
-	var c codexStream
-	for i := 0; i < len(events); i++ { // one byte per write; the last line has no newline
-		c.Write([]byte{events[i]})
-	}
-	c.flush()
-	if got, ok, _ := c.result(); !ok || got != "final" || c.threadID != "T1" {
-		t.Fatalf("split writes: %q %v %q", got, ok, c.threadID)
-	}
-	for name, parts := range map[string][]string{
-		"stale message, oversized final":  {msg("stale"), oversized, done},
-		"stale message, malformed final":  {msg("stale"), `{"type":"item.completed","item":{"type":"agent_mess` + "\n", done},
-		"damaged, no message, completed":  {"not json\n", done},
-		"message, then failed turn":       {msg("partial"), `{"type":"turn.failed"}` + "\n"},
-		"message, stream ends unfinished": {msg("cut off")},
-	} {
-		if got, ok, why := run(parts...).result(); ok || why == "" || got != "" {
-			t.Errorf("%s: %q %v %q", name, got, ok, why)
+		waitState(t, w.bob, sent.ID, stateNeedHuman)
+		if _, ok := findReply(w.alice, sent.ID); ok {
+			t.Fatal("partial or unapproved turn answered")
 		}
-	}
-	if got, ok, _ := run(msg("stale"), "garbage\n", oversized, msg("recovered"), done).result(); !ok || got != "recovered" {
-		t.Fatalf("a later readable message: %q %v", got, ok)
-	}
-	if got, ok, why := run(`{"type":"turn.started"}`+"\n", done).result(); ok || why != "" || got != "" {
-		t.Fatalf("completed turn without a message should allow the -o file: %q %v %q", got, ok, why)
+		row, _ := w.bob.store.inboxMessage(sent.ID)
+		if strings.Contains(row.Detail, "partial commentary") {
+			t.Fatal("partial answer mistaken for completion")
+		}
+		if mode == "approval" && !strings.Contains(row.Detail, "fixture native permission") {
+			t.Fatalf("native reason lost: %s", row.Detail)
+		}
 	}
 }

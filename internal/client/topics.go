@@ -280,7 +280,7 @@ func summarize(self, peer string, g []string, rows map[string]threadRow, l topic
 		if r.in && r.unread {
 			t.Unread++
 		}
-		if !r.in && (r.kind == envelope.KindQuestion || r.kind == envelope.KindTask) && !r.replied {
+		if !r.in && topicOpen(r, r.replied) {
 			t.Waiting = true
 		}
 	}

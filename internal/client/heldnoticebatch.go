@@ -21,7 +21,7 @@ func (a *Agent) ArchiveHeldNotices(refs []HeldNoticeRef) (int, error) {
 		return 0, errors.New("choose between 1 and 256 held notices")
 	}
 	for _, ref := range refs {
-		if !protocol.ValidID(ref.ID) || ref.Reason != reasonInvalid && ref.Reason != reasonProof || len(ref.DetailCode) > 80 {
+		if !protocol.ValidID(ref.ID) || ref.Reason == "" || len(ref.Reason) > 80 || len(ref.DetailCode) > 80 {
 			return 0, errors.New("invalid held-notice snapshot")
 		}
 	}

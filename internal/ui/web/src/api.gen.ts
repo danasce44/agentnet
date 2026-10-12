@@ -222,6 +222,7 @@ export interface DMDraft {
 
 export interface DMMessage {
   continuation?: ContinuationAction;
+  stop?: StopAction;
   send_group?: string;
   send_group_author?: string;
   status?: string;
@@ -688,6 +689,7 @@ export interface Message {
   synced_from?: string;
   from_key?: string;
   continuation?: ContinuationAction;
+  stop?: StopAction;
   target?: Target;
   agent_id?: string;
   id: string;
@@ -862,6 +864,7 @@ export interface ProposalView {
 
 export interface QuarantineItem {
   can_archive: boolean;
+  notice_reason?: string;
   detail_code?: string;
   detail: string;
   recovery: string;
@@ -1039,6 +1042,15 @@ export interface Skin {
   document?: string;
   files?: string[];
   digest?: string;
+}
+
+export interface StopAction {
+  id: string;
+  key: string;
+  host?: string;
+  attempt: number;
+  pending?: boolean;
+  result?: DecisionResult;
 }
 
 export interface StorageAmount {

@@ -9,7 +9,7 @@ assert(evidence, 'AGENTNET_SCREENSHOTS must be outside the repository');
 fs.mkdirSync(evidence, { recursive: true, mode: 0o700 });
 const boot = `
 const kind=new URL(location).searchParams.get('kind'),skin=new URL(location).searchParams.get('skin');
-const pendingMode=${!!process.env.P11_PENDING_ONLY},importMode=${!!process.env.P11_HISTORY_IMPORT_ONLY};
+const stopMode=${!!process.env.P11_STOP_ONLY},draftsMode=${!!process.env.P11_DRAFTS_ONLY},pendingMode=${!!process.env.P11_PENDING_ONLY},importMode=${!!process.env.P11_HISTORY_IMPORT_ONLY};
 const conv='c'.repeat(64),at='2026-10-05T10:00:00Z';
 const person=(label,address,key)=>({person:label.toLowerCase().padEnd(32,'a'),label,address,fingerprint:key,state:'pinned',devices:[{address,fingerprint:key}]});
 const me=person('Sergey','sergey/laptop','own-key'),peer=person('Vitalii','vitalii/desktop','peer-key');me.state='self';
@@ -25,6 +25,11 @@ const update={to:peer.address,state:'waiting',detail:'peer_update: named agent c
 if(pendingMode){topics[0].pending=true;topics[0].waiting=false;topics[0].unconfirmed=2;topics[0].pending_ids=[topics[0].id,'b'.repeat(32)];thread.messages=[...(kind==='agent'?[]:[main]),asked({...message(0),kind:'task',body:'Earlier unresolved task',target:{address:peer.address,fingerprint:peer.fingerprint},...(kind==='agent'?{}:{copies:[update]})}),asked({...message(0),id:'b'.repeat(32),lid:'b'.repeat(32),kind:'question',body:'Second pending question',exec:{state:'needs_human',host:peer.address,attempt:1,stale:true},target:{address:peer.address,fingerprint:peer.fingerprint}}),{...message(0),id:'d'.repeat(32),lid:'d'.repeat(32),kind:'answer',body:'Unrelated final answer'}];}
 const overview={version:'fixture',topic_list:true,seq:1,me:{address:me.address,fingerprint:me.fingerprint},person:me,persons:true,agents:true,files:false,controls:false,role:'person',people:[peer],review:[],links:[],reminders:[],threads:kind==='agent'?topics:[],topics:kind==='agent'?[{peer:peer.address,total:4,archived:0,archived_unread:0,latest:topics[0]}]:[],dms:kind==='agent'?[]:[{id:conv,kind:thread.kind,title:thread.title,peer:thread.peer,count:5,unread:0}],directory:{current:true,members:[{address:me.address,presence:'connected'},{address:peer.address,presence:'connected'}]},quarantine:[]};
 if(pendingMode)overview.directory.members[1].presence='offline';
+if(stopMode){
+ const pid='9'.repeat(32),m=asked({...message(0),kind:'question',body:'Exact remote running request',topic:'',pid,target:{address:peer.address,fingerprint:peer.fingerprint},exec:{host:peer.address,state:'running',attempt:2,at:Math.floor(Date.now()/1000)},stop:{host:peer.address,id:topics[0].id,key:me.fingerprint,attempt:2,pending:sessionStorage.getItem('stopQueued')==='1'}});
+ thread.messages=[m];if(kind!=='agent')thread.agents=[{pid,host:{...me,address:peer.address},name:'Own agent',state:'active',state_text:'Active',host_here:false,inviter:me,shared:[],tasks_from:[],held:0,missing:0,invited:at,can_ask:true,can_decide:false,can_dismiss:false}];
+}
+
 let destination;
 if(importMode){
  main.kind='task';main.attachments=[{index:0,name:'terms.md',size:19,openable:true},{index:1,name:'unavailable.md',size:11,openable:false}];
@@ -32,14 +37,18 @@ if(importMode){
  destination={id:'d'.repeat(64),kind:'group',title:'Launch review',peer:{label:'Launch review',address:'',state:''},role:'member',members:[me,peer],frozen:'',agents:[],guests:[],topics:[{id:'5'.repeat(32),title:'Launch notes',state:'active',count:0}],messages:[]};
  overview.dms.push({id:destination.id,kind:'group',title:destination.title,peer:destination.peer,count:0,unread:0},{id:'e'.repeat(64),kind:'group',title:'Frozen archive',peer:{label:'Frozen archive',address:'',state:''},frozen:'frozen',count:0});
 }
+if(draftsMode)overview.files={max_file:1048576,max_message:2097152,max_count:8};
 window.fixture={overview,thread,requests:[],topics,destination,previews:0,shares:{}};let open,changed;
 
+window.confirmStop=()=>{thread.messages[0].exec.state="cancelled";delete thread.messages[0].stop;changed?.({type:"change",seq:++overview.seq});};
 window.resolvePending=()=>{topics[0].pending_ids=[];topics[0].pending=topics[0].waiting=false;changed?.({type:'change',seq:++overview.seq});};
 const host={version:1,platform:'daemon',workspace:{id:'default',name:'P11 local fixture',endpoint:location.origin,address:me.address,realm:'',state:'enrolled'},workspaces:null,skins:[],onSkinsChange(){return()=>{};},onOpen(fn){open=fn;},listen(fn){changed=fn;return()=>{};},stage:async()=>{throw Error('No fixture files');},file:async()=>{throw Error('No fixture files');},api:async(p,body)=>{
  fixture.requests.push({path:p,body});const url=new URL(p,location.origin);
+ if(stopMode&&p==='/api/operator/decide'){sessionStorage.setItem('stopQueued','1');thread.messages[0].stop.pending=true;changed?.({type:'change',seq:++overview.seq});return {note:'Stop queued; host offline.'};}
  if(p.startsWith('/api/overview'))return structuredClone(overview);
+ if(draftsMode&&p.startsWith('/api/dm?')&&url.searchParams.get('id')==='d'.repeat(64))return {...thread,id:'d'.repeat(64),messages:[],topics:[]};
  if(p.startsWith('/api/dm?'))return structuredClone(importMode&&url.searchParams.get('id')===destination.id?destination:thread);
- if(p.startsWith('/api/thread?')){if(pendingMode)return structuredClone(thread);const t=topics.find(t=>t.id===url.searchParams.get('id'))||topics[0];return {id:t.id,peer:peer.address,key:{pinned:'peer-key'},approved:false,task_grant:'',topic:structuredClone(t),messages:[t.id==='f'.repeat(32)?window.freshMessage:{...message(Number(t.title.slice(-1))-1)}]};}
+ if(p.startsWith('/api/thread?')){if(pendingMode||stopMode)return structuredClone(thread);const t=topics.find(t=>t.id===url.searchParams.get('id'))||topics[0];return {id:t.id,peer:peer.address,key:{pinned:'peer-key'},approved:false,task_grant:'',topic:structuredClone(t),messages:[t.id==='f'.repeat(32)?window.freshMessage:{...message(Number(t.title.slice(-1))-1)}]};}
  if(p.startsWith('/api/topics?')){const state=url.searchParams.get('state'),q=(url.searchParams.get('q')||'').toLowerCase();const rows=topics.filter(t=>(!state||t.state===state)&&t.title.toLowerCase().includes(q));return {topics:structuredClone(rows),matched:rows.length};}
  if(importMode&&p==='/api/history/contribution/preview'){
   const operation=String(++fixture.previews+5).repeat(32),selected=new Set((body.files||[]).map(f=>f.id+':'+f.index));
@@ -68,6 +77,7 @@ const base='/assets/skins/'+skin+'/',manifest=await(await fetch(base+'skin.json'
 if(manifest.document){const css=new CSSStyleSheet();css.replaceSync(await(await fetch(base+manifest.document)).text());document.adoptedStyleSheets=[css];}
 const shadow=document.querySelector('#skin').attachShadow({mode:'open'}),css=new CSSStyleSheet();css.replaceSync(await(await fetch(base+manifest.style)).text());shadow.adoptedStyleSheets=[css];
 const root=document.createElement('div');root.className='skin-root';shadow.append(root);await(await import(base+manifest.entry)).mount(root,host);
+window.openOther=()=>open("d".repeat(64),"conversation");
 window.openChat=()=>open(kind==='agent'?topics[0].id:conv,kind==='agent'?'message':'conversation');window.ready=true;
 `;
 const server = http.createServer((req, res) => {
@@ -90,9 +100,9 @@ const server = http.createServer((req, res) => {
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const origin = 'http://127.0.0.1:' + server.address().port;
     browser = await chromium.launch({ headless: true, executablePath: process.env.AGENTNET_CHROMIUM || '/usr/bin/chromium' });
-    for (const skin of (process.env.P11_SKINS||'comic,classic,zoom').split(',')) for (const kind of ((process.env.P11_ORGANIZE_ONLY||process.env.P11_HISTORY_IMPORT_ONLY)?['dm','group']:process.env.P11_PENDING_ONLY?['group','agent']:['dm', 'group', 'agent'])) for (const width of [1280, 390]) {
+    for (const skin of (process.env.P11_SKINS||'comic,classic,zoom').split(',')) for (const kind of ((process.env.P11_ORGANIZE_ONLY||process.env.P11_HISTORY_IMPORT_ONLY||process.env.P11_DRAFTS_ONLY||process.env.P11_MENTIONS_ONLY)?['dm','group']:(process.env.P11_PENDING_ONLY||process.env.P11_STOP_ONLY)?['group','agent']:['dm', 'group', 'agent'])) for (const width of [1280, 390]) {
       const tag = skin + '-' + kind + '-' + width;
-      const ctx = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: width < 500, reducedMotion: 'reduce' });
       await ctx.route('**/*', r => new URL(r.request().url()).origin === origin ? r.continue() : r.abort());
       const page = await ctx.newPage(); page.setDefaultTimeout(10000);
       page.on('pageerror', e => errors.push(tag + ': ' + e.stack));
@@ -103,12 +113,91 @@ const server = http.createServer((req, res) => {
         await page.goto(origin + '/?skin=' + skin + '&kind=' + kind);
         await page.waitForFunction(() => window.ready); await page.evaluate(() => openChat());
         await all().waitFor();
-        if (kind !== 'agent' && !process.env.P11_PENDING_ONLY) {
+        if (kind !== 'agent' && !process.env.P11_PENDING_ONLY && !process.env.P11_STOP_ONLY) {
           await page.getByText('Quick main flow message', { exact: false }).first().waitFor();
           assert.equal(await page.getByText('Topic 1 message', { exact: false }).isVisible(), false, tag + ': topic is separate from main');
         }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': page fits');
         await page.evaluate(() => document.fonts.ready); await shot('main');
+
+
+        if(process.env.P11_STOP_ONLY){
+          const stop=page.getByRole('button',{name:'Stop',exact:true});await stop.waitFor();
+          if(width<500)await stop.tap();else{await stop.focus();await stop.press('Enter');}
+          await page.getByRole('button',{name:'Stop queued',exact:true}).waitFor();
+          const decision=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/operator/decide'));
+          assert.equal(decision.length,1);assert.equal(decision[0].body.action,'cancel');assert.equal(decision[0].body.expect,'running');assert.equal(decision[0].body.attempt,2);assert.equal(decision[0].body.id,'1'.repeat(32));assert.equal(decision[0].body.report,'');
+          assert.equal(await page.evaluate(()=>fixture.thread.messages[0].exec.state),'running','queueing never fabricates stopped');
+          await page.reload();await page.waitForFunction(()=>window.ready);await page.evaluate(()=>openChat());
+          await page.getByRole('button',{name:'Stop queued',exact:true}).waitFor();
+          assert.equal(await page.getByRole('button',{name:'Stop queued',exact:true}).isDisabled(),true,'pending survives reload');
+          await page.evaluate(()=>confirmStop());await page.getByRole('button',{name:'Stop queued',exact:true}).waitFor({state:'detached'});
+          assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>['/api/send','/api/dm/send','/api/agent/ask'].includes(r.path)).length),0,'Stop never sends natural-language work');
+          await shot('remote-stop');combinations++;continue;
+        }
+
+        if(process.env.P11_MENTIONS_ONLY){
+          const composer=page.getByRole('form',{name:'Write a message'}),field=composer.getByRole('textbox');
+          const button=composer.getByRole('button',{name:'Mention someone',exact:true});
+          await button.waitFor();
+          const before=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/send'||r.path==='/api/agent/ask').length);
+          await button.click();await page.getByRole('listbox').waitFor();
+          assert.equal(await field.inputValue(),'','opening picker does not edit empty draft');
+          await field.press('Escape');assert.equal(await page.getByRole('listbox').count(),0);
+          assert.equal(await field.inputValue(),'','Escape keeps draft');
+          const ru='Привет, обсудим сегодня';
+          await field.fill(ru);await field.evaluate(e=>{e.setSelectionRange(8,8);});
+          if(width<500)await button.tap();else await button.click();
+          await page.getByRole('option').filter({hasText:'Vitalii'}).first().click();
+          assert.equal(await field.inputValue(),'Привет, @Vitalii обсудим сегодня','Cyrillic caret and suffix preserved');
+          assert.equal(await field.evaluate(e=>e.selectionStart),17);
+          await field.fill('Спасибо всем');await field.evaluate(e=>e.setSelectionRange(8,12));
+          await button.focus();await button.press('Enter');await page.getByRole('listbox').waitFor();
+          await field.press('ArrowDown');await field.press('Escape');
+          assert.equal(await field.inputValue(),'Спасибо всем','keyboard picker escape preserves selection text');
+          assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/send'||r.path==='/api/agent/ask').length),before,'picker never implicitly sends');
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          await shot('persistent-mention-button');combinations++;continue;
+        }
+
+        if(process.env.P11_DRAFTS_ONLY){
+          const key='agentnet.messenger.drafts.default',conv='c'.repeat(64);
+          const composer=()=>page.getByRole('form',{name:'Write a message'});
+          const field=()=>composer().getByRole('textbox');
+          const draft=()=>page.evaluate(({key,conv})=>JSON.parse(localStorage.getItem(key)||'{}')[conv],{key,conv});
+          const reopen=async()=>{await page.reload();await page.waitForFunction(()=>window.ready);await page.evaluate(()=>openChat());await composer().waitFor();};
+          await all().click();await page.getByRole('dialog',{name:'All topics',exact:true}).getByRole('button',{name:/^Topic 1(?:\b)/}).click();
+          await field().fill('Unsent existing-topic draft');
+          await page.waitForFunction(({key,conv})=>JSON.parse(localStorage.getItem(key)||'{}')[conv]?.text==='Unsent existing-topic draft',{key,conv});
+          assert.equal((await draft()).topic,'1'.repeat(32));
+          await page.evaluate(()=>openOther());await page.locator('form[data-conv="'+ 'd'.repeat(64)+'"]').waitFor();
+          await page.evaluate(()=>openChat());await field().waitFor();assert.equal(await field().inputValue(),'Unsent existing-topic draft');
+          assert.equal((await draft()).topic,'1'.repeat(32),'navigation retains destination');
+          await reopen();assert.equal(await field().inputValue(),'Unsent existing-topic draft');
+          await page.locator('[role=log] [data-mid="'+ '1'.repeat(32)+'"]').waitFor();
+          // Restore a real reply draft and verify the rendered quote and target.
+          await page.evaluate(({key,conv})=>{const d=JSON.parse(localStorage.getItem(key));d[conv].replyTo='1'.repeat(32);localStorage.setItem(key,JSON.stringify(d));},{key,conv});
+          await reopen();await composer().getByRole('button',{name:'Cancel reply',exact:true}).waitFor();
+          assert.equal((await draft()).replyTo,'1'.repeat(32));await shot('reply-draft-restored');
+          await composer().getByRole('button',{name:'Cancel reply',exact:true}).click();
+          await page.getByRole('button',{name:'New topic',exact:true}).click();await field().fill('Unsent new-topic draft');
+          await reopen();assert.equal(await field().inputValue(),'Unsent new-topic draft');assert.equal((await draft()).newTopic,true);
+          await composer().getByRole('button',{name:'Keep this conversation',exact:true}).waitFor();
+          // Missing destination never silently sends to Main or drops a reply.
+          await page.evaluate(({key,conv})=>localStorage.setItem(key,JSON.stringify({[conv]:{text:'Keep this draft',topic:'e'.repeat(32),replyTo:'f'.repeat(32)}})),{key,conv});
+          await reopen();await composer().getByText('Topic unavailable',{exact:true}).waitFor();await composer().getByText('Reply unavailable',{exact:true}).waitFor();
+          assert(await composer().getByRole('button',{name:/^Send/}).isDisabled());await shot('missing-draft-target');
+          await composer().getByRole('button',{name:'Cancel unavailable reply',exact:true}).click();await composer().getByRole('button',{name:'Move draft to Main',exact:true}).click();
+          assert.equal(await field().inputValue(),'Keep this draft');
+          // Files live in memory only, surviving navigation without fake reload persistence.
+          await field().fill('');await composer().locator('input[type=file]').setInputFiles({name:'draft-only.txt',mimeType:'text/plain',buffer:Buffer.from('fixture')});
+          await composer().getByText('draft-only.txt',{exact:true}).waitFor();
+          await page.evaluate(()=>openOther());await page.locator('form[data-conv="'+ 'd'.repeat(64)+'"]').waitFor();await page.evaluate(()=>openChat());
+          await composer().getByText('draft-only.txt',{exact:true}).waitFor();
+          assert(!(JSON.stringify(await draft())||'').includes('draft-only.txt'),'no serialized File placeholders');
+          assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/send'||r.path==='/api/dm/send').length),0,'draft checks send nothing');
+          combinations++;console.log('PASS drafts '+tag);await ctx.close();continue;
+        }
 
         if(process.env.P11_HISTORY_IMPORT_ONLY){
           const original=await page.evaluate(()=>JSON.stringify(fixture.thread.messages));
@@ -294,7 +383,7 @@ const server = http.createServer((req, res) => {
         await dialog.getByRole('button', { name: /^(Close|Back to the conversation)$/ }).click();
         await page.getByRole('button', { name: 'New topic', exact: true }).click();
         combinations++;console.log('PASS ' + tag);
-      } catch (e) { await shot('failure'); console.error(JSON.stringify({ tag, errors, requests: await page.evaluate(() => fixture.requests) })); throw e; }
+      } catch (e) { await shot('failure'); console.error(JSON.stringify({ tag, errors, timeline:await page.locator("[role=log]").innerText().catch(()=>""), drafts:await page.evaluate(()=>localStorage.getItem("agentnet.messenger.drafts.default")), requests: await page.evaluate(() => fixture.requests) })); throw e; }
       await ctx.close();
     }
     assert.deepEqual(errors, []); console.log('chat topics rendered PASS: '+combinations+' desktop/phone chat/skin combinations');

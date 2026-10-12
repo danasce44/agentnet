@@ -44,7 +44,7 @@ type Agent struct {
 	Address string
 	Logf    func(format string, args ...any)
 
-	deliveryLocks    sync.Map // envelope id -> cancellation-aware lock, shared by immediate sends and retry passes
+	deliveryLocks    keyedLocks // envelope ID, shared by immediate sends and retry passes
 	flushOnce        sync.Once
 	flushLock        chan struct{} // readable turns serialize independently of replication
 	syncFlushLock    chan struct{} // one background replication pass at a time
@@ -57,7 +57,7 @@ type Agent struct {
 	routeHints       sync.Map      // optional verified first-attempt direct route; never queue storage
 	posting          backgroundPosts
 	humanMu          sync.RWMutex  // local human end commits serialize with ordinary copy/file delivery
-	statusLocks      sync.Map      // request id → *sync.Mutex: one status of a request at a time (headless.go)
+	statusLocks      keyedLocks    // one status of a request at a time (headless.go)
 	statusWake       chan struct{} // wakes this process's status sender (statusLoop)
 	statusLive       atomic.Bool   // statusLoop runs in this process
 	home             string
@@ -244,10 +244,6 @@ func Open(home string) (*Agent, error) {
 		st.db.Close()
 		return nil, fmt.Errorf("enrollment in %s is incomplete; run `agentnet join` again with the same invitation "+
 			"(with another NAME if the Hub said the address was taken)", home)
-	}
-	if err := st.markSelfConsentSince(); err != nil { // D3 holds from here on (selfconsent.go)
-		st.db.Close()
-		return nil, err
 	}
 	if err := st.settleLeftoverNotices(); err != nil { // once: one review card per host (reviewsupersede.go)
 		st.db.Close()
@@ -656,13 +652,11 @@ func blobsOf(atts []envelope.Attachment) []envelope.Blob {
 // deliver tries the direct route (if any) and then the Hub. The spool is
 // released only once one of them has confirmed custody of the message.
 func (a *Agent) deliver(ctx context.Context, env envelope.Envelope, route *protocol.SessionAd) (SendResult, error) {
-	lock, _ := a.deliveryLocks.LoadOrStore(env.ID, make(chan struct{}, 1))
-	select {
-	case lock.(chan struct{}) <- struct{}{}:
-	case <-ctx.Done():
-		return SendResult{}, ctx.Err()
+	unlock, err := a.deliveryLocks.acquire(ctx, env.ID)
+	if err != nil {
+		return SendResult{}, err
 	}
-	defer func() { <-lock.(chan struct{}) }()
+	defer unlock()
 	if state, path, found, e := a.store.outboxState(env.ID); e != nil {
 		return SendResult{}, e
 	} else if found && (state == stateNotDelivered || state == stateReceiverWaiting || state == protocol.StateCustody || state == protocol.StateDelivered || state == protocol.StateQuarantined || state == protocol.StateExpired) {

@@ -1,7 +1,7 @@
 package client
 
-// Codex's stdio app-server owns the model and its normal configuration. This
-// adapter adds only a run-bound room tool; sandboxed commands gain no sockets.
+// Codex's stdio app-server owns every worker session and its normal settings.
+// An eligible group run also gets the existing run-bound room tool.
 import (
 	"bytes"
 	"context"
@@ -84,11 +84,13 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 	}
 }
 
-const codexRoomUnavailable = "Codex room transport unavailable. Use a Codex version supporting app-server dynamic tools. AgentNet did not change your native permissions. Review completed work before an explicit continuation."
+const codexRoomUnavailable = "Codex native transport unavailable. Use a Codex version supporting app-server. AgentNet did not change your native permissions. Review completed work before an explicit continuation."
+
+const codexLineMax = 4 << 20
 
 type codexRoomBridge struct {
 	ctx                  context.Context
-	input                *io.PipeWriter
+	input                io.WriteCloser
 	output               io.Writer
 	call                 func(context.Context, json.RawMessage) (string, error)
 	writeMu              sync.Mutex
@@ -101,24 +103,38 @@ type codexRoomBridge struct {
 	model                string
 	closeOnce            sync.Once
 	prompt, cwd          string
+	resume               string
+	ephemeral            bool
 	buf                  []byte
 	thread, turn, answer string
 	calls                map[string]bool
 	done                 bool
 }
 
-func newCodexRoomBridge(ctx context.Context, cmd *exec.Cmd, prompt string, output io.Writer, call func(context.Context, json.RawMessage) (string, error)) *codexRoomBridge {
-	in, out := io.Pipe()
+func newCodexRoomBridge(ctx context.Context, cmd *exec.Cmd, prompt string, output io.Writer, call func(context.Context, json.RawMessage) (string, error), plans ...sessionPlan) (*codexRoomBridge, error) {
+	// A real OS stdin pipe lets Cmd.Wait finish on process EOF. An io.Pipe
+	// reader would leave exec's stdin copier blocked after an early native exit.
+	cmd.Stdin = nil
+	out, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
 	b := &codexRoomBridge{prompt: prompt, cwd: cmd.Dir, ctx: ctx, input: out, output: output, call: call, calls: map[string]bool{}, ready: make(chan struct{}), steering: map[string]chan codexSteerResult{}}
+	b.ephemeral = true
+	if len(plans) > 0 && plans[0].ref != nil {
+		b.ephemeral = false
+		if plans[0].resume {
+			b.resume = plans[0].ref.ID
+		}
+	}
 	cmd.Args = []string{cmd.Path, "app-server"}
-	cmd.Stdin = in
 	cmd.Stdout = b
 	go func() {
 		b.send(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]any{"name": "agentnet", "version": protocol.Version}, "capabilities": map[string]any{"experimentalApi": true}}})
 	}()
 	// Prompt is retained only for this invocation, never in command arguments.
 	go func() { <-ctx.Done(); b.close() }()
-	return b
+	return b, nil
 }
 func (b *codexRoomBridge) close() { b.closeOnce.Do(func() { b.input.Close() }) }
 func (b *codexRoomBridge) send(v any) {
@@ -214,7 +230,13 @@ func (b *codexRoomBridge) event(raw []byte) {
 		case "1":
 			b.send(map[string]any{"method": "initialized"})
 			spec := map[string]any{"type": "function", "name": "agentnet_room", "description": "Ask another active agent in this exact group a question by roster PID, or wait for its correlated reply. Bound to this run; grants, removal and cancellation apply. Cannot assign tasks.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"ask", "wait"}}, "pid": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "id": map[string]string{"type": "string"}}}}
-			b.send(map[string]any{"id": 2, "method": "thread/start", "params": map[string]any{"cwd": b.cwd, "ephemeral": true, "dynamicTools": []any{spec}}})
+			method, params := "thread/start", map[string]any{"cwd": b.cwd, "ephemeral": b.ephemeral}
+			if b.resume != "" {
+				method, params = "thread/resume", map[string]any{"cwd": b.cwd, "threadId": b.resume}
+			} else if b.call != nil {
+				params["dynamicTools"] = []any{spec}
+			}
+			b.send(map[string]any{"id": 2, "method": method, "params": params})
 		case "2":
 			var r struct {
 				Model  string `json:"model"`
@@ -222,7 +244,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 					ID string `json:"id"`
 				} `json:"thread"`
 			}
-			if json.Unmarshal(m.Result, &r) != nil || r.Thread.ID == "" {
+			if json.Unmarshal(m.Result, &r) != nil || r.Thread.ID == "" || b.resume != "" && r.Thread.ID != b.resume {
 				b.failLocked()
 				return
 			}
@@ -286,7 +308,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.markReady()
 		}
 	case "item/tool/call":
-		if p.ThreadID != b.thread || b.turn == "" || p.TurnID != b.turn || p.Tool != "agentnet_room" || p.Namespace != nil || p.CallID == "" || len(m.ID) == 0 {
+		if b.call == nil || p.ThreadID != b.thread || b.turn == "" || p.TurnID != b.turn || p.Tool != "agentnet_room" || p.Namespace != nil || p.CallID == "" || len(m.ID) == 0 {
 			b.failLocked()
 			return
 		}
@@ -327,6 +349,14 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.done = true
 			fmt.Fprintln(b.output, needsHumanMarker)
 			fmt.Fprintln(b.output, "Your Codex setup requires a native approval or input for this action. This background session cannot collect it. Continue in your native Codex session with the specific permission; retrying unchanged will ask again. AgentNet did not approve or bypass it.")
+			var why struct{ Reason, Message string }
+			if json.Unmarshal(m.Params, &why) == nil {
+				for _, text := range []string{why.Reason, why.Message} {
+					if text = strings.TrimSpace(text); text != "" {
+						fmt.Fprintln(b.output, clip([]byte(text)))
+					}
+				}
+			}
 			b.close()
 		}
 	default:

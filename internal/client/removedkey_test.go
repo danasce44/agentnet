@@ -2,7 +2,6 @@ package client
 
 import (
 	"crypto/ed25519"
-	"database/sql"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -203,7 +202,8 @@ func TestSelfConsentRefusesRemovedTaskKey(t *testing.T) {
 	w, conv, _ := selfConsentWorld(t)
 	alice := w.alice.Self()
 	with, _, phone := ownPhoneAddedRemoved(t, w.alice, w.alice)
-	if err := w.alice.setSelfConsentTrust(func(tx *sql.Tx) error { return addSelfConsentTrustIn(tx, phone.Address, phone.Fingerprint()) }); err != nil {
+	legacy, _ := json.Marshal([]TrustedDevice{{Address: phone.Address, Fingerprint: phone.Fingerprint()}})
+	if err := w.alice.store.setConfig(map[string]string{"self_consent": string(legacy)}); err != nil {
 		t.Fatal(err)
 	}
 	pid := storedInvite(t, w.alice, w.alice, conv, func(ev *protocol.ParticipationEvent) {

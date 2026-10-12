@@ -138,6 +138,14 @@ const restarted=new Engine({store:a.store,base:a.base,fetch});Object.assign(rest
  await drain(host,reader);const cc=(await copies(host)).filter(r=>r.to===reader.address),answerCopy=cc.find(r=>JSON.parse(r.body).item.id===replyID),requestCopy=cc.find(r=>JSON.parse(r.body).item.id===requestID);
  const early=await receiveHistory(answerCopy.envelope,reader);check((await reader.store.get('held',early))?.reason==='proof_pending','own reply before original remains recoverably held');
  await receiveHistory(requestCopy.envelope,reader);await reader.retryHeld();if(reader.retrying)await reader.retrying;
+ const nativeView=await host.thread(requestID);
+ check(nativeView.peer===sender.address&&nativeView.messages.find(m=>m.id===requestID)?.dir==='in'&&nativeView.messages.find(m=>m.id===replyID)?.dir==='out','history production preserves original host transport peer and directions');
+ const imported=await reader.store.get('inbox',requestID),original=await host.store.get('inbox',requestID);
+ const duplicate={v:1,person:reader.me.person,roster:reader.me.hash,recipient:host.address,recipient_key:host.fp,item:JSON.parse(requestCopy.body).item};
+ await receiveHistory(await wire.seal({v:2,id:wire.newID(),from:reader.address,to:host.address,ts:3,kind:'message',sub:wire.SubDeviceHistory,replica:true,body:JSON.stringify(duplicate)},reader.keys,host.pub),host);
+ check((await host.thread(requestID)).peer===sender.address,'duplicate history cannot redirect the original reply');
+ await host.store.write([{s:'inbox',k:requestID,v:{...original,device_history:imported.device_history}}]);
+ check((await host.thread(requestID)).peer===sender.address,'old saved metadata cannot override an original transport peer');
  const view=await reader.thread(requestID);check(view.peer===host.address&&view.messages.length===2&&view.messages.find(m=>m.id===requestID)?.dir==='out'&&view.messages.find(m=>m.id===replyID)?.dir==='in','two own endpoints converge on original agent host with correct direction');
  check(!await reader.store.get('held',early)&&view.messages.every(m=>!m.state&&m.history),'dependency arrival recovers inert own reply');
  const progress={v:1,id:wire.newID(),lid:'',from:host.address,from_key:host.fp,ts:3,at:3000,kind:'message',status:wire.StatusProgress,agent_id:wire.newID(),reply_to:requestID,body:'Working'};progress.lid=progress.id;
@@ -187,7 +195,7 @@ const restarted=new Engine({store:a.store,base:a.base,fetch});Object.assign(rest
   const incoming=wire.newID(),outgoing=wire.newID(),native=(await reader.v1Threads({inbox:[{v:1,id:incoming,kind,from:sender.address,at:1}],outbox:[{v:1,id:outgoing,kind,to:host.address,at:2}]})).flat();
   check(native.find(m=>m.id===incoming).dir==='in'&&native.find(m=>m.id===outgoing).dir==='out','unmapped '+kind+' retains native storage direction');
   const ownHost=(await host.v1Threads({inbox:[],outbox:[{v:1,id:wire.newID(),kind,to:sender.address,at:1,device_history:{peer:host.address,direction:'out'}}]})).flat();
-  check(ownHost[0].dir==='in','local outbox '+kind+' from the preserved own host peer remains incoming without a stored from field');
+  check(ownHost[0].dir==='out'&&ownHost[0].peer===sender.address,'local outbox '+kind+' retains actual recipient despite stale history metadata');
  }
 }
 // A legacy missing recipient key is not the current reader's key and cannot

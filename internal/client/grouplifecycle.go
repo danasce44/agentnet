@@ -97,7 +97,22 @@ func (a *Agent) GroupInvitations() ([]GroupInvitationInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(result, mirrors...), nil
+	seen := map[string]int{}
+	for i, r := range result {
+		seen[r.ID+"/"+r.Direction] = i
+	}
+	for _, r := range mirrors {
+		key := r.ID + "/" + r.Direction
+		if i, ok := seen[key]; ok {
+			if r.State == "cancelled" && result[i].State != "published" {
+				result[i] = r
+			}
+			continue
+		}
+		seen[key] = len(result)
+		result = append(result, r)
+	}
+	return result, nil
 }
 
 // CreateGroup obtains only the creator's explicit self consent, then uses the
@@ -627,7 +642,7 @@ func (a *Agent) PublishGroupInvitation(ctx context.Context, id string) error {
 	} else {
 		return err
 	}
-	if _, err = a.PublishGroup(ctx, commit, packet); err != nil {
+	if _, err = a.PublishGroup(ctx, commit, packet, id); err != nil {
 		return err
 	}
 	_, err = a.store.db.Exec(`UPDATE group_invitations SET state='published' WHERE id=? AND direction='out' AND state='accepted'`, id)

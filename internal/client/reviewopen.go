@@ -238,12 +238,12 @@ func (a *Agent) ReviewOpening(target, self string) (ReviewOpening, error) {
 		o.Why = "The default agent's program, " + r.Harness + ", is not supported here. Choose another: " + DefaultAgentFix(a.suggestedHarness()) + "."
 		return o, nil
 	}
-	bin, err := exec.LookPath(h.bin)
+	launch, err := resolveNativeLaunch(h.bin)
 	if err != nil {
 		o.Why = "The default agent runs " + h.bin + ", which is not on PATH here. Install it, or choose another: " + DefaultAgentFix(a.suggestedHarness()) + "."
 		return o, nil
 	}
-	o.Argv = []string{bin, prompt}
+	o.Argv = []string{launch.Path, prompt}
 	return o, nil
 }
 

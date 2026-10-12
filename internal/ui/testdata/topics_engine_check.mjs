@@ -90,6 +90,27 @@ for (const room of [false,true]) {
  await st.write([{s:'outbox',k:unverified.id,v:unverified}]);await pending([unverified.id]);
 }
 
+// Direct-device terminal reports must drive the card AND topic, including
+// copied requests, reload, stale/older status ordering and unrelated open work.
+{
+ const st=memoryStore(),fp='11111111-22222222-33333333-44444444',hostFP='aaaaaaaa-bbbbbbbb-cccccccc-dddddddd',peer='peer/desk';
+ const fresh=()=>{const e=new Engine({store:st,base:'https://synthetic.invalid',fetch:async()=>{throw Error('unexpected network')},now:()=>10000});e.address='own/phone';e.fp=fp;return e;};
+ let e=fresh();const id='1'.repeat(32),open='2'.repeat(32);
+ await st.write([{s:'outbox',k:id,v:{v:1,id,to:peer,kind:'question',body:'closed exact request',at:1000,state:'delivered'}},
+ {s:'outbox',k:open,v:{v:1,id:open,to:peer,kind:'question',body:'still unresolved',at:2000,state:'delivered'}}]);
+ const putStatus=async(n,state)=>st.write([{s:'inbox',k:'status'+n,v:{v:3,id:'status'+n,from:peer,fp:hostFP,control:true,aside:true,sub:wire.SubStatus,at:3000,ref:{id,fingerprint:fp},body:JSON.stringify({state,n,at:3,attempt:1})}}]);
+ const checkTopics=async()=>{
+  const topics=await e.threadSummaries();const closed=topics.find(t=>t.id===id),pending=topics.find(t=>t.id===open);
+  check(!closed.pending&&!closed.waiting&&!(closed.pending_ids||[]).length,'closed direct request no longer blocks topic');
+  check(pending.pending&&pending.pending_ids.includes(open),'unrelated request remains pending');
+  const view=await e.thread(id);same(view.messages[0].exec.state,'resolved','card agrees with topic without claiming task success');
+ };
+ await putStatus(2,'resolved');await putStatus(1,'running');await checkTopics();e=fresh();await checkTopics();
+ // Another own device has the original author key from admitted history.
+ const original=await st.get('outbox',id);await st.write([{s:'outbox',k:id,del:true},{s:'inbox',k:id,v:{...original,from:'own/phone',fp,history:true,replica:true,device_history:{peer,direction:'out'}}}]);
+ e=fresh();e.address='own/tablet';e.fp='eeeeeeee-ffffffff-00000000-11111111';await checkTopics();
+}
+
 // Main-flow preferences never promote, reassign or erase native sibling topics.
 {
  const st=memoryStore(),conv='d'.repeat(64),fp='11111111-22222222-33333333-44444444',peerFP='aaaaaaaa-bbbbbbbb-cccccccc-dddddddd';

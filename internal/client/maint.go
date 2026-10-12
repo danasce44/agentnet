@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -182,7 +181,7 @@ func (a *Agent) Doctor(ctx context.Context) []Check {
 			add("responder", true, "not chosen yet: this computer has no default agent, so questions and tasks wait for you; set one: %s (agentnet responder list shows the programs found)", DefaultAgentFix(a.suggestedHarness()))
 		}
 	default:
-		if _, err := exec.LookPath(Harnesses[r.Harness].bin); err != nil {
+		if _, err := resolveNativeLaunch(Harnesses[r.Harness].bin); err != nil {
 			add("responder", false, "%s selected but %q is not on PATH", r.Harness, Harnesses[r.Harness].bin)
 		} else if n, err := a.Approvals(); err != nil {
 			add("responder", false, "%v", err)

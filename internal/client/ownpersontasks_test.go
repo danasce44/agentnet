@@ -10,93 +10,75 @@ import (
 	"github.com/misunders2d/agentnet/internal/identity"
 )
 
-// A phone's ordinary verified-person grant reaches both existing task paths.
-// It never becomes native self-invite consent, changes the harness policy, or
-// releases already waiting tasks. The receiving host alone keeps the grant.
+// Each person's ordinarily linked phone can task their own agent directly and
+// in a group, without any grant or TaskKeys. Revoking an optional person grant
+// does not change that identity-based rule. Native task arguments stay intact.
 func TestOwnPersonTasksDirectAndGroup(t *testing.T) {
 	st := installStub(t, "answer")
 	w, _, group, stops := groupTurnsFixture(t)
-	host := w.alice
-	setResponder(t, host, "stub", st.dir, time.Minute)
-	phone := linkedVia(t, host, "phone", approveLink(host))
-	publishGroupFixtureCaps(t, phone, true)
-	eventually(t, "phone current group", func() bool {
-		p, e := phone.GroupContext(group.State.Conv)
-		return e == nil && p.State.Hash() == group.State.Hash()
-	})
-	part, err := host.InviteAgent(tctx(t), group.State.Conv, host.Address, nil, nil, "own tasks without task keys")
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "phone active agent", func() bool {
-		p, e := phone.Participation(part.PID)
-		return e == nil && p.Claimable() && len(p.TaskKeys) == 0
-	})
-	person, _, err := host.Person()
-	if err != nil {
-		t.Fatal(err)
-	}
-	send := func(groupTask bool, want string) string {
-		t.Helper()
-		var id string
-		if groupTask {
-			r, e := phone.AskAgent(tctx(t), part.PID, envelope.KindTask, "own group task")
+	for _, initial := range []*Agent{w.alice, w.bob} {
+		host := initial
+		setResponder(t, host, "stub", st.dir, time.Minute)
+		phone := linkedVia(t, host, "phone", approveLink(host))
+		publishGroupFixtureCaps(t, phone, true)
+		eventually(t, "phone current group", func() bool {
+			p, e := phone.GroupContext(group.State.Conv)
+			return e == nil && p.State.Hash() == group.State.Hash()
+		})
+		part, err := host.InviteAgent(tctx(t), group.State.Conv, host.Address, nil, nil, "own tasks without task keys")
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, "phone active agent", func() bool {
+			p, e := phone.Participation(part.PID)
+			return e == nil && p.Claimable() && len(p.TaskKeys) == 0
+		})
+		send := func() {
+			t.Helper()
+			direct, e := phone.SendMessage(tctx(t), Outgoing{To: host.Address, Kind: envelope.KindTask, Body: "own direct task"})
 			if e != nil {
 				t.Fatal(e)
 			}
-			id = r.ID
-		} else {
-			r, e := phone.SendMessage(tctx(t), Outgoing{To: host.Address, Kind: envelope.KindTask, Body: "own direct task"})
+			waitState(t, host, direct.ID, stateAnswered)
+			shared, e := phone.AskAgent(tctx(t), part.PID, envelope.KindTask, "own group task")
 			if e != nil {
 				t.Fatal(e)
 			}
-			id = r.ID
+			waitState(t, host, shared.ID, stateAnswered)
 		}
-		waitState(t, host, id, want)
-		return id
-	}
-	waitingDirect, waitingGroup := send(false, stateAwaiting), send(true, stateAwaiting)
-	if _, err = host.GrantTasks(person.Person); err != nil {
-		t.Fatal(err)
-	}
-	if native, err := host.NativeTaskPermissions(); err != nil || len(native) != 0 {
-		t.Fatalf("person grant became native consent: %v %v", native, err)
-	}
-	for range 2 {
-		send(false, stateAnswered)
-		send(true, stateAnswered)
-	}
-	for _, id := range []string{waitingDirect, waitingGroup} {
-		if got := jobState(t, host, id); got != stateAwaiting {
-			t.Fatalf("grant released old task: %s", got)
+		send()
+		person, _, err := host.Person()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = host.GrantTasks(person.Person); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = host.RevokeTasks(person.Person); err != nil {
+			t.Fatal(err)
+		}
+		send()
+		host = reopen(t, host, stops[initial])
+		t.Cleanup(func() { host.Close() })
+		send()
+		if gs, e := phone.PersonGrants(); e != nil || len(gs) != 0 {
+			t.Fatalf("grant copied to phone: %v %v", gs, e)
 		}
 	}
-	if gs, err := phone.PersonGrants(); err != nil || len(gs) != 0 {
-		t.Fatalf("grant applied on phone: %v %v", gs, err)
-	}
-	t.Cleanup(func() { host.Close() })
-	host = reopen(t, host, stops[host])
-	send(false, stateAnswered)
-	send(true, stateAnswered)
-	if _, err = host.RevokeTasks(person.Person); err != nil {
-		t.Fatal(err)
-	}
-	send(false, stateAwaiting)
-	send(true, stateAwaiting)
-	if st.count() != 6 {
-		t.Fatalf("executions including restart: got %d want 6", st.count())
+	if st.count() != 12 {
+		t.Fatalf("executions including restart: got %d want 12", st.count())
 	}
 	log, err := os.ReadFile(st.log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(log), "args=--task-mode") != 6 || strings.Contains(string(log), "--question-mode") {
-		t.Fatal("tasks did not retain the harness's native task arguments")
+	if strings.Count(string(log), "args=--task-mode") != 12 || strings.Contains(string(log), "--question-mode") {
+		t.Fatal("native task arguments changed")
 	}
 }
 
-// Separate native consent remains visible and effective when the person grant
-// is off. Current membership/key/frozen fences still decide effective status.
+// Current membership and exact key fences govern all own human devices,
+// independently of optional person grants and legacy native trust.
 func TestOwnPersonTasksNativeConsentAndFences(t *testing.T) {
 	w := newWorld(t, "")
 	runAgent(t, w.alice)
@@ -114,15 +96,15 @@ func TestOwnPersonTasksNativeConsentAndFences(t *testing.T) {
 	if _, err = w.alice.RevokeTasks(person.Person); err != nil {
 		t.Fatal(err)
 	}
-	if got := jobState(t, w.alice, old); got != stateAwaiting {
+	if got := jobState(t, w.alice, old); got != statePending {
 		t.Fatalf("revoked pending task: %s", got)
 	}
 	ownPendingTask(t, w.alice, desk, "separate native consent")
 	checkNative := func(want string) {
 		t.Helper()
-		gs, e := w.alice.NativeTaskPermissions()
-		if e != nil || len(gs) != 1 || gs[0].Address != desk.Address || gs[0].Fingerprint != desk.Self().Fingerprint() || gs[0].Status != want {
-			t.Fatalf("native consent: %+v %v", gs, e)
+		holds, e := ownDeviceHolds(w.alice.store.db, desk.Address, desk.Self().Fingerprint())
+		if e != nil || holds != (want == "active") {
+			t.Fatalf("current own authority %v %v want %s", holds, e, want)
 		}
 	}
 	checkNative("active")

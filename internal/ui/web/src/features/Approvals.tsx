@@ -22,7 +22,7 @@ import { ConfirmSheet, Details, Row } from "./Approvals.sheets";
 import { Reports } from "./Approvals.reports";
 import { Body, Card, OpenCard, Landing, kindTag, useLand, useOpen } from "./Approvals.parts";
 import { ConvRow, SelfConsentRow } from "./Approvals.conv";
-import { HeldBack } from "./Approvals.held";
+import { HeldBack, heldDecisionPeers } from "./Approvals.held";
 import { capital, decidable, inSentence, isSelfConsent, nameOf, whyWords } from "./Approvals.words";
 
 export { ApprovalCard } from "./Approvals.card";
@@ -36,15 +36,16 @@ const reviewAsks = (o: T.Overview) => (o.review || []).filter((r) => !r.notice &
  *  decided here (not on another device), review decisions, group
  *  invitations to you and new devices. Notices and questions held for you
  *  are listed in OKs but are not decisions, so they are not counted. */
-export function needsYouCount(o: T.Overview | null): number {
+export function needsYouCount(o: T.Overview | null, local = false): number {
   if (!o) return 0;
-  return decidable(o).length + reviewAsks(o).length + groupInvites(o).length + deviceAsks(o).length;
+  return decidable(o).length + reviewAsks(o).length + groupInvites(o).length + deviceAsks(o).length + heldDecisionPeers(o, local).size;
 }
 
 /** useNeedsYou: the one count of what waits for you, for the OKs badge, the
  *  home banner and the OKs header alike. */
 export function useNeedsYou(): number {
-  return needsYouCount(useStore(useApp(), (s) => s.overview));
+  const store = useApp();
+  return needsYouCount(useStore(store, (s) => s.overview), store.host.platform === "daemon");
 }
 
 interface Item { key: string; at: string; node: React.ReactNode }
@@ -96,7 +97,7 @@ export function OksView() {
   const o = useStore(store, (s) => s.overview);
   const loadError = useStore(store, (s) => s.loadError);
   const names = useAgentNames();
-  const count = needsYouCount(o);
+  const count = needsYouCount(o, store.host.platform === "daemon");
 
   const items: Item[] = [];
   const elsewhere: T.ConvItem[] = [];

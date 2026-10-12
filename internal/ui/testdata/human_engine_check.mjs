@@ -353,10 +353,10 @@ for (const ending of ['original', 'self']) {
   check(v.ready&&v.offline.length===0&&!v.text.includes('reconnect'),'offline member device does not delay a live guest');
   await w.caps(phone,[wire.CapEnv2,wire.CapPerson]);
   const own=await a.checkHuman({conv,host:c.address});
-  check(own.needs_update.some(p=>p.role==='me'&&p.me)&&own.text.includes('your other devices')&&!own.text.includes('before joining'),'own-device wording does not invite self');
+  check(own.ready&&own.needs_update.length===0,'older own reader does not block the guest');
   await w.caps(phone);await w.caps(b,[wire.CapEnv2,wire.CapPerson]);
   const member=await a.checkHuman({conv,host:c.address});
-  check(member.needs_update.some(p=>p.role==='member')&&member.text.includes('keep this chat working with a guest')&&!member.text.includes('before joining'),'existing-member wording');
+  check(member.ready&&member.needs_update.length===0,'older unrelated member does not block the guest');
   await w.caps(b);await w.caps(c,[wire.CapEnv2,wire.CapPerson]);
   const guest=await a.checkHuman({conv,host:c.address});
   check(guest.needs_update.some(p=>p.role==='guest')&&guest.text.includes('before joining'),'guest wording');
@@ -420,9 +420,9 @@ for (const ending of ['original', 'self']) {
  await a.recoverGroupIntents();await w.drain(b);await b.retryHeld();
 
  check(!(await b.groupThread(conv)).members.find(m=>m.person===b.me.person).admin,'ordinary member fixture');
- // Old rm1 target/member sessions must fail before any guest invite is saved.
+ // The invited host must support guests; unrelated readers do not decide.
  const names=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapHumanParticipation,wire.CapGroupInvitationControl,wire.CapGroup,wire.CapRoom];
- for(const legacy of [g,a]){await w.caps(legacy,names);check(!(await b.checkHuman({conv,host:g.address})).ready,'mixed v081/v082 requires update');await refuses(()=>b.changeHuman('invite',{conv,host:g.address}),/update/i);await w.caps(legacy,[...names,wire.CapGroupHumanParticipation]);}
+ for(const legacy of [g]){await w.caps(legacy,names);check(!(await b.checkHuman({conv,host:g.address})).ready,'mixed v081/v082 requires update');await refuses(()=>b.changeHuman('invite',{conv,host:g.address}),/update/i);await w.caps(legacy,[...names,wire.CapGroupHumanParticipation]);}
  const old=await b.sendDM({conv,body:'chosen old group context'});
  await b.sendDM({conv,body:'unshared old group context'});await w.drain(a);
  check((await b.checkHuman({conv,host:g.address})).ready,'ordinary member checks group guest');

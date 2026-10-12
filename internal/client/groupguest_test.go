@@ -28,7 +28,7 @@ func TestGroupGuestPublicJourney(t *testing.T) {
 	}
 	// rm1 in v0.8.1 does not promise public group guest lifecycle support.
 	oldCaps := slices.DeleteFunc(slices.Clone(ownCaps), func(c string) bool { return c == protocol.CapGroupHumanParticipation })
-	for _, legacy := range []*Agent{guest, w.bob} {
+	for _, legacy := range []*Agent{guest} {
 		signCapsAfter(t, legacy, oldCaps)
 		support, err := carol.HumanInviteSupport(tctx(t), conv, guest.Address)
 		if err != nil {

@@ -52,11 +52,11 @@ func TestRunArgsGolden(t *testing.T) {
 		{"claude task resumed", argv(resumeArgs(claude, "task", claude.task, "S"), task, claude, true),
 			withOut("-p", "--output-format", "text", "--resume", "S", "--add-dir", in)},
 		{"codex question", argv(codex.question, question, codex, false),
-			[]string{"exec", "--ephemeral", "--skip-git-repo-check", "--color", "never"}},
+			[]string{"app-server"}},
 		{"codex task", argv(codex.task, task, codex, false),
-			withOut("exec", "--ephemeral", "--skip-git-repo-check", "--color", "never")},
+			[]string{"app-server"}},
 		{"codex task resumed", argv(resumeArgs(codex, "task", codex.task, "T"), task, codex, true),
-			[]string{"exec", "resume", "T", "--json", "--skip-git-repo-check"}},
+			[]string{"app-server"}},
 		{"pi question", argv(pi.question, question, pi, false),
 			[]string{"-p", "--no-session"}},
 		{"pi task", argv(pi.task, task, pi, false), []string{"-p", "--no-session"}},
@@ -77,7 +77,7 @@ func TestRunArgsGolden(t *testing.T) {
 		t.Fatal("a job without a run folder or outbox is given one")
 	}
 	device := job{ID: "R", Kind: envelope.KindTask}
-	if outboxFor(device, codex, true) || outboxFor(device, claude, false) != outboxSupported || outboxFor(device, codex, false) != outboxSupported || outboxFor(device, pi, false) != outboxSupported {
+	if outboxFor(device, codex, true) != outboxSupported || outboxFor(device, claude, false) != outboxSupported || outboxFor(device, codex, false) != outboxSupported || outboxFor(device, pi, false) != outboxSupported {
 		t.Fatal("outbox given or withheld wrongly")
 	}
 }
@@ -87,19 +87,16 @@ func gone(path string) bool {
 	return errors.Is(err, os.ErrNotExist)
 }
 
-// Each harness's limits text says what its runs are given (ROOM_V1 §6):
-// codex says truthfully that a task run gets one extra writable folder, its
-// outbox, and that a resumed session gets none.
+// Harness descriptions must match the actual native transport, not promise
+// writable permissions merely because an output path was supplied.
 func TestHarnessLimitsTellRunFolders(t *testing.T) {
 	codex := Harnesses["codex"].limits
-	for _, want := range []string{"one extra writable folder, its outbox, through --add-dir", "never passes --sandbox or a bypass", "a resumed session, where codex cannot add a folder, gets no outbox"} {
+	for _, want := range []string{"app-server", "native approval and sandbox policy", "grants no additional writable folders"} {
 		if !strings.Contains(codex, want) {
-			t.Errorf("codex limits lack %q:\n%s", want, codex)
+			t.Errorf("codex limits lack %q", want)
 		}
 	}
-	if strings.Contains(codex, "never a sandbox change") {
-		t.Errorf("codex limits deny the sandbox change --add-dir makes:\n%s", codex)
-	}
+
 	for name, want := range map[string]string{"claude": "added with --add-dir", "pi": "no folder is added for Pi"} {
 		if !strings.Contains(Harnesses[name].limits, want) {
 			t.Errorf("%s limits lack %q", name, want)

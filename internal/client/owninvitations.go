@@ -48,6 +48,9 @@ func saveInvitationView(q *sql.Tx, r protocol.InvitationSync, from, fp string) e
 		return nil
 	}
 	_, err = q.Exec(`INSERT OR REPLACE INTO own_invitation_views(id,source,source_fp,revision,payload) VALUES(?,?,?,?,?)`, r.ID, from, fp, r.Revision, raw)
+	if err == nil && r.Status == "cancelled" {
+		_, err = q.Exec(`UPDATE group_invitations SET state='cancelled' WHERE id=? AND direction='out' AND peer_person=? AND state IN ('pending','accepted','stale','reissue')`, r.ID, r.Person)
+	}
 	return err
 }
 
@@ -253,10 +256,12 @@ func (a *Agent) ownInvitationViews() ([]GroupInvitationInfo, error) {
 		if e != nil {
 			return nil, e
 		}
-		if invitationAuthority(a.store.db, r, v.from, v.fp, a.Address, a.Self().Fingerprint()) != nil {
+		row := groupInvitationRow{GroupInvitationInfo: GroupInvitationInfo{ID: r.ID, Direction: "out", State: r.Status, Inviter: v.from, Proposal: r.Proposal}, peerPerson: r.Person, peerFP: v.fp}
+		if a.groupInvitationManager(row) != nil {
 			continue
 		}
-		result = append(result, GroupInvitationInfo{ID: r.ID, Direction: "out", State: r.Status, Inviter: v.from, Proposal: r.Proposal})
+		row.CanCancel, row.CanRefresh = a.groupInvitationCapabilities(row)
+		result = append(result, row.GroupInvitationInfo)
 	}
 	return result, nil
 }

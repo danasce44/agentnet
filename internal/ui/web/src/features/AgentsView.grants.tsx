@@ -94,21 +94,21 @@ export function Permissions({ grants }: { grants: Grant[] | null }) {
   const others = grants.filter((g) => !g.approved && g !== own && !g.nativeTasks && !g.ownDevice); // explicit device grants remain separate
   const tasks = grants.filter((g) => g.tasks);
   const name = (g: Grant) => g === own ? "My devices" : g.person ? g.label || "Verified person" : capital(deviceWords(g.peer, o));
-  const native = grants.filter((g) => g.nativeTasks);
+  const native = grants.filter((g) => g.nativeTasks && !g.ownDevice);
   const host = o ? deviceWords(o.me.address, o) : "this computer";
   const devices = grants.flatMap(g => g.ownDevice ? [g.ownDevice] : []);
   const sourceWords = (source: string) => source === "own" ? "you, on your own device" : source === "person" ? "allowed by My devices" : source === "device" ? "separate device permission" : source === "native" ? "allowed by device trust" : source === "identity" ? "paused: identity needs attention" : "asks for approval";
-  const separateNote = (g: Grant, kind: "questions" | "tasks") => (g.ownDevice?.[kind] === "person" || kind === "questions" && g.ownDevice?.questions === "own") ? "Separate permission. Your verified device remains allowed when this separate permission is removed." : "This device only";
+  const separateNote = (g: Grant, kind: "questions" | "tasks") => (g.ownDevice?.[kind] === "person" || g.ownDevice?.[kind] === "own") ? "Separate permission. Your verified device remains allowed when this separate permission is removed." : "This device only";
   return (
     <article className="rounded-2xl bg-surface p-4 stroke">
       <p className="pb-3 text-[13px] text-muted">Permissions on {host}. Set other receiving computers separately; this does not change them.</p>
       {own && <>
         <h3 className="font-bold">My devices</h3>
         <p className="pt-1 text-[13px] text-text-2">All your verified devices, including phones and devices you link later. Removed devices, changed keys and frozen identities stay blocked.</p>
-        <p className="pt-2 text-[14px] font-semibold">Questions you send from your personal devices never need another AgentNet approval.</p>
+        <p className="pt-2 text-[14px] font-semibold">Invitations, questions and tasks from your personal devices never need another AgentNet approval.</p>
         <Grants title="" empty="" what="automatic answers" rows={[{ key:own.peer, name:"My agents", display:"Questions sent by your agent hosts", note:own.approved ? "Automatic question permission: " + (own.questionStatus && own.questionStatus !== "active" ? own.questionStatus : "on") : "Automatic question permission: off", on:own.approved, run:() => setChange({what:own.approved ? "unapprove" : "approve", g:own}) }]} />
-        <Grants title="" empty="" what="tasks without asking" rows={[{ key:own.peer, name:"My devices", display:"Tasks", note:own.tasks ? (own.tasks === "active" ? "Automatic tasks for all my devices: on" : "Automatic tasks for all my devices: " + own.tasks) : "Automatic tasks for all my devices: off", on:!!own.tasks, run:() => setChange({what:own.tasks ? "revoke_tasks" : "grant_tasks", g:own}) }]} />
-        <p className="pt-1 text-[13px] text-muted">Uses this computer’s normal agent permissions. Separate device permissions and tasks already accepted remain if you turn this off.</p>
+        <Grants title="" empty="" what="tasks without asking" rows={[{ key:own.peer, name:"My devices", display:"Tasks sent by your agent hosts", note:own.tasks ? (own.tasks === "active" ? "Standing task permission for agent hosts: on" : "Standing task permission for agent hosts: " + own.tasks) : "Standing task permission for agent hosts: off", on:!!own.tasks, run:() => setChange({what:own.tasks ? "revoke_tasks" : "grant_tasks", g:own}) }]} />
+        <p className="pt-1 text-[13px] text-muted">Uses this computer’s normal agent permissions. Your human devices remain allowed if you turn these separate agent-host grants off.</p>
         {devices.length > 0 && <ul aria-label="Your devices and current permissions" className="mt-3 divide-y divide-ink/10 rounded-xl bg-sunken px-3">{devices.map(d => <li key={d.address} className="py-2 text-[13px]"><p className="font-semibold">{capital(deviceWords(d.address, o))}{d.this ? " · this device" : ""}</p><p>Questions: {sourceWords(d.questions)}</p><p>Tasks: {sourceWords(d.tasks)}</p></li>)}</ul>}
         <div className="my-3 border-t-2 border-dashed border-ink/15" />
       </>}
@@ -120,7 +120,7 @@ export function Permissions({ grants }: { grants: Grant[] | null }) {
       )}
       <div className="my-3 border-t-2 border-dashed border-ink/15" />
       <Grants title="Other standing task permissions" empty="No other person or device task grants." what="tasks without asking"
-        rows={tasks.filter((g) => g !== own).map((g) => ({ key: g.peer, name: name(g), note: g.tasks === "active" ? (g.person ? "All current and future verified devices" : separateNote(g, "tasks")) : "Paused: " + g.tasks, separate:g.ownDevice?.tasks === "person", on: true, run: () => setChange({ what: "revoke_tasks", g }) }))} />
+        rows={tasks.filter((g) => g !== own).map((g) => ({ key: g.peer, name: name(g), note: g.tasks === "active" ? (g.person ? "All current and future verified devices" : separateNote(g, "tasks")) : "Paused: " + g.tasks, separate:g.ownDevice?.tasks === "person" || g.ownDevice?.tasks === "own", on: true, run: () => setChange({ what: "revoke_tasks", g }) }))} />
       {native.length > 0 && <div className="pt-3"><p className="font-bold">Separate device permissions</p><ul>{native.map((g) => <li key={g.peer} className="pt-2 text-[14px]"><span className="font-semibold">{name(g)}</span><span className="block text-[13px] text-muted">{g.nativeTasks === "active" ? "Direct tasks allowed" : "Direct tasks paused: " + g.nativeTasks}. Managed through this computer’s device trust.</span></li>)}</ul></div>}
       <p className="pt-3 text-[13px] text-muted">In chats, an agent’s accepted invitation may also allow tasks from particular devices. Those permissions and one-time task approvals are separate.</p>
       <DeviceGrantConfirm change={change?.what || null} onClose={() => setChange(null)} peer={change?.g.peer || ""} inherited={change?.g.ownDevice?.[change.what === "unapprove" ? "questions" : "tasks"] === "person" || change?.what === "unapprove" && change.g.ownDevice?.questions === "own"} thread={{ task_grant: change?.g.tasks }} />

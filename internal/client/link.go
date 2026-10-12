@@ -241,29 +241,22 @@ func (a *Agent) PendingLinks() ([]LinkRequest, error) {
 // publishes it; if the Hub cannot be reached, it stays approved and is
 // published when it can (never as a second, competing step).
 func (a *Agent) DecideLink(ctx context.Context, id string, accept bool) error {
-	return a.decideLink(ctx, id, accept, false, false)
+	return a.decideLink(ctx, id, accept, false)
 }
 
-// ApproveNativeLink approves the pending link request id as DecideLink
-// does and, with the approval, adds the device's exact key to this
-// device's self-consent trust set (selfconsent.go): its invites of this
-// person's own agents here are then accepted without a click. The person
-// asks for it (agentnet person approve --native ID) only for a computer
-// running agentnet, never a browser. Nothing in a request tells the two
-// apart, so nothing else trusts a device: not DecideLink (the page, person
-// approve ID), and not this call for a request that is no longer pending
-// (approved already, perhaps on the page).
+// ApproveNativeLink is the old CLI spelling of ordinary human-device approval.
+// Phones, browsers and desktops now have the same own-agent authority.
 func (a *Agent) ApproveNativeLink(ctx context.Context, id string) error {
-	return a.decideLink(ctx, id, true, true, false)
+	return a.decideLink(ctx, id, true, false)
 }
 
 // ApproveAgentLink enrolls an agent host without enrollment authority. The
 // choice is the existing human device's local decision, never a received hint.
 func (a *Agent) ApproveAgentLink(ctx context.Context, id string) error {
-	return a.decideLink(ctx, id, true, false, true)
+	return a.decideLink(ctx, id, true, true)
 }
 
-func (a *Agent) decideLink(ctx context.Context, id string, accept, native, agentHost bool) error {
+func (a *Agent) decideLink(ctx context.Context, id string, accept, agentHost bool) error {
 	var address, pub, state string
 	var join []byte
 	var expires int64
@@ -275,8 +268,6 @@ func (a *Agent) decideLink(ctx context.Context, id string, accept, native, agent
 		return err
 	}
 	switch {
-	case native && state != LinkPending:
-		return fmt.Errorf("that request is %s already: only a pending request is approved with --native, so its device is not trusted", state)
 	case state == LinkApproved && accept:
 		return a.publishLink(ctx, id)
 	case state != LinkPending:
@@ -336,11 +327,6 @@ func (a *Agent) decideLink(ctx context.Context, id string, accept, native, agent
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return errors.New("that request was decided meanwhile")
-	}
-	if native { // trusted with its approval, before its step is published
-		if err := addSelfConsentTrustIn(tx, dev.Address, dev.Fingerprint()); err != nil {
-			return err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err

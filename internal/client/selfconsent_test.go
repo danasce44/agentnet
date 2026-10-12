@@ -184,7 +184,7 @@ func TestSelfConsentConditions(t *testing.T) {
 		{"enabled named agent", w.alice, func(ev *protocol.ParticipationEvent) { ev.Host.AgentID = named.ID }, true},
 		{"another person's invite", w.bob, nil, false},
 		{"a human role", w.alice, func(ev *protocol.ParticipationEvent) { ev.Role = protocol.RoleHuman }, false},
-		{"a foreign task key", w.alice, func(ev *protocol.ParticipationEvent) { ev.TaskKeys = []string{aliceFP, bobFP} }, false},
+		{"owner explicitly includes another member task key", w.alice, func(ev *protocol.ParticipationEvent) { ev.TaskKeys = []string{aliceFP, bobFP} }, true},
 		{"a disabled named agent", w.alice, func(ev *protocol.ParticipationEvent) { ev.Host.AgentID = retired.ID }, false},
 		{"an unknown named agent", w.alice, func(ev *protocol.ParticipationEvent) { ev.Host.AgentID = protocol.NewID() }, false},
 	} {
@@ -311,13 +311,9 @@ func TestSelfConsentConditions(t *testing.T) {
 	}
 }
 
-// The trust set: a device approved with person approve --native
-// (ApproveNativeLink) is trusted; one approved as the page and person
-// approve ID approve it (DecideLink) is not, not even when that request is
-// approved again with --native, and neither is a task key of an untrusted
-// device of one's own. A trusted device's invite is accepted once on
-// admission, also while the host's daemon was stopped; the start sweep
-// accepts one whose agent came to run later; untrust ends it.
+// All approved own human devices consent, including a phone linked without
+// --native. A repeated link decision remains invalid. Restart and unavailable
+// executors retain their existing recovery and no-duplicate semantics.
 func TestSelfConsentLinkedDevices(t *testing.T) {
 	w, conv, stopAlice := selfConsentWorld(t)
 	if _, err := w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "a DM linked devices get as history"}); err != nil {
@@ -326,14 +322,17 @@ func TestSelfConsentLinkedDevices(t *testing.T) {
 	eventually(t, "bob to hold it", func() bool { return len(convBodies(t, w.bob, conv)) == 1 })
 	desk := linkedVia(t, w.alice, "desk", w.alice.ApproveNativeLink)
 	phone := linkedVia(t, w.alice, "phone", func(ctx context.Context, id string) error { return w.alice.DecideLink(ctx, id, true) })
-	trust, err := w.alice.SelfConsentTrust()
+	for _, d := range []*Agent{desk, phone} {
+		if _, err := w.alice.sendKey(tctx(t), d.Address); err != nil {
+			t.Fatal(err)
+		}
+	}
+	trust, err := w.alice.OwnHumanDevices()
 	deskDev := TrustedDevice{Address: desk.Address, Fingerprint: desk.Self().Fingerprint()}
-	if err != nil || !slices.Equal(trust, []TrustedDevice{{Address: w.alice.Address, Fingerprint: w.alice.Self().Fingerprint()}, deskDev}) {
+	if err != nil || !slices.Equal(trust, []TrustedDevice{{Address: w.alice.Address, Fingerprint: w.alice.Self().Fingerprint()}, deskDev, {Address: phone.Address, Fingerprint: phone.Self().Fingerprint()}}) {
 		t.Fatalf("trust set: %+v %v", trust, err)
 	}
-	// Approving the phone's request again with --native, as if its roster
-	// step were still unpublished, trusts nothing: it may be a browser the
-	// page approved.
+	// The old --native spelling retries an already approved link idempotently.
 	var phoneLink string
 	links, err := w.alice.PendingLinks()
 	for _, l := range links {
@@ -347,10 +346,10 @@ func TestSelfConsentLinkedDevices(t *testing.T) {
 	if _, err := w.alice.store.db.Exec(`UPDATE device_links SET state = ? WHERE offer = ?`, LinkApproved, phoneLink); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.alice.ApproveNativeLink(tctx(t), phoneLink); err == nil {
-		t.Fatal("an approved request approved again with --native")
+	if err := w.alice.ApproveNativeLink(tctx(t), phoneLink); err != nil {
+		t.Fatal(err)
 	}
-	if again, err := w.alice.SelfConsentTrust(); err != nil || !slices.Equal(again, trust) {
+	if again, err := w.alice.OwnHumanDevices(); err != nil || !slices.Equal(again, trust) {
 		t.Fatalf("trust set after a second approval: %+v %v", again, err)
 	}
 	for _, d := range []*Agent{desk, phone} {
@@ -384,9 +383,9 @@ func TestSelfConsentLinkedDevices(t *testing.T) {
 	joins(fromDesk)
 	eventually(t, "bob to see it active", func() bool { return stateAt(t, w.bob, fromDesk).State == PartActive })
 	fromPhone := invite(phone)
-	waits(fromPhone)
-	if p, err := host.InviteAgent(tctx(t), conv, host.Address, nil, []string{phone.Self().Fingerprint()}, ""); err != nil || p.State != PartInvited {
-		t.Fatalf("an untrusted own device's task key: %+v %v", p, err)
+	joins(fromPhone)
+	if p, err := host.InviteAgent(tctx(t), conv, host.Address, nil, []string{phone.Self().Fingerprint()}, ""); err != nil || p.State != PartActive {
+		t.Fatalf("an own phone's task key: %+v %v", p, err)
 	}
 
 	// The host's daemon is stopped when the desk invites: on restart the
@@ -415,8 +414,7 @@ func TestSelfConsentLinkedDevices(t *testing.T) {
 	joins(fromDesk)
 
 	// The desk invites while no default agent runs here: it waits; once one
-	// runs, the sweep at the next start accepts it. The phone's invite still
-	// waits, and the desk, untrusted, invites for the click again.
+	// runs, the sweep at the next start accepts it. Phones behave identically.
 	if err := host.SetResponder(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -428,17 +426,8 @@ func TestSelfConsentLinkedDevices(t *testing.T) {
 	restart()
 	start()
 	joins(noAgent)
-	waits(fromPhone)
-	if err := host.UntrustOwnDevice(desk.Address); err != nil {
-		t.Fatal(err)
-	}
-	waits(invite(desk))
-	if err := host.UntrustOwnDevice(host.Address); err == nil {
-		t.Fatal("the host untrusted itself")
-	}
-	if err := host.UntrustOwnDevice(phone.Address); err == nil {
-		t.Fatal("untrusted a device that was never trusted")
-	}
+	joins(fromPhone)
+	joins(invite(desk))
 }
 
 // Offline: the host's own invite is accepted at once with no relay, and
@@ -526,8 +515,8 @@ func TestSelfConsentGroupLinkedDevice(t *testing.T) {
 	if err := w.alice.PublishAgentCatalog(tctx(t)); err != nil {
 		t.Fatal(err)
 	}
-	desk := linkedVia(t, w.alice, "desk", w.alice.ApproveNativeLink)
-	eventually(t, "desk to hold the group", func() bool { _, _, found, _ := desk.store.conversation(conv); return found })
+	desk := linkedVia(t, w.alice, "phone", approveLink(w.alice))
+	eventually(t, "phone to hold the group", func() bool { _, _, found, _ := desk.store.conversation(conv); return found })
 	var p ParticipationInfo
 	eventually(t, "desk to invite", func() bool {
 		p, err = desk.InviteNamedAgent(tctx(t), conv, w.alice.Address, named.ID, nil, nil, "")
@@ -561,28 +550,20 @@ func TestSelfConsentGroupLinkedDevice(t *testing.T) {
 	}
 }
 
-// Review finding 4: D3 holds from the first start of a build that has it.
-// An own invite stored before then, when nothing ran before the click,
-// still waits for the click, also through the start sweep; one stored
-// after is accepted.
-func TestSelfConsentNotRetroactive(t *testing.T) {
+// Upgrade accepts an undecided own-human invitation exactly once, even if it
+// predates D3. Decisions already made are covered by TestSelfConsentConditions.
+func TestSelfConsentPendingBeforeUpgrade(t *testing.T) {
 	w, conv, _ := selfConsentWorld(t)
 	before := storedInvite(t, w.alice, w.alice, conv, nil)
-	if _, err := w.alice.store.db.Exec(`UPDATE participation_events SET received_at = received_at - 86400 WHERE pid = ?`, before); err != nil {
+	if _, err := w.alice.store.db.Exec(`UPDATE participation_events SET received_at=received_at-86400 WHERE pid=?`, before); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := w.alice.selfConsent(tctx(t), before); ok || err != nil {
-		t.Fatalf("an invite stored before D3 accepted without a click (%v)", err)
+	if ok, err := w.alice.selfConsent(tctx(t), before); !ok || err != nil {
+		t.Fatalf("pending own invitation: %v %v", ok, err)
 	}
 	w.alice.sweepSelfConsent(tctx(t))
-	if s := stateAt(t, w.alice, before); s.State != PartInvited {
-		t.Fatalf("the sweep accepted an invite stored before D3: %+v", s)
-	}
-	if ok, err := w.alice.selfConsent(tctx(t), storedInvite(t, w.alice, w.alice, conv, nil)); !ok || err != nil {
-		t.Fatalf("an invite stored now not accepted (%v)", err)
-	}
-	if p, err := w.alice.AcceptParticipation(tctx(t), before); err != nil || p.State != PartActive {
-		t.Fatalf("the click on the earlier invite: %+v %v", p, err)
+	if stateAt(t, w.alice, before).State != PartActive || decisionsBy(t, w.alice, conv, before, w.alice.Self().Fingerprint()) != 1 {
+		t.Fatal("upgrade did not converge to one accept")
 	}
 }
 

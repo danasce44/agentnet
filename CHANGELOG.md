@@ -6,6 +6,25 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Use the same verified human identity across personal devices for own-agent
+  invitations, questions, tasks and exact remote Stop. No extra AgentNet
+  approval is required; each harness keeps its native tools and permissions.
+- Cancel or refresh a pending group invitation from a linked human device while
+  its originating device is offline. Cancellation fences only that invitation;
+  unrelated invitations remain valid and uncertain publications keep their bytes.
+- Preserve chat draft destinations and expose the existing mention picker with
+  a persistent @ button. Use terminal request status consistently in topics.
+- Query only the selected browser chat and release idle delivery locks. Retry
+  transient rate limits with the same saved message instead of failing the send.
+- Restore Android message/OK/reminder notifications and show denied system
+  permission truthfully. Support exact notification destinations and deduplication.
+- Correct historical roster-prefix handling and inert history display after a
+  device retires. Keep technical held-copy diagnostics in explicit troubleshooting;
+  individual and grouped notice dismissal changes no messages or trust decisions.
+- Preserve native harness launchers and distinguish inconclusive setup probes.
+  Codex uses its native app-server transport, including native approval refusals,
+  across worker modes without injected permission or tool overrides.
+
 ## [0.8.22] — 2026-10-11
 
 - Reconnect Android after resume or a default-network change without reopening

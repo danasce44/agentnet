@@ -41,11 +41,11 @@ func (a *Agent) RefreshGroupInvitation(ctx context.Context, id string) (GroupInv
 		return GroupInvitationInfo{}, err
 	}
 
-	r, err := groupInvitationIn(a.store.db, id, "out")
+	r, err := a.managedGroupInvitation(id)
 	if err != nil {
 		return GroupInvitationInfo{}, err
 	}
-	if err = a.groupInvitationOwner(r); err != nil {
+	if err = a.groupInvitationManager(r); err != nil {
 		return GroupInvitationInfo{}, err
 	}
 	if r.State == "published" || r.State == "published-history-unavailable" {
@@ -67,11 +67,11 @@ func (a *Agent) CancelGroupInvitation(ctx context.Context, id string) error {
 		return err
 	}
 	defer release()
-	r, err := groupInvitationIn(a.store.db, id, "out")
+	r, err := a.managedGroupInvitation(id)
 	if err != nil {
 		return err
 	}
-	if err = a.groupInvitationOwner(r); err != nil {
+	if err = a.groupInvitationManager(r); err != nil {
 		return err
 	}
 	if r.State == "cancelled" {
@@ -88,9 +88,12 @@ func (a *Agent) CancelGroupInvitation(ctx context.Context, id string) error {
 	if !ok || !admin.Admin || current.State.Withdrawn(admin, current.Withdrawals) {
 		return errors.New("group: current inviting administrator required")
 	}
-	// A journal submission may already have custody even before local install.
-	// Never report a cancellation while that exact admission can still publish.
-	if err = groupInvitationPublicationFence(a.store.db, r.Proposal); err != nil {
+	// The relay decides cancellation vs publication in the same transaction as
+	// the journal append, even when the original inviting device is offline.
+	if err = groupTurnCheck(a.store.db, current, a.Address, a.Self().Fingerprint()); err != nil {
+		return err
+	}
+	if err = a.fenceGroupInvitation(ctx, r, current); err != nil {
 		return err
 	}
 	target, ok, err := a.store.personByID(r.Proposal.Target)
@@ -129,19 +132,22 @@ func (a *Agent) CancelGroupInvitation(ctx context.Context, id string) error {
 	}
 	err = a.store.addConvOutbox(copies, envelope.Inner{}, func(tx *sql.Tx, _ string) error {
 		old, e := groupInvitationIn(tx, id, "out")
-		if e != nil {
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
 			return e
 		}
-		if old.State != r.State {
+		if e == nil && old.State != r.State && old.State != "cancelled" {
 			return errors.New("group: invitation changed while cancelling")
-		}
-		if e = groupInvitationPublicationFence(tx, r.Proposal); e != nil {
-			return e
 		}
 		if e = groupTurnCheck(tx, current, a.Address, a.Self().Fingerprint()); e != nil {
 			return e
 		}
-		if _, e = tx.Exec(`UPDATE group_invitations SET state='cancelled' WHERE id=? AND direction='out'`, id); e != nil {
+		raw, e := json.Marshal(r.Proposal)
+		if e != nil {
+			return e
+		}
+		// Only an explicit successful cancellation creates a local terminal row.
+		// It never copies an accepted mirror into the publication queue.
+		if _, e = tx.Exec(`INSERT INTO group_invitations(id,direction,conv,peer_person,peer_address,peer_fp,payload,state) VALUES(?,'out',?,?,?,?,?,'cancelled') ON CONFLICT(id,direction) DO UPDATE SET state='cancelled'`, id, r.Proposal.Root.ID(), r.peerPerson, a.Address, a.Self().Fingerprint(), raw); e != nil {
 			return e
 		}
 		return associateGroupInvitationCopies(tx, id, "out", copies)
@@ -154,9 +160,9 @@ func (a *Agent) CancelGroupInvitation(ctx context.Context, id string) error {
 	return nil
 }
 
-func groupInvitationCancelledIn(q dbq, id, conv, person, address, fp string, seq int64, hash string) (bool, error) {
+func groupInvitationCancelledIn(q dbq, id, conv, person string, seq int64, hash string) (bool, error) {
 	var n int
-	err := q.QueryRow(`SELECT count(*) FROM group_invitation_cancellations WHERE id=? AND conv=? AND peer_person=? AND peer_address=? AND peer_fp=? AND seq=? AND hash=?`, id, conv, person, address, fp, seq, hash).Scan(&n)
+	err := q.QueryRow(`SELECT count(*) FROM group_invitation_cancellations WHERE id=? AND conv=? AND peer_person=? AND seq=? AND hash=?`, id, conv, person, seq, hash).Scan(&n)
 	return n != 0, err
 }
 
@@ -169,14 +175,14 @@ func (a *Agent) admitGroupInvitationCancellation(env envelope.Envelope, in envel
 		return hold(reasonInvalid, "group: foreign cancellation realm")
 	}
 
-	if c.Decision != "cancelled" || c.Admission != nil {
+	if c.Decision != "cancelled" || c.Admission != nil || person.info.State == personConflict || !person.has(env.From, sender.Fingerprint()) || !person.roster.Human(sender.Fingerprint()) {
 		return hold(reasonInvalid, "group: invalid invitation cancellation")
 	}
 	// Existing invitations bind sender and descriptor exactly. A notice received
 	// first remains inert until a matching verified proposal is admitted.
 	row, err := groupInvitationIn(a.store.db, c.Invitation, "in")
-	if err == nil && (row.Inviter != env.From || row.peerFP != sender.Fingerprint() || row.peerPerson != person.roster.Person || row.Proposal.Root.ID() != root.ID() || desc.Seq != row.Proposal.Seq || desc.Hash != row.Proposal.Prev) {
-		return hold(reasonInvalid, "group: cancellation is not from the exact inviting device")
+	if err == nil && (row.peerPerson != person.roster.Person || row.Proposal.Root.ID() != root.ID() || desc.Seq != row.Proposal.Seq || desc.Hash != row.Proposal.Prev) {
+		return hold(reasonInvalid, "group: cancellation is not from the current inviting person")
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -185,7 +191,7 @@ func (a *Agent) admitGroupInvitationCancellation(env envelope.Envelope, in envel
 		if _, e := tx.Exec(`INSERT INTO group_invitation_cancellations(id,conv,peer_person,peer_address,peer_fp,seq,hash) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`, c.Invitation, root.ID(), person.roster.Person, env.From, sender.Fingerprint(), desc.Seq, desc.Hash); e != nil {
 			return e
 		}
-		_, e := tx.Exec(`UPDATE group_invitations SET state='cancelled' WHERE id=? AND direction='in' AND peer_person=? AND peer_address=? AND peer_fp=? AND state IN ('pending','accepted','stale')`, c.Invitation, person.roster.Person, env.From, sender.Fingerprint())
+		_, e := tx.Exec(`UPDATE group_invitations SET state='cancelled' WHERE id=? AND direction='in' AND peer_person=? AND state IN ('pending','accepted','stale')`, c.Invitation, person.roster.Person)
 		return e
 	})
 	if err == nil && res == admitConflict { // stored nowhere: held, so it has a receipt (MIXED-1)
@@ -194,27 +200,8 @@ func (a *Agent) admitGroupInvitationCancellation(env envelope.Envelope, in envel
 	return err
 }
 
-func groupInvitationPublicationFence(q dbq, p protocol.GroupInvitation) error {
-	var raw []byte
-	err := q.QueryRow(`SELECT payload FROM group_publications WHERE conv=? AND seq=?`, p.Root.ID(), p.Seq).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var packet GroupContext
-	if json.Unmarshal(raw, &packet) != nil {
-		return errors.New("group: publication record requires recovery before cancellation")
-	}
-	if member, ok := packet.State.Member(p.Target); ok && member.Admission.Seq == p.Seq && member.Admission.Prev == p.Prev && member.Admission.Roster == p.Roster {
-		return errors.New("group: publication already started; resolve membership before cancelling")
-	}
-	return nil
-}
-
 func (a *Agent) groupInvitationCapabilities(r groupInvitationRow) (bool, bool) {
-	if r.Direction != "out" || a.groupInvitationOwner(r) != nil {
+	if r.Direction != "out" || a.groupInvitationManager(r) != nil {
 		return false, false
 	}
 	if r.State != "pending" && r.State != "accepted" && r.State != "stale" && r.State != "reissue" && r.State != "cancelled" {
@@ -229,9 +216,6 @@ func (a *Agent) groupInvitationCapabilities(r groupInvitationRow) (bool, bool) {
 		return false, false
 	}
 	if member, ok := current.State.Member(r.Proposal.Target); ok && !current.State.Withdrawn(member, current.Withdrawals) {
-		return false, false
-	}
-	if groupInvitationPublicationFence(a.store.db, r.Proposal) != nil {
 		return false, false
 	}
 	return r.State != "cancelled", true

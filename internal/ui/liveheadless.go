@@ -19,7 +19,7 @@ func (l *Live) Decide(x DecisionAction) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), l.timeout)
 	defer cancel()
 	if x.Check {
-		if x.Action != "resolve" || x.Report != "" || x.Expect != "needs_human" {
+		if (x.Action != "resolve" || x.Expect != "needs_human") && (x.Action != "cancel" || x.Expect != "running") || x.Report != "" {
 			return "", Refuse("Only an own waiting request can be checked here.")
 		}
 		if err := l.a.CheckOwnResolution(ctx, x.Host, x.ID, x.Key, x.Attempt); err != nil {
@@ -27,7 +27,7 @@ func (l *Live) Decide(x DecisionAction) (string, error) {
 		}
 		return "The host can receive this decision. Nothing has been sent.", nil
 	}
-	if x.Action == "continue" || x.Action == "resolve" && x.Report == "" {
+	if x.Action == "continue" || (x.Action == "resolve" || x.Action == "cancel") && x.Report == "" {
 		ctx = client.WithQueuedSend(ctx, x.SendID)
 	}
 	sent, err := l.a.Decide(ctx, x.Host, x.ID, x.Key, x.Action, x.Expect, x.Attempt, x.Text, x.Report)

@@ -171,7 +171,7 @@ func (a *Agent) personGrantStop(j job) string {
 	if j.PermissionPerson == "" {
 		return ""
 	}
-	if j.OwnHumanQuestion {
+	if j.OwnHumanRequest {
 		var holds bool
 		err := a.store.db.QueryRow(`SELECT `+ownHumanQuestionHolds("?", "?"), j.From, j.Key, j.From, j.Key).Scan(&holds)
 		if err != nil || !holds {
@@ -192,6 +192,9 @@ func (a *Agent) PermissionState(address, key string) (questions, tasks bool, err
 		return
 	}
 	tasks, err = taskGranted(a.store.db, address, key)
+	if err == nil && !tasks {
+		tasks, err = ownDeviceHolds(a.store.db, address, key)
+	}
 	return
 }
 

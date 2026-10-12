@@ -73,7 +73,7 @@ func groupPersonIn(q querier, address string) (agent, protocol.PersonRoster, err
 
 // putGroupCommit stores full signed ciphertext in the same immediate transaction
 // as current-device/person/admin checks and CAS. No fanout completion inferred.
-func (s *store) putGroupCommit(caller identity.Public, c protocol.GroupCommit, realm string) (protocol.GroupJournalResult, error) {
+func (s *store) putGroupCommit(caller identity.Public, c protocol.GroupCommit, realm string, publication ...string) (protocol.GroupJournalResult, error) {
 	result := protocol.GroupJournalResult{}
 	if c.Realm != realm {
 		return result, errGroupRealm
@@ -90,7 +90,7 @@ func (s *store) putGroupCommit(caller identity.Public, c protocol.GroupCommit, r
 	if err != nil {
 		return result, err
 	}
-	if me.Public.Fingerprint() != caller.Fingerprint() || c.Actor != me.Person {
+	if me.Public.Fingerprint() != caller.Fingerprint() || c.Actor != me.Person || !roster.Human(caller.Fingerprint()) {
 		return result, errGroupForbidden
 	}
 	head, found, err := groupHeadIn(tx, c.Conv, c.Bootstrap)
@@ -119,6 +119,27 @@ func (s *store) putGroupCommit(caller identity.Public, c protocol.GroupCommit, r
 	if !errors.Is(err, sql.ErrNoRows) {
 		return result, err
 	}
+	// Legacy POST /chain is receipt-only. Neither a grace window nor a forged
+	// version header allows an old offline publisher to bypass the ID fence.
+	if len(publication) != 1 {
+		return result, errGroupPublicationRequired
+	}
+	invitation := publication[0]
+	if invitation != "" {
+		if !protocol.ValidHash(invitation) {
+			return result, errGroupForbidden
+		}
+		f, ok, e := groupInvitationFenceIn(tx, c.Conv, c.Bootstrap, c.Actor, invitation)
+		if e != nil {
+			return result, e
+		}
+		if ok {
+			if f.outcome == "cancelled" {
+				return result, errGroupInvitationCancelled
+			}
+			return result, errGroupStale // an immutable publication already won
+		}
+	}
 	// An exact already-stored replay proves custody only. It creates no append
 	// authority after self-removal; a removed device is still refused above.
 	if c.ActorRoster != roster.Hash() || found && !slices.Contains(head.admins, me.Person) {
@@ -143,8 +164,13 @@ func (s *store) putGroupCommit(caller identity.Public, c protocol.GroupCommit, r
 	if err != nil {
 		return result, err
 	}
-	if _, err = tx.Exec("INSERT INTO group_journal(conv,bootstrap,seq,hash,record)VALUES(?,?,?,?,?)", c.Conv, c.Bootstrap, c.Seq, c.Hash, raw); err != nil {
+	if _, err = tx.Exec("INSERT INTO group_journal(conv,bootstrap,seq,hash,record,invitation)VALUES(?,?,?,?,?,?)", c.Conv, c.Bootstrap, c.Seq, c.Hash, raw, invitation); err != nil {
 		return result, err
+	}
+	if invitation != "" {
+		if _, err = tx.Exec(`INSERT INTO group_invitation_fences(conv,bootstrap,person,id,seq,prev,outcome,hash) VALUES(?,?,?,?,?,?,'published',?)`, c.Conv, c.Bootstrap, c.Actor, invitation, c.Seq, c.Prev, c.Hash); err != nil {
+			return result, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return result, err
@@ -248,6 +274,8 @@ func (h *Hub) handleGroupCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.store.putGroupCommit(me.Public, c, h.RealmID())
 	switch {
+	case errors.Is(err, errGroupPublicationRequired):
+		writeError(w, 426, "update_required", err.Error())
 	case errors.Is(err, errGroupForbidden):
 		writeError(w, 403, "group_forbidden", err.Error())
 	case errors.Is(err, errGroupStale):

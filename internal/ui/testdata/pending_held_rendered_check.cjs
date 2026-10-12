@@ -7,8 +7,8 @@ const settle=async p=>p.evaluate(async()=>{await document.fonts.ready;const root
   for(const skin of ['comic','classic','zoom']) for(const width of [1280,390]) {
    const ctx=await browser.newContext({reducedMotion:'reduce',viewport:{width,height:1000}}),p=await ctx.newPage(),errors=[],posted=[];
    // Comic keeps background notices in Settings / About / Technical details and
-   // archives exact snapshots (archive_held_batch); the others, one notice.
-   const want=skin==='comic'?{do:'archive_held_batch',held:[{id:'pending',reason:'proof_pending',detail_code:''}]}:{do:'archive_held',id:'pending'};
+   // all skins archive exact displayed snapshots.
+   const want={do:'archive_held_batch',held:[{id:'pending',reason:'proof_pending',detail_code:''}]};
    let archived=false,fail=true;p.setDefaultTimeout(6000);p.on('pageerror',e=>errors.push(String(e)));
    await p.route('**/api/overview*',async route=>{
     const response=await route.fetch(),o=await response.json();o.needs_you=[];o.held=[];o.review=[];
@@ -25,14 +25,14 @@ const settle=async p=>p.evaluate(async()=>{await document.fonts.ready;const root
     if(skin==='comic'){
      const nav=p.getByRole('navigation',{name:'Main'});
      await nav.getByRole('button',{name:/^OKs/}).click();
-     await p.getByText('Synthetic changed device key',{exact:false}).filter({visible:true}).waitFor();
+     assert.equal(await p.getByText('Synthetic changed device key',{exact:false}).filter({visible:true}).count(),0,'phone has no unsupported trust decision');
      assert.equal(await p.getByText('Chat sync needs attention',{exact:false}).count(),0,'passive sync is not an OK');
      assert.equal(await p.getByText('Synthetic missing chat context',{exact:false}).count(),0,'pending context is absent from OKs');
      assert.equal(await p.getByRole('button',{name:/Archive/}).count(),0,'no archive chore in OKs');
      await nav.getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();
      await p.getByRole('button',{name:/^About/}).click();
      await p.getByRole('button',{name:'Technical details',exact:true}).click();
-     if(!archived)await p.locator('summary').filter({hasText:'Retained sync records'}).click();
+     await p.locator('summary').filter({hasText:'Retained sync records'}).click();
     }else {await p.locator('#profile-btn').click();await p.locator('[data-settings="device"]').click();await p.locator('#quarantine-summary').click();}
    };
    await open();
@@ -44,7 +44,7 @@ const settle=async p=>p.evaluate(async()=>{await document.fonts.ready;const root
    assert.equal(await archive.isDisabled(),false,'failure permits explicit retry');assert.equal(archived,false);
    fail=false;await archive.click();await open();
    assert.equal(await p.getByText('Synthetic missing chat context',{exact:false}).filter({visible:true}).count(),0,'chosen notice stays hidden on reload');
-   if(skin==='comic')await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
+
    await p.getByText('Synthetic changed device key',{exact:false}).filter({visible:true}).waitFor();
    assert.deepEqual(posted,[want,want],'only chosen protected action was submitted');
    assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'no page overflow');
