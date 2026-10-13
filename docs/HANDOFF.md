@@ -4,7 +4,17 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Next release — v0.8.25 skins, October 13, 2026
+## Current release — v0.8.25 skins, October 13, 2026
+
+[Download v0.8.25](https://github.com/misunders2d/agentnet/releases/tag/v0.8.25)
+or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.25/AgentNet-android.apk).
+Published **15:39:26 UTC**, immutable tag
+`0660cbb389fb15de43de32ad417f15bc9b4ae069`. All thirteen tag-built assets match
+GitHub digests and SHA256SUMS before and after publication. The original-key APK
+installs over v0.8.24, preserving the exact 203-message fixture, three queued
+sends, attachment, retained files, draft, identity and saved origin through warm
+and cold starts. Its actual native update check recognizes v0.8.25. Install over
+the existing app; do not uninstall or relink. Physical-phone timing is not claimed.
 
 Claude handed over exact `ccb8a7f6bd3988cbf002a460f03a525452c4ec3f`; main
 fast-forwarded to it. Comic remains built in; Classic and Zoom move to the
@@ -23,10 +33,18 @@ coverage, desktop and container gates are qualified with retained passes and
 the bounded fixture follow-up at `a4741f68`. The last race partition passes
 515.426 s inside its unchanged 600-second limit. Claude independently cleared
 both test-only corrections. [V0_8_25.md](plans/V0_8_25.md) records exact evidence
-and limits. Application source is unchanged from `ccb8a7f6`; tagging and draft
-asset/APK qualification are next, and publication is still pending.
+and limits. Application source is unchanged from `ccb8a7f6`; the immutable tag
+adds only the two reviewed fixture corrections and release documentation.
 
-## Current release — v0.8.24, October 13, 2026
+Both local repositories are clean on pushed main, each with only its primary
+worktree and main branch. Three merged worktrees, their local branches, four
+listed remote branches and Claude's listed scratch are removed. Owned release
+test processes and emulator are stopped. Laptop-only leftovers were not
+reachable and remain unverified; this cleanup claim covers the two local repos.
+The existing relay remains on v0.8.24: the handoff reserves deployment for
+current owner approval. No live identities, history, grants or requests changed.
+
+## Previous release / current relay — v0.8.24, October 13, 2026
 
 [Download v0.8.24](https://github.com/misunders2d/agentnet/releases/tag/v0.8.24)
 or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.24/AgentNet-android.apk).
