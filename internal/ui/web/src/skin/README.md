@@ -56,11 +56,14 @@ a contract: AgentNet keeps them on the same elements, and
 | `bubble` | Its bubble |
 | `typing` | Who is typing |
 | `composer` | The message box |
+| `composer-field` | Its text field's frame |
 | `send` | The send control |
 | `request` | A request card (`data-tone`: act, work, quiet) |
 
 Prefer tokens over part styles, and part styles over new slots. Never hide a
-control or text with a part style: restyle it.
+control or text with a part style: restyle it. Write part styles outside any
+`@layer`: unlayered rules win over Comic's Tailwind utilities, so no
+`!important` is needed.
 
 ## Build an overlay
 

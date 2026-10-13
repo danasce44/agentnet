@@ -349,12 +349,19 @@ function RenameTopic({ open, onOpenChange, topic }: { open: boolean; onOpenChang
 export function TopicStart({ ctx, messages }: { ctx: Ctx; messages: { at?: string }[] }) {
   const store = useApp();
   const draft = useStore(store, s => s.drafts[ctx.conv]);
+  const overview = useStore(store, s => s.overview);
+  const names = useAgentNames();
+  // The same topic the topic bar shows as open: a people chat's chosen topic,
+  // or the agent thread that is one of this agent's topics.
   const listed = ctx.dm?.topics;
   const current = listed?.find(t => t.id === draft?.topic);
-  const t = current ? topicOf(current) : ctx.thread?.topic ? topicOf(ctx.thread.topic) : null;
+  const agentTopics = ctx.thread ? chatList(overview, names).find(i => i.open.kind === "thread" && i.peer === ctx.thread?.peer)?.topics || [] : [];
+  const threadTopic = ctx.thread ? (ctx.thread.topic ? topicOf(ctx.thread.topic) : agentTopics.find(t => t.id === ctx.thread?.id) || null) : null;
+  const t = current ? topicOf(current) : threadTopic;
   const main = !t && !!ctx.dm;
   if (!t && !main) return null;
-  const index = current && listed ? listed.indexOf(current) + 1 : undefined;
+  const at = current && listed ? listed.indexOf(current) : threadTopic ? agentTopics.findIndex(x => x.id === threadTopic.id) : -1;
+  const index = at >= 0 ? at + 1 : undefined;
   return <TopicIntro title={t ? t.title : "Main"} main={main} state={t ? t.state : "active"} index={index || undefined}
     at={messages.find(m => m.at)?.at} count={messages.length} />;
 }
