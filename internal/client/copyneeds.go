@@ -37,7 +37,7 @@ type copyNeeds struct {
 func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 	n := copyNeeds{v: v}
 	var kind, origin, reply, target string
-	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group,kind,coalesce(origin,''),coalesce(reply_to,''),coalesce(target,'') FROM outbox WHERE id=?`, id).
+	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group,coalesce(kind,''),coalesce(origin,''),coalesce(reply_to,''),coalesce(target,'') FROM outbox WHERE id=?`, id).
 		Scan(&n.stored, &n.conv, &n.sub, &n.body, &n.pid, &n.humanRaw, &n.status, &n.agentID, &n.capturedFP, &n.groupedWire, &kind, &origin, &reply, &target); err != nil {
 		return n, err
 	}
