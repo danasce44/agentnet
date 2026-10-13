@@ -291,7 +291,7 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 			// Stored device history has already verified its original endpoints.
 			// Older copies inherited a parent answer's direction for follow-ups.
 			if deviceHistory && (m.Kind == envelope.KindQuestion || m.Kind == envelope.KindTask) {
-				m.Dir = deviceHistoryRequestDirection(m.From, peer)
+				m.Dir = deviceHistoryRequestDirection(m.From, m.To, peer)
 			}
 			m.SentAt, m.At, m.Read = time.Unix(ts, 0), time.Unix(recv, 0), &read
 			if m.State == stateSummary {
@@ -332,7 +332,7 @@ func (s *store) peerMessages(peer string, ids []string) (map[string]Conversation
 			}
 			m.From, m.Kind, m.At = env.From, env.Kind, time.Unix(created, 0)
 			if deviceHistory && (m.Kind == envelope.KindQuestion || m.Kind == envelope.KindTask) {
-				m.Dir = deviceHistoryRequestDirection(m.From, peer)
+				m.Dir = deviceHistoryRequestDirection(m.From, m.To, peer)
 			}
 			out[m.ID] = m
 		}

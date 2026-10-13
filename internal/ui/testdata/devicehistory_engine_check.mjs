@@ -198,6 +198,39 @@ const restarted=new Engine({store:a.store,base:a.base,fetch});Object.assign(rest
   check(ownHost[0].dir==='out'&&ownHost[0].peer===sender.address,'local outbox '+kind+' retains actual recipient despite stale history metadata');
  }
 }
+// The human and named agent can share one transport address. Self-questions
+// remain outgoing when copied; replies remain incoming on the linked device.
+{
+ const host=await person('self/laptop'),reader=await sibling(host,'self/phone'),agent=wire.newID();
+ const target={address:host.address,fingerprint:host.fp,agent_id:agent};
+ const q={id:wire.newID(),from:host.address,to:host.address,ts:1,kind:'question',body:'check this bug',target};
+ const answer={id:wire.newID(),from:host.address,to:host.address,ts:2,kind:'answer',reply_to:q.id,body:'which bug?',agent_id:agent};
+ const followup={...q,id:wire.newID(),ts:3,reply_to:answer.id,body:'see screenshot'};
+ const task={...q,id:wire.newID(),ts:4,kind:'task',reply_to:followup.id,body:'fix it'};
+ const messages=[q,answer,followup,task];
+ for(const m of messages){
+  const envelope=await wire.seal(m,host.keys,host.pub);
+  await host.store.write([{s:'outbox',k:m.id,v:{...m,v:1,at:m.ts*1000,fp:host.fp,state:'delivered',envelope}}]);
+  await receiveHistory(envelope,host);
+ }
+ await drain(host,reader);
+ const native=await host.thread(q.id);
+ check(native.messages.length===4&&native.messages.every(m=>m.dir==='out'),'history export keeps one native outgoing row for each self-send');
+ for(const c of (await copies(host)).filter(r=>r.to===reader.address))await receiveHistory(c.envelope,reader);
+ const view=await reader.thread(q.id);
+ check(view.peer===host.address&&view.messages.length===4,'self-thread copies retain exact peer and unique messages');
+ for(const m of view.messages){
+  const expected=m.kind==='answer'?'in':'out',row=await reader.store.get('inbox',m.id);
+  check(m.dir===expected&&row.device_history.direction===expected&&m.history&&!m.state,'self-thread copy has correct direction and no execution state');
+  if(m.kind==='answer')continue;
+  check(m.target?.agent_id===agent,'self-request retains named executor');
+  await reader.store.write([{s:'inbox',k:m.id,v:{...row,device_history:{...row.device_history,direction:'in'}}}]);
+ }
+ const retained=JSON.stringify(await reader.store.all('inbox'));
+ const repaired=await reader.thread(q.id);
+ check(repaired.messages.filter(m=>m.kind!=='answer').every(m=>m.dir==='out'),'retained incorrectly incoming self-requests render as outgoing');
+ check(JSON.stringify(await reader.store.all('inbox'))===retained,'self-request presentation repair never rewrites stored originals');
+}
 // A legacy missing recipient key is not the current reader's key and cannot
 // acquire proposal/status authority from a later duplicate's assertion.
 {

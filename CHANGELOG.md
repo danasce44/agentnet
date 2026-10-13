@@ -6,6 +6,9 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Required for v0.8.24 (MEL-614): show same-device agent questions once, clear
+  stale “Sending…” previews after delivery, and retain the selected agent for
+  new follow-ups. Correct retained history without replaying completed work.
 - Record own-agent consent before unrelated invitation fanout. Recover stored
   group acceptances and their exact unsent invitation after restart, without
   another click or another decision.

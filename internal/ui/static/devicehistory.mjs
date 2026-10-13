@@ -6,9 +6,11 @@ import { historyWindow } from "./historywindow.mjs";
 export const directHistoryRow=r=>!!r&&!r.conv&&!r.local&&Number.isFinite(r.at)&&[1,3].includes(r.v)&&(!r.aside||r.control)&&["",wire.SubStatus,wire.SubReaction,wire.SubRevision,wire.SubRetraction].includes(r.sub||"")&&(!r.receiver_route||r.receiver_route.op==="request");
 // A mapped request is relative to its preserved peer, even when its parent is
 // an incoming answer. Also correct retained rows without rewriting originals.
+// Human and agent share an address for a same-device outgoing request.
+const requestDirection=(from,to,peer)=>from===peer&&from!==to?"in":"out";
 export const deviceHistoryDirection=(row,fallback,from=row.from)=>{
  const meta=(row.history||row.replica)?row.device_history:null;
- if(meta?.peer&&from&&["question","task"].includes(row.kind))return from===meta.peer?"in":"out";
+ if(meta?.peer&&from&&["question","task"].includes(row.kind))return requestDirection(from,meta.recipient,meta.peer);
  return meta?.direction||fallback;
 };
 // Native transport endpoints win even for metadata saved by older versions.
@@ -89,7 +91,11 @@ export function deviceHistory(e,Hold){
    }
    if(h.agent_id){const t=parent.item.target;if(!t||t.address!==h.from||t.fingerprint!==h.from_key||t.agent_id!==h.agent_id)fail("named output differs from its requested agent.");}
    const meta=parent.row.device_history;
-   if(meta){peer=meta.peer;if(["question","task","answer","result"].includes(h.kind)||h.status===wire.StatusProgress)direction=h.from===peer?"in":"out";}
+   if(meta){
+    peer=meta.peer;
+    if(["question","task"].includes(h.kind))direction=requestDirection(h.from,r.recipient,peer);
+    else if(["answer","result"].includes(h.kind)||h.status===wire.StatusProgress)direction=h.from===peer?"in":"out";
+   }
   }
   return {recipient:r.recipient,recipient_key:r.recipient_key,peer,direction,hash:r.hash};
  }
