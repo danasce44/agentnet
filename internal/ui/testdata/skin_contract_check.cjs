@@ -215,8 +215,11 @@ const messageShot = async (page, skin) => {
 
 // What each skin must show and do, through its own words.
 const journeys = {
+  // The chat list heading is the kit's list-title part: an overlay may word it
+  // its own way (brand.tsx words.chats, internal/ui/web/src/skin/README.md).
   comic: async (page) => {
-    await page.getByRole('heading', { name: 'Chats' }).first().waitFor({ timeout: 20000 });
+    const listTitle = page.getByRole('heading').and(page.locator('[data-part="list-title"]')).first();
+    await listTitle.waitFor({ timeout: 20000 });
     await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^(Settings|You)$/ }).click();
     await page.getByRole('button', { name: /Appearance/ }).first().click();
     await page.getByRole('heading', { name: 'Skin', exact: true }).waitFor();
@@ -228,7 +231,7 @@ const journeys = {
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'detached' });
     await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Chats' }).click();
-    await page.getByRole('heading', { name: 'Chats' }).first().waitFor();
+    await listTitle.waitFor();
     // A conversation with its menus: every popup renders inside the root.
     await page.getByRole('button', { name: /Bob’s agent/ }).first().click();
     await page.getByRole('log').first().waitFor();
