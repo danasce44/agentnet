@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/protocol"
@@ -16,6 +17,7 @@ import (
 type reviewTransition struct {
 	Host, HostKey, ID, Key, State string
 	Attempt                       int64
+	NativeToken                   string
 }
 
 type storedReviewReport struct {
@@ -37,7 +39,27 @@ func reportTransition(r storedReviewReport, it ReportItem) reviewTransition {
 	if it.State == stateRunning {
 		state += ":" + it.Blocker
 	}
-	return reviewTransition{r.Host, r.Key, it.ID, it.Key, state, it.Attempt}
+	transition := reviewTransition{Host: r.Host, HostKey: r.Key, ID: it.ID, Key: it.Key, State: state, Attempt: it.Attempt}
+	if it.Native != nil {
+		transition.NativeToken = it.Native.Token
+	}
+	return transition
+}
+
+func (a *Agent) nativeReviewEligible(r storedReviewReport, it ReportItem) bool {
+	n := it.Native
+	if n == nil || n.Harness != "codex" || n.Host != r.Host || n.Request != it.ID || n.Key != it.Key || n.Attempt != it.Attempt || it.Attempt < 1 || it.State != stateRunning || !protocol.ValidID(n.Token) || n.Thread == "" || n.Turn == "" || n.Expires < 0 || n.Expires != 0 && n.Expires <= time.Now().UnixMilli() {
+		return false
+	}
+	if valid, e := a.nativeOwnerHumanIn(a.store.db, a.Address, a.Self().Fingerprint()); e != nil || !valid {
+		return false
+	}
+	owner, e := ownerReportHolds(a.store.db, r.Host, r.Key)
+	if e != nil || !owner {
+		return false
+	}
+	revoked, e := revokedDeviceKnown(a.store.db, r.Host, r.Key)
+	return e == nil && !revoked
 }
 
 func notificationReport(body, host, key string) (Report, bool) {
@@ -122,13 +144,14 @@ func (a *Agent) remoteReviewAlerts() (remoteReviewAlerts, error) {
 		}
 		covered := map[reviewTransition]bool{}
 		for _, it := range previous[partition].Report.Items {
-			if it.Actionable {
+			if it.Actionable || a.nativeReviewEligible(previous[partition], it) {
 				covered[reportTransition(previous[partition], it)] = true
 			}
 		}
 		for _, it := range r.Report.Items {
 			transition := reportTransition(r, it)
-			if !it.Actionable || settled[transition] || it.State == stateRunning && it.Blocker != BlockerStalled {
+			native := a.nativeReviewEligible(r, it)
+			if !it.Actionable && !native || settled[transition] || it.State == stateRunning && it.Blocker != BlockerStalled && !native {
 				continue
 			}
 			out.Counts[r.Host]++
@@ -150,6 +173,16 @@ func (a *Agent) remoteReviewAlerts() (remoteReviewAlerts, error) {
 // report or authorize any action. Unknown/refused correlations stay open.
 func (a *Agent) settledReviewTransitions(reports map[string]storedReviewReport) (map[reviewTransition]bool, error) {
 	out := map[reviewTransition]bool{}
+	// The store uses one SQLite connection. Resolve role eligibility before
+	// opening result rows; querying it inside that cursor would deadlock.
+	nativeEligibility := map[reviewTransition]bool{}
+	for _, r := range reports {
+		for _, it := range r.Report.Items {
+			if it.Native != nil {
+				nativeEligibility[reportTransition(r, it)] = a.nativeReviewEligible(r, it)
+			}
+		}
+	}
 	rows, err := a.store.db.Query(`SELECT s.sender, coalesce(s.verified_by,''), s.ref_id, s.ref_fp, s.body, d.id, d.body
   FROM inbox s JOIN outbox d ON d.id = CASE WHEN json_valid(s.body) THEN json_extract(s.body,'$.decision') END
   WHERE s.sub = ? AND d.sub = ? AND s.conv IS NULL AND d.conv IS NULL
@@ -179,11 +212,22 @@ func (a *Agent) settledReviewTransitions(reports map[string]storedReviewReport) 
 		}
 		switch decision.Action {
 		case "accept", "resolve", "reply", "decline", "cancel":
+		case "continue":
+			if !nativeDecision(decision) {
+				continue
+			}
 		default:
 			continue
 		}
 		for _, it := range r.Report.Items {
-			if it.Actionable && it.ID == id && it.Key == key && it.Attempt == decision.Attempt && it.State == decision.Expect {
+			native := nativeEligibility[reportTransition(r, it)]
+			if native {
+				response, e := parseNativeResponse(decision.Text)
+				if e != nil || response.Token != it.Native.Token {
+					continue
+				}
+			}
+			if (it.Actionable || native) && it.ID == id && it.Key == key && it.Attempt == decision.Attempt && it.State == decision.Expect {
 				out[reportTransition(r, it)] = true
 			}
 		}

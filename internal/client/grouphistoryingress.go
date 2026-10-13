@@ -15,7 +15,7 @@ func (a *Agent) groupHistoryReceiveCheck(q dbq, root protocol.ConvRoot, sender i
 		return err
 	}
 	if envelope.TopicOrganization(item.TopicEvent) {
-		if err := topicOrganizationAuthor(q, root.ID(), item.From, item.FromKey); err != nil {
+		if _, err := a.topicOrganizationAdmission(q, item.inner(root.ID()), item.From, item.FromKey, true); err != nil {
 			return err
 		}
 	}

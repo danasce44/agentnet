@@ -21,13 +21,13 @@ func (a *App) activeSessions() []*Session {
 }
 func (a *App) phone(id string, s *Session) *phoneProvider {
 	s.mu.Lock()
-	s.notify = func(fragment string) {
+	s.notify = func(notification client.NativeNotification) {
 		a.mu.Lock()
 		n := a.notifier
 		closed := a.closed
 		a.mu.Unlock()
 		if n != nil && !closed {
-			n.Notify(id, fragment)
+			n.Notify(id, notification.Fragment, notification.Title, notification.Body)
 		}
 	}
 	s.mu.Unlock()

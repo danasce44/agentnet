@@ -233,6 +233,9 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 	}
 	rows.Close()
 	for i := range items { // what a task carries out, for the operator approving it (MEL-521)
+		if items[i].State == stateRunning {
+			items[i].Native = a.nativeRequestFor(items[i].ID)
+		}
 		if items[i].Excerpt == "" {
 			if files, err := a.store.attachments(items[i].ID); err == nil && len(files) > 0 {
 				items[i].Excerpt = reviewFileExcerpt(files)
@@ -255,7 +258,7 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 	for _, to := range recipients {
 		list := items
 		if isOwner[to] && !isOperator[to] {
-			list = slices.DeleteFunc(slices.Clone(items), func(it ReportItem) bool { return it.State != stateNeedHuman })
+			list = slices.DeleteFunc(slices.Clone(items), func(it ReportItem) bool { return it.State != stateNeedHuman && it.Native == nil })
 		}
 		if isOperator[to] {
 			// An operator device of an older version (v0.6.2) drops a whole
@@ -312,6 +315,7 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 		body := countText(len(list), a.Address)
 		reportKey := ""
 		fullText := false
+		nativeOwner := false
 		capable := false
 		if ferr == nil {
 			if key, err := a.sendKey(ctx, to); err == nil {
@@ -330,7 +334,11 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 							return
 						}
 						fullText = owner || steward
-						body = a.reportBodyFor(list, agentText, fullText, isOperator[to])
+						nativeOwner, err = a.nativeOwnerHumanIn(a.store.db, to, reportKey)
+						if err != nil {
+							return
+						}
+						body = a.reportBodyFor(list, agentText, fullText, isOperator[to], nativeOwner)
 					} else {
 						if deciders == nil {
 							if deciders, err = a.store.deciders(); err != nil {
@@ -375,6 +383,13 @@ func (a *Agent) sendReviewNoticeInPass(ctx context.Context) {
 				return errNoNewReview
 			}
 			if reportKey != "" {
+				if nativeOwner {
+					if valid, err := a.nativeOwnerHumanIn(tx, to, reportKey); err != nil {
+						return err
+					} else if !valid {
+						return errNoNewReview
+					}
+				}
 				// Its key here must be the granted one (a steward's device:
 				// the key its roster lists), or nothing is sent.
 				active, err := operatorHolds(tx, to, reportKey)
@@ -606,9 +621,12 @@ func (a *Agent) reportBody(items []ReportItem) string {
 // Full agent output travels only in ciphertext to current own devices or
 // a current steward. Excerpt is an existing private report field; public
 // execution statuses continue to carry only their bounded blocker text.
-func (a *Agent) reportBodyFor(items []ReportItem, agentText map[string]string, full, actionable bool) string {
+func (a *Agent) reportBodyFor(items []ReportItem, agentText map[string]string, full, actionable bool, nativeOwner ...bool) string {
 	r := Report{V: 2, At: time.Now().Unix(), Host: a.Address, Items: make([]ReportItem, 0, len(items))}
 	for _, it := range items {
+		if len(nativeOwner) == 0 || !nativeOwner[0] {
+			it.Native = nil
+		}
 		it.Actionable = actionable
 		if full && it.State == stateNeedHuman && agentText[it.ID] != "" {
 			if it.Excerpt != "" {

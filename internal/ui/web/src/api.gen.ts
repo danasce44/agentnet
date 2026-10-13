@@ -115,6 +115,7 @@ export interface ApprovalsView {
   tasks: TaskGrantView[] | null;
   native_tasks?: TaskGrantView[];
   own_devices?: OwnDevicePermission[];
+  removed_devices?: string[];
   participations: ParticipationGrant[] | null;
   read_only: boolean;
   unresolved?: string[];
@@ -386,6 +387,14 @@ export interface Draft {
   reply_to?: string;
   files?: string[];
   quote?: string;
+}
+
+export interface EventAuthor {
+  person: string;
+  roster: string;
+  address: string;
+  fingerprint: string;
+  group_admission?: string;
 }
 
 export interface ExecView {
@@ -727,6 +736,53 @@ export interface Message {
   proposal?: ProposalView;
 }
 
+export interface NativeFormField {
+  id: string;
+  title?: string;
+  description?: string;
+  type: string;
+  required?: boolean;
+  enum?: string[];
+}
+
+export interface NativeQuestion {
+  id: string;
+  header: string;
+  question: string;
+  isOther?: boolean;
+  isSecret?: boolean;
+  options?: NativeQuestionOption[];
+}
+
+export interface NativeQuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface NativeRequest {
+  token: string;
+  harness: string;
+  host: string;
+  request: string;
+  key: string;
+  attempt: number;
+  method: string;
+  thread: string;
+  turn: string;
+  item?: string;
+  approval_id?: string;
+  agent_id?: string;
+  operation?: string;
+  cwd?: string;
+  reason?: string;
+  choices: string[] | null;
+  cancel_run?: boolean;
+  questions?: NativeQuestion[];
+  fields?: NativeFormField[];
+  unsupported?: string;
+  expires: number;
+}
+
 export interface NotifyView {
   available: boolean;
   native: boolean;
@@ -991,6 +1047,7 @@ export interface ReportItem {
   conv?: boolean;
   proposal?: ProposalView;
   result?: DecisionResult;
+  native?: NativeRequest;
 }
 
 export interface ResponderChange {
@@ -1223,6 +1280,7 @@ export interface TopicEvent {
   seen?: string[];
   moves?: TopicMove[];
   merge?: string;
+  request?: TopicRequest;
 }
 
 export interface TopicMove {
@@ -1236,6 +1294,26 @@ export interface TopicPage {
   topics: ThreadSummary[] | null;
   next?: string;
   matched: number;
+}
+
+export interface TopicRequest {
+  lid: string;
+  author: string;
+  hash: string;
+  proof?: TopicRequestProof;
+}
+
+export interface TopicRequestProof {
+  v: number;
+  conv: string;
+  lid: string;
+  pid: string;
+  author: EventAuthor;
+  target: Target;
+  hash: string;
+  kind: string;
+  topic?: string;
+  sig?: string;
 }
 
 export interface TypingEntry {

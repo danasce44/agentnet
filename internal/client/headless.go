@@ -165,6 +165,7 @@ type ReportItem struct {
 	Conv       bool            `json:"conv,omitempty"`       // a request in a DM or group: decided, never answered by hand from here
 	Proposal   *ProposalView   `json:"proposal,omitempty"`   // a task carrying out its agent's proposal: operators only, first lines`
 	Result     *DecisionResult `json:"result,omitempty"`     // filled by the reader from the host's answers to its decisions
+	Native     *NativeRequest  `json:"native,omitempty"`     // private presentation of one current owned native callback
 }
 
 // DecisionResult is what the host answered to one of this device's
@@ -597,6 +598,9 @@ func (a *Agent) admitDecision(ctx context.Context, env envelope.Envelope, in env
 	if err := json.Unmarshal([]byte(in.Body), &d); err != nil {
 		return a.store.holdAs(env, reasonInvalid)
 	}
+	if nativeDecision(d) {
+		return a.admitNativeDecision(ctx, env, in, sender, d)
+	}
 	answer := func(state, refused string) {
 		a.answerDecision(ctx, env.From, in, d, state, refused)
 	}
@@ -1021,6 +1025,12 @@ func (a *Agent) decisionResults(host string, r *Report) {
 			if st.Decision == "" || d.Attempt != it.Attempt || st.Report != d.Report || st.Attempt != d.Attempt {
 				continue
 			}
+			if it.Native != nil {
+				response, e := parseNativeResponse(d.Text)
+				if e != nil || response.Token != it.Native.Token {
+					continue
+				}
+			}
 			if it.Result == nil || st.At >= it.Result.At {
 				it.Result = &DecisionResult{Decision: st.Decision, State: st.State, Refused: st.Refused, At: st.At}
 			}
@@ -1039,6 +1049,19 @@ func (a *Agent) NoticeReport(m Message) (Report, bool) {
 		return Report{}, false
 	}
 	r.Host = m.From
+	var hostKey string
+	_ = a.store.db.QueryRow(`SELECT coalesce(verified_by,'') FROM inbox WHERE id=? AND replica=0 AND local=0`, m.ID).Scan(&hostKey)
+	own, e := a.nativeOwnerHumanIn(a.store.db, a.Address, a.Self().Fingerprint())
+	host, e2 := ownerReportHolds(a.store.db, m.From, hostKey)
+	if revoked, err := revokedDeviceKnown(a.store.db, m.From, hostKey); err != nil || revoked {
+		host = false
+	}
+	for i := range r.Items {
+		n := r.Items[i].Native
+		if !own || e != nil || !host || e2 != nil || n == nil || n.Harness != "codex" || n.Host != m.From || n.Request != r.Items[i].ID || n.Key != r.Items[i].Key || n.Attempt != r.Items[i].Attempt || n.Attempt < 1 || r.Items[i].State != stateRunning || !protocol.ValidID(n.Token) || n.Thread == "" || n.Turn == "" || n.Expires < 0 || n.Expires != 0 && n.Expires <= time.Now().UnixMilli() {
+			r.Items[i].Native = nil
+		}
+	}
 	a.decisionResults(m.From, &r)
 	return r, true
 }

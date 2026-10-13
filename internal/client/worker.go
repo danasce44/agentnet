@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -388,7 +389,7 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	stdout.max, stderr.max = maxOutput, 4<<10
 	outPath := ""
 	nativeCodex := h.sessions == codexSessions
-	roomCodex := a.codexRoomEligible(j, r, plan)
+	roomCodex := a.codexRoomEligible(j, r, plan) || a.codexAgentActionsEligible(j, r, plan)
 	if h.out != "" && !nativeCodex {
 		f, err := os.CreateTemp(a.home, outFilePrefix+"*")
 		if err != nil {
@@ -434,6 +435,14 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		if info.Member && info.HostHere && info.Claimable() {
 			cmd.Env = append(cmd.Env, RoomRequestEnv+"="+j.ID)
 		}
+		if info.HostHere && info.Claimable() {
+			var attempt int
+			if err := a.store.db.QueryRow(`SELECT attempts FROM inbox WHERE id=? AND state=? AND replica=0`, j.ID, stateRunning).Scan(&attempt); err != nil {
+				a.endJob(j.ID, stateNotRun, "the admitted request is no longer running")
+				return
+			}
+			cmd.Env = append(cmd.Env, AgentRequestEnv+"="+j.ID, AgentAttemptEnv+"="+strconv.Itoa(attempt))
+		}
 	}
 	if h.stdin {
 		input := prompt
@@ -477,6 +486,11 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 			return
 		}
 		cmd.Stdout = activityWriter{Writer: roomBridge, activity: activity, first: first}
+		roomBridge.native = func(ctx context.Context, c nativeCallback) (json.RawMessage, error) {
+			return a.awaitNativeRequest(ctx, j, c)
+		}
+		roomBridge.nativeCheck = func(c nativeCallback) bool { return a.nativeHandoverCurrent(j, c) }
+		roomBridge.nativeComplete = func(c nativeCallback) { a.endNativeCallback(j, c) }
 		defer roomBridge.close()
 		followupCtx, stopFollowups := context.WithCancel(runCtx)
 		followupsDone := make(chan struct{})
@@ -716,10 +730,12 @@ const (
 	ProgressRequestEnv = "AGENTNET_REQUEST_ID"
 	ProgressPeerEnv    = "AGENTNET_REQUESTER"
 	RoomRequestEnv     = "AGENTNET_ROOM_REQUEST"
+	AgentRequestEnv    = "AGENTNET_AGENT_REQUEST"
+	AgentAttemptEnv    = "AGENTNET_AGENT_ATTEMPT"
 )
 
 // runEnvNames are the values a run gets only from its own job.
-var runEnvNames = []string{BackgroundEnv, "AGENTNET_HOME", ProgressRequestEnv, ProgressPeerEnv, RoomRequestEnv, receiverBindingEnv}
+var runEnvNames = []string{BackgroundEnv, "AGENTNET_HOME", ProgressRequestEnv, ProgressPeerEnv, RoomRequestEnv, AgentRequestEnv, AgentAttemptEnv, receiverBindingEnv}
 
 // progressEligible reports whether j's worker may send progress: a version 1
 // request (default responder or named executor) or a conversation
@@ -768,7 +784,13 @@ func (a *Agent) notifyReview() {
 		a.notifyTried = map[string]bool{}
 	}
 	fresh := false
-	attempts := append(append([]string{}, ids...), remote.Fresh...)
+	localAttempts := slices.Clone(ids)
+	for i, id := range ids {
+		if n := a.nativeRequestFor(id); n != nil {
+			localAttempts[i] = "native\x00" + id + "\x00" + n.Token
+		}
+	}
+	attempts := append(localAttempts, remote.Fresh...)
 	for _, key := range attempts {
 		if !a.notifyTried[key] {
 			fresh = true
@@ -784,7 +806,7 @@ func (a *Agent) notifyReview() {
 	}
 	var argv []string
 	var onClick func()
-	if a.nativeNotify == nil {
+	if !a.hasNativeNotifier() {
 		argv, onClick = a.reviewClick(target)
 	}
 	body := "1 request needs your decision. Click to review it."
@@ -807,8 +829,8 @@ func (a *Agent) notifyReview() {
 	if onClick == nil {
 		body = strings.SplitAfter(body, ". ")[0] + "Ask your coding agent to review pending AgentNet requests."
 	}
-	if a.nativeNotify != nil {
-		a.nativeNotify(a.nativeReviewFragment(target))
+	if a.hasNativeNotifier() {
+		a.nativeNotification(a.nativeReviewFragment(target), target, "Decision needed", body)
 	} else if err := a.notify("AgentNet", body, argv, onClick); err != nil {
 		a.Logf("desktop notification not shown (%v); see `agentnet inbox --review`", err)
 		return

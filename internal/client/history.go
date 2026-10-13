@@ -237,6 +237,9 @@ func insertCopies(tx *sql.Tx, copies []outCopy) error {
 			c.env.ID, c.env.To, body, string(data), c.state, now.Unix(), c.in.Conv, c.in.LID, c.in.Kind, now.UnixMilli(), c.in.Sub, copyRequirement(c), c.recipientFP, c.groupAdmission); err != nil {
 			return err
 		}
+		if err := storeAgentActionRequirements(tx, c); err != nil {
+			return err
+		}
 		if c.live {
 			if _, err := tx.Exec(`UPDATE outbox SET replication_live=1 WHERE id=?`, c.env.ID); err != nil {
 				return err
@@ -416,8 +419,8 @@ func (a *Agent) admitHistory(ctx context.Context, env envelope.Envelope, in enve
 		return hold(reasonInvalid, err.Error()) // as the group path does: never end the stream
 	}
 	if envelope.TopicOrganization(orig.TopicEvent) {
-		if err := topicOrganizationAuthor(a.store.db, in.Conv, item.From, item.FromKey); err != nil {
-			return hold(reasonInvalid, err.Error())
+		if reason, err := a.topicOrganizationAdmission(a.store.db, orig, item.From, item.FromKey, true); err != nil {
+			return hold(reason, err.Error())
 		}
 	}
 	if err := envelope.CheckQuote(orig); err != nil {
@@ -565,7 +568,8 @@ func (a *Agent) admitHistory(ctx context.Context, env envelope.Envelope, in enve
 	var guards []func(*sql.Tx) error
 	if envelope.TopicOrganization(orig.TopicEvent) {
 		guards = append(guards, func(tx *sql.Tx) error {
-			return topicOrganizationAuthor(tx, in.Conv, item.From, item.FromKey)
+			_, err := a.topicOrganizationAdmission(tx, orig, item.From, item.FromKey, true)
+			return err
 		})
 	}
 	if repaired {

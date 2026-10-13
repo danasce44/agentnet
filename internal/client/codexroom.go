@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,15 +20,23 @@ import (
 )
 
 func (a *Agent) codexRoomEligible(j job, r *Responder, plan sessionPlan) bool {
-	if r.Harness != "codex" || j.Kind != envelope.KindQuestion || j.Receiver != nil || j.PID == "" || plan.ref != nil {
+	if j.Kind != envelope.KindQuestion || !a.codexAgentActionsEligible(j, r, plan) {
+		return false
+	}
+	p, _ := a.Participation(j.PID)
+	m, err := a.dmMembers(j.Conv)
+	return p.Member && err == nil && m.group != nil
+}
+
+func (a *Agent) codexAgentActionsEligible(j job, r *Responder, plan sessionPlan) bool {
+	if r.Harness != "codex" || j.Kind != envelope.KindQuestion && j.Kind != envelope.KindTask || j.Receiver != nil || j.PID == "" || plan.ref != nil {
 		return false
 	}
 	p, e := a.Participation(j.PID)
-	if e != nil || !p.Member || !p.HostHere || !p.Claimable() {
+	if e != nil || !p.HostHere || !p.Claimable() || p.Role != "" {
 		return false
 	}
-	m, e := a.dmMembers(j.Conv)
-	return e == nil && m.group != nil
+	return p.Conv == j.Conv
 }
 
 func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMessage) (string, error) {
@@ -35,10 +44,17 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 		return "", e
 	}
 	var p struct {
-		Action string `json:"action"`
-		PID    string `json:"pid"`
-		Text   string `json:"text"`
-		ID     string `json:"id"`
+		Action string   `json:"action"`
+		PID    string   `json:"pid"`
+		Text   string   `json:"text"`
+		ID     string   `json:"id"`
+		IDs    []string `json:"ids"`
+		Topic  *string  `json:"topic"`
+		New    bool     `json:"new"`
+		Title  string   `json:"title"`
+		Author string   `json:"author"`
+		Emoji  string   `json:"emoji"`
+		Remove bool     `json:"remove"`
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -50,6 +66,50 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 	}
 	ref := p.ID
 	switch p.Action {
+	case "organize", "react", "send":
+		if p.PID != "" {
+			return "", errors.New("this action belongs to the exact agent of this native run")
+		}
+		var pid, conv string
+		var attempt int
+		if e := a.store.db.QueryRow(`SELECT pid,conv,attempts FROM inbox WHERE id=? AND state=? AND replica=0`, cause, stateRunning).Scan(&pid, &conv, &attempt); e != nil {
+			return "", errors.New("this native request is no longer running")
+		}
+		if p.Action == "organize" {
+			if p.Topic == nil && !p.New {
+				return "", errors.New("choose a destination topic, Main, or a new topic")
+			}
+			topic := ""
+			main := false
+			if p.Topic != nil {
+				topic = *p.Topic
+				main = topic == "" || topic == "main"
+				if main {
+					topic = ""
+				}
+			}
+			sent, e := a.OrganizeAgentTopic(ctx, cause, attempt, TopicOrganizationRequest{Conv: conv, IDs: p.IDs, Topic: topic, New: p.New, Title: p.Title, Main: main})
+			if e != nil {
+				return "", e
+			}
+			return fmt.Sprintf("topic move %s stored (%s)", sent.LID, sent.State), nil
+		}
+		if p.Action == "react" {
+			sent, e := a.SendAgentReaction(ctx, pid, ControlRef{Conv: conv, ID: p.ID, Fingerprint: p.Author}, p.Emoji, p.Remove)
+			if e != nil {
+				return "", e
+			}
+			return fmt.Sprintf("agent reaction %s stored (%s)", sent.ID, sent.State), nil
+		}
+		topic := ""
+		if p.Topic != nil {
+			topic = *p.Topic
+		}
+		sent, e := a.SendAgentMessage(ctx, pid, topic, p.Text)
+		if e != nil {
+			return "", e
+		}
+		return fmt.Sprintf("agent message %s stored (%s)", sent.LID, sent.State), nil
 	case "ask":
 		if !protocol.ValidID(p.PID) || strings.TrimSpace(p.Text) == "" || p.ID != "" {
 			return "", errors.New("choose an exact current group agent PID and question text")
@@ -93,6 +153,15 @@ type codexRoomBridge struct {
 	input                io.WriteCloser
 	output               io.Writer
 	call                 func(context.Context, json.RawMessage) (string, error)
+	native               func(context.Context, nativeCallback) (json.RawMessage, error)
+	nativeCheck          func(nativeCallback) bool
+	nativeComplete       func(nativeCallback)
+	nativeSerial         sync.Mutex
+	nativeEnd            chan struct{}
+	nativePending        map[string]context.CancelFunc
+	nativeSeen           map[string]string
+	nativePolicy         string
+	nativeItems          map[string]json.RawMessage
 	writeMu              sync.Mutex
 	stateMu              sync.Mutex
 	readMu               sync.Mutex
@@ -119,7 +188,7 @@ func newCodexRoomBridge(ctx context.Context, cmd *exec.Cmd, prompt string, outpu
 	if err != nil {
 		return nil, err
 	}
-	b := &codexRoomBridge{prompt: prompt, cwd: cmd.Dir, ctx: ctx, input: out, output: output, call: call, calls: map[string]bool{}, ready: make(chan struct{}), steering: map[string]chan codexSteerResult{}}
+	b := &codexRoomBridge{prompt: prompt, cwd: cmd.Dir, ctx: ctx, input: out, output: output, call: call, calls: map[string]bool{}, ready: make(chan struct{}), nativeEnd: make(chan struct{}), steering: map[string]chan codexSteerResult{}}
 	b.ephemeral = true
 	if len(plans) > 0 && plans[0].ref != nil {
 		b.ephemeral = false
@@ -136,7 +205,14 @@ func newCodexRoomBridge(ctx context.Context, cmd *exec.Cmd, prompt string, outpu
 	go func() { <-ctx.Done(); b.close() }()
 	return b, nil
 }
-func (b *codexRoomBridge) close() { b.closeOnce.Do(func() { b.input.Close() }) }
+func (b *codexRoomBridge) close() {
+	b.closeOnce.Do(func() {
+		if b.nativeEnd != nil {
+			close(b.nativeEnd)
+		}
+		b.input.Close()
+	})
+}
 func (b *codexRoomBridge) send(v any) {
 	b.writeMu.Lock()
 	defer b.writeMu.Unlock()
@@ -229,7 +305,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 		switch string(m.ID) {
 		case "1":
 			b.send(map[string]any{"method": "initialized"})
-			spec := map[string]any{"type": "function", "name": "agentnet_room", "description": "Ask another active agent in this exact group a question by roster PID, or wait for its correlated reply. Bound to this run; grants, removal and cancellation apply. Cannot assign tasks.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"ask", "wait"}}, "pid": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "id": map[string]string{"type": "string"}}}}
+			spec := map[string]any{"type": "function", "name": "agentnet_room", "description": "Bound to this admitted native run: ask/wait for group agents; organize only supplied messages on the human request; react to an admitted ordinary canonical mention; send as this exact agent. Current admission, native permissions, removal and cancellation apply. Cannot assign tasks.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"ask", "wait", "organize", "react", "send"}}, "pid": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "id": map[string]string{"type": "string"}, "ids": map[string]any{"type": "array", "items": map[string]string{"type": "string"}, "maxItems": envelope.MaxTopicMoves}, "topic": map[string]string{"type": "string"}, "new": map[string]string{"type": "boolean"}, "title": map[string]string{"type": "string"}, "author": map[string]string{"type": "string"}, "emoji": map[string]string{"type": "string"}, "remove": map[string]string{"type": "boolean"}}}}
 			method, params := "thread/start", map[string]any{"cwd": b.cwd, "ephemeral": b.ephemeral}
 			if b.resume != "" {
 				method, params = "thread/resume", map[string]any{"cwd": b.cwd, "threadId": b.resume}
@@ -239,8 +315,9 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.send(map[string]any{"id": 2, "method": method, "params": params})
 		case "2":
 			var r struct {
-				Model  string `json:"model"`
-				Thread struct {
+				Model          string          `json:"model"`
+				ApprovalPolicy json.RawMessage `json:"approvalPolicy"`
+				Thread         struct {
 					ID string `json:"id"`
 				} `json:"thread"`
 			}
@@ -249,6 +326,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 				return
 			}
 			b.thread = r.Thread.ID
+			_ = json.Unmarshal(r.ApprovalPolicy, &b.nativePolicy)
 			if protocol.ValidReportedModel(r.Model) {
 				b.model = r.Model
 			}
@@ -288,15 +366,48 @@ func (b *codexRoomBridge) event(raw []byte) {
 		return
 	}
 	switch m.Method {
+	case "serverRequest/resolved":
+		var resolved struct {
+			ThreadID  string          `json:"threadId"`
+			RequestID json.RawMessage `json:"requestId"`
+		}
+		if json.Unmarshal(m.Params, &resolved) == nil && resolved.ThreadID == b.thread {
+			key := string(resolved.RequestID)
+			if cancel := b.nativePending[key]; cancel != nil {
+				delete(b.nativePending, key)
+				cancel()
+			}
+		}
+	case "item/started":
+		if p.ThreadID == b.thread && p.TurnID == b.turn && (p.Item.Type == "commandExecution" || p.Item.Type == "fileChange") {
+			var n struct {
+				Item json.RawMessage `json:"item"`
+			}
+			var item struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(m.Params, &n) == nil && json.Unmarshal(n.Item, &item) == nil && item.ID != "" && len(n.Item) <= nativeOperationMax {
+				if b.nativeItems == nil {
+					b.nativeItems = map[string]json.RawMessage{}
+				}
+				if len(b.nativeItems) < 32 {
+					b.nativeItems[item.ID] = append(json.RawMessage(nil), n.Item...)
+				}
+			}
+		}
 	case "thread/settings/updated":
 		var settings struct {
 			ThreadID       string `json:"threadId"`
 			ThreadSettings struct {
-				Model string `json:"model"`
+				Model          string          `json:"model"`
+				ApprovalPolicy json.RawMessage `json:"approvalPolicy"`
 			} `json:"threadSettings"`
 		}
 		if json.Unmarshal(m.Params, &settings) == nil && settings.ThreadID == b.thread && protocol.ValidReportedModel(settings.ThreadSettings.Model) {
 			b.model = settings.ThreadSettings.Model
+		}
+		if settings.ThreadID == b.thread && len(settings.ThreadSettings.ApprovalPolicy) > 0 {
+			_ = json.Unmarshal(settings.ThreadSettings.ApprovalPolicy, &b.nativePolicy)
 		}
 	case "turn/started":
 		if p.ThreadID == b.thread {
@@ -327,6 +438,16 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.send(map[string]any{"id": id, "result": map[string]any{"success": e == nil, "contentItems": []any{map[string]string{"type": "inputText", "text": text}}}})
 		}()
 	case "item/completed":
+		if p.ThreadID == b.thread && p.TurnID == b.turn {
+			var n struct {
+				Item struct {
+					ID string `json:"id"`
+				} `json:"item"`
+			}
+			if json.Unmarshal(m.Params, &n) == nil {
+				delete(b.nativeItems, n.Item.ID)
+			}
+		}
 		if p.ThreadID == b.thread && p.TurnID == b.turn && p.Item.Type == "agentMessage" {
 			b.answer = p.Item.Text
 		}
@@ -344,6 +465,10 @@ func (b *codexRoomBridge) event(raw []byte) {
 		if len(m.ID) > 0 {
 			if b.thread == "" || p.ThreadID != b.thread || b.turn == "" || (p.TurnID != b.turn && !(m.Method == "mcpServer/elicitation/request" && p.TurnID == "")) {
 				b.failLocked()
+				return
+			}
+			if b.native != nil {
+				b.beginNativeLocked(m.Method, m.ID, m.Params)
 				return
 			}
 			b.done = true
@@ -364,6 +489,85 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.failLocked()
 		} // new approval or unsupported client action: never approve it
 	}
+}
+
+// Serial publication keeps every distinct native RPC actionable without
+// replacing an earlier pending operation. Native events continue to stream.
+func (b *codexRoomBridge) beginNativeLocked(method string, id, params json.RawMessage) {
+	key := string(id)
+	if b.nativeSeen == nil {
+		b.nativeSeen = map[string]string{}
+		b.nativePending = map[string]context.CancelFunc{}
+	}
+	var canonical any
+	_ = json.Unmarshal(params, &canonical)
+	canonicalParams, _ := json.Marshal(canonical)
+	identity := method + "\x00" + string(canonicalParams)
+	if seen := b.nativeSeen[key]; seen != "" {
+		if seen != identity {
+			b.failLocked()
+		}
+		return
+	}
+	var p struct {
+		ItemID string `json:"itemId"`
+	}
+	_ = json.Unmarshal(params, &p)
+	callback, e := codexNativeCallback(method, id, params, b.nativeItems[p.ItemID], b.cwd, b.thread, b.turn)
+	if e != nil {
+		b.failLocked()
+		return
+	}
+	if b.nativePolicy == "never" && strings.HasSuffix(method, "/requestApproval") {
+		callback.View.Choices = slices.DeleteFunc(callback.View.Choices, func(choice string) bool { return choice == "allow" })
+		if len(callback.View.Choices) == 0 {
+			callback.View.Choices = []string{"cancel"}
+			callback.View.CancelRun = true
+		}
+		callback.View.Unsupported = "Your Codex setup uses approval policy Never. AgentNet cannot grant this permission. Deny the action or cancel it here."
+	}
+	b.nativeSeen[key] = identity
+	ctx, cancel := context.WithCancel(b.ctx)
+	b.nativePending[key] = cancel
+	ended := b.nativeEnd
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-ended:
+			cancel()
+		}
+	}()
+	go func() {
+		defer cancel()
+		if b.nativeComplete != nil {
+			defer b.nativeComplete(callback)
+		}
+		b.nativeSerial.Lock()
+		defer b.nativeSerial.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		result, e := b.native(ctx, callback)
+		b.stateMu.Lock()
+		defer b.stateMu.Unlock()
+		if b.done || ctx.Err() != nil || b.nativePending[key] == nil || b.thread != callback.View.Thread || b.turn != callback.View.Turn {
+			return
+		}
+		delete(b.nativePending, key)
+		if e != nil || b.nativeCheck != nil && !b.nativeCheck(callback) || b.nativePolicy == "never" && nativePermissionGrant(callback.View.Method, result) {
+			b.done = true
+			fmt.Fprintln(b.output, needsHumanMarker)
+			fmt.Fprintln(b.output, "The native request could not be continued with current authority. No approval was sent. Review the existing work before explicitly continuing.")
+			b.close()
+			return
+		}
+		b.writeMu.Lock()
+		err := json.NewEncoder(b.input).Encode(map[string]any{"id": callback.ID, "result": result})
+		b.writeMu.Unlock()
+		if err != nil {
+			b.failLocked()
+		} // uncertain handover is never retried
+	}()
 }
 
 // stateMu protects the run identity and every correlated steer response. Only

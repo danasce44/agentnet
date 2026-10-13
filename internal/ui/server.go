@@ -76,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/request/followup", s.requestFollowup)
 	mux.HandleFunc("POST /api/topic/organization/preview", s.previewTopicOrganization)
 	mux.HandleFunc("POST /api/topic/organization/apply", s.applyTopicOrganization)
+	mux.HandleFunc("POST /api/topic/organization/undo", s.undoTopicOrganization)
 	mux.HandleFunc("POST /api/history/contribution/preview", s.previewHistoryContribution)
 	mux.HandleFunc("POST /api/history/contribution/apply", s.applyHistoryContribution)
 	mux.HandleFunc("POST /api/act", s.act)

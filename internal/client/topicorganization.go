@@ -42,17 +42,27 @@ func (a *Agent) prepareTopicOrganization(ctx context.Context, conv string, m *Co
 	if !envelope.TopicOrganization(m.TopicEvent) {
 		return nil
 	}
-	if err := envelope.CheckTopic(envelope.Inner{V: envelope.Version2, Kind: envelope.KindMessage, Topic: m.Topic, TopicEvent: m.TopicEvent, TopicDone: m.TopicDone, PID: m.PID, Human: m.human, Target: m.Target, Origin: m.Origin, AgentID: m.AgentID, Followup: m.Followup}); err != nil {
+	in := envelope.Inner{V: envelope.Version2, Conv: conv, From: a.Address, Kind: envelope.KindMessage, Topic: m.Topic, TopicEvent: m.TopicEvent, TopicDone: m.TopicDone, PID: m.PID, Human: m.human, Target: m.Target, Origin: m.Origin, AgentID: m.AgentID, Followup: m.Followup}
+	if err := envelope.CheckTopic(in); err != nil {
 		return err
 	}
-	if err := topicOrganizationAuthor(a.store.db, conv, a.Address, a.Self().Fingerprint()); err != nil {
+	if envelope.AgentTopicOrganization(in) {
+		r, err := a.organizationRun(a.store.db, m.agentOrganizationCause, m.agentOrganizationAttempt)
+		if err != nil {
+			return err
+		}
+		if r.p.Conv != conv || r.p.PID != m.PID || r.p.AgentID != m.AgentID || r.original.LID != m.TopicEvent.Request.LID || r.original.FromKey != m.TopicEvent.Request.Author || r.context.Hash != m.TopicEvent.Request.Hash {
+			return errors.New("organization differs from current native human request")
+		}
+	}
+	if _, err := a.topicOrganizationAdmission(a.store.db, in, a.Address, a.Self().Fingerprint(), false); err != nil {
 		return err
 	}
 	// Capability belongs to each sealed copy, not to the author's operation.
 	// Older readers retain their copy until the normal delivery gate opens.
 	prior := m.claim
 	m.claim = func(tx *sql.Tx, id string) error {
-		if err := topicOrganizationAuthor(tx, conv, a.Address, a.Self().Fingerprint()); err != nil {
+		if _, err := a.topicOrganizationAdmission(tx, in, a.Address, a.Self().Fingerprint(), false); err != nil {
 			return err
 		}
 		if prior != nil {

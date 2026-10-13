@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -101,7 +102,7 @@ func TestOwnPermissionInventory(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := live.Approvals()
-	if err != nil || len(v.OwnDevices) != 1 || !v.OwnDevices[0].This {
+	if err != nil || len(v.OwnDevices) != 1 || !v.OwnDevices[0].This || !slices.Contains(v.RemovedDevices, phone.Address) {
 		t.Fatalf("removed device inventory: %+v %v", v.OwnDevices, err)
 	}
 }

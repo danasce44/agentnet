@@ -91,8 +91,9 @@ type Agent struct {
 	alertWake        chan struct{}              // wakes the desktop alert loop (alerts.go)
 	openConv         func(conv string) []string // RunOptions.OpenConv
 
-	nativeNotify func(fragment string)
-	openPage     func(fragment string) []string // RunOptions.OpenPage (the AgentNet app's window)
+	nativeNotify        func(fragment string)
+	nativeNotifyContent func(NativeNotification)
+	openPage            func(fragment string) []string // RunOptions.OpenPage (the AgentNet app's window)
 
 	notify       func(title, body string, argv []string, onClick func()) error // desktop notification; argv and onClick may be nil
 	notifyTried  map[string]bool                                               // review items a notification was attempted for, this run
@@ -671,9 +672,9 @@ func (a *Agent) deliver(ctx context.Context, env envelope.Envelope, route *proto
 		state, _, _, _ := a.store.outboxState(env.ID)
 		return SendResult{ID: env.ID, State: state}, err
 	}
-	var storedHuman, storedRequired, storedSub string
+	var storedHuman, storedRequired, storedSub, storedOrigin string
 	var replicationLive bool
-	if err := a.store.db.QueryRow(`SELECT coalesce(human,''),coalesce(required_cap,''),coalesce(sub,''),replication_live FROM outbox WHERE id=?`, env.ID).Scan(&storedHuman, &storedRequired, &storedSub, &replicationLive); err != nil {
+	if err := a.store.db.QueryRow(`SELECT coalesce(human,''),coalesce(required_cap,''),coalesce(sub,''),coalesce(origin,''),replication_live FROM outbox WHERE id=?`, env.ID).Scan(&storedHuman, &storedRequired, &storedSub, &storedOrigin, &replicationLive); err != nil {
 		return SendResult{}, err
 	}
 	if storedHuman != "" || storedRequired == protocol.CapHumanParticipation && storedSub == envelope.SubExcerpt {
@@ -685,7 +686,7 @@ func (a *Agent) deliver(ctx context.Context, env envelope.Envelope, route *proto
 		return SendResult{}, err
 	}
 	required, conv, sub, capturedFP := n.required, n.conv, n.sub, n.capturedFP
-	if n.organizationCap && sub == "" {
+	if n.organizationCap && sub == "" && storedOrigin != envelope.OriginAgentOrganization {
 		if err := topicOrganizationAuthor(a.store.db, conv, a.Address, a.Self().Fingerprint()); err != nil {
 			return SendResult{ID: env.ID, State: stateConvWaiting, Detail: err.Error()}, a.store.setOutboxState(env.ID, stateConvWaiting, err.Error(), "")
 		}

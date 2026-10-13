@@ -44,3 +44,16 @@ func testAgentChatRendered(t *testing.T, assignment bool) {
 	}
 	t.Logf("%s", out)
 }
+
+func TestRemovedDevicePermissionTargetRendered(t *testing.T) {
+	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
+		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT to an installed playwright-core")
+	}
+	cmd := exec.CommandContext(t.Context(), "node", "testdata/agent_chat_rendered.cjs")
+	cmd.Env = append(os.Environ(), "AGENTNET_REMOVED_PERMISSIONS=1", "AGENTNET_SCREENSHOTS="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), `"ok":true`) {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	t.Logf("%s", out)
+}

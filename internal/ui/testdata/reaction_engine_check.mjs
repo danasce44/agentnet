@@ -5,7 +5,7 @@
 // real peer, model, browser or network. stdin: {vectors} from
 // reaction_browser_test.go (envelope.TestAssistantReactionShapeVectors).
 import assert from 'node:assert/strict';
-import { Engine, memoryStore } from '../static/engine.mjs';
+import { Engine, memoryStore, chatTopicAssignments } from '../static/engine.mjs';
 import * as wire from '../static/wire.mjs';
 let checks = 0, sequence = 1;
 const id = () => (sequence++).toString(16).padStart(32, '0');
@@ -71,11 +71,11 @@ async function world() {
     return wire.signEvent(sender.keys, { conv, pid, type, prev: prev || info.invite, ts: Math.floor(now / 1000), author: sender.author() });
   };
   const accept = async (pid) => { const ev = await decision(charlie, pid); for (const e of [alice, bob, charlie]) await receive(await from(charlie, e, { sub: 'event', pid, body: wire.eventJSON(ev) }), e); return ev; };
-  const sibling = async (owner, address) => {
+  const sibling = async (owner, address, human = false) => {
     const e = new Engine({ store: memoryStore(), now: () => now, base: owner.base, fetch });
     e.keys = await wire.newKeys(); e.address = address; e.pub = await wire.publicEntry(e.keys, address); e.fp = await wire.fingerprint(e.pub);
     const join = await wire.joinConsent(e.keys, address, owner.me.person, owner.me.seq + 1, owner.me.hash);
-    const next = await wire.nextRoster(owner.keys, owner.address, owner.roster, [...owner.me.devices.map((d) => pubs.get(d.address)), e.pub], join);
+    const next = await wire.nextRoster(owner.keys, owner.address, owner.roster, [...owner.me.devices.map((d) => pubs.get(d.address)), e.pub], join, owner.roster.label, human ? [...await wire.rosterHumans(owner.roster), e.fp] : null);
     await wire.verifyNext(next, owner.roster);
     const steps = [...await Promise.all(rosters.get(owner.me.person).map((r) => wire.parseRoster(r))), next];
     owner.me = await owner.personRecord(steps, 'self', owner.me); owner.roster = next;
@@ -91,7 +91,7 @@ async function world() {
 }
 
 
-const { vectors, human_vectors: humanVectors } = JSON.parse(await new Promise((resolve) => { let s = ''; process.stdin.on('data', (d) => s += d).on('end', () => resolve(s)); }));
+const { vectors, human_vectors: humanVectors,organization } = JSON.parse(await new Promise((resolve) => { let s = ''; process.stdin.on('data', (d) => s += d).on('end', () => resolve(s)); }));
 const held = async (e, rid) => (await e.store.get('held', rid))?.reason;
 const reactionBody = (emoji, op = 'add', n = 1) => JSON.stringify({ emoji, op, n });
 const control = (sender, receiver, fields) => wire.seal({ v: 3, id: id(), from: sender.address, to: receiver.address, ts: Math.floor(now / 1000), kind: 'message', sub: 'reaction', body: reactionBody('🎉'), ...fields }, sender.keys, receiver.pub);
@@ -302,7 +302,7 @@ if (humanVectors) {
   await e.onConnect().catch(() => {});
   const rec = wire.parseCaps(puts[0]);
   await wire.verifyCaps(rec, pub.sign_key);
-  const profile={sessions:[rec.session],caps:[JSON.parse(puts[0])]},basic=[wire.CapAgentReaction,wire.CapHumanParticipation,wire.CapConvClear],explicit=[wire.CapGroupHumanParticipation,wire.CapGroupInvitationManage,wire.CapReadSync];
+  const profile={sessions:[rec.session],caps:[JSON.parse(puts[0])]},basic=[wire.CapAgentReaction,wire.CapHumanParticipation,wire.CapConvClear],explicit=[wire.CapGroupHumanParticipation,wire.CapGroupInvitationManage,wire.CapReadSync,wire.CapMentionReaction,wire.CapAgentOrganization];
   check(rec.caps.length<=wire.MaxAdvertisedCaps,'published record fits advertisement bound');
   for(const cap of [...basic,...explicit])check(await wire.profileSupports(profile,e.address,pub.sign_key,cap),'signed browser profile reads '+cap);
   const old=await wire.newCaps(keys,e.address,'5'.repeat(32),[wire.CapRoom]),mixed={sessions:[rec.session,old.session],caps:[...profile.caps,JSON.parse(wire.capsJSON(old))]};
@@ -312,4 +312,97 @@ if (humanVectors) {
     check(!await wire.profileSupports(mixed,e.address,pub.sign_key,cap),'old session blocks new cap: '+cap);
   }
 }
+// Ordinary canonical mentions grant attention, no inbound request. Exact
+// selected context is still required for this admitted agent's signed mark.
+{
+ const w=await world(),{alice:a,bob:b,charlie:c,mallory:m}=w,pid=id();
+ for(const e of [a,b,c])await w.caps(e,[wire.CapEnv2,wire.CapPerson,wire.CapControl,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapMentionReaction,wire.CapAgentOrganization]);
+ const original=await a.sendDM({conv:w.conv,body:'Thanks [@Agent](agentnet:agent/'+pid+') for the update.'});await w.drain(b);
+ const event=await wire.signEvent(a.keys,{conv:w.conv,pid,type:'invite',ts:Math.floor(now/1000),author:a.author(),host:{person:c.me.person,address:c.address,fingerprint:c.fp,agent_id:w.agent.id},grant:[{lid:original.lid,fingerprint:a.fp}],audience:'conversation'});
+ await a.sendConv(w.c,{kind:'message',sub:'event',pid,body:wire.eventJSON(event)});await w.drain(b);await w.drain(c);await w.accept(pid);
+ const fields={conv:w.conv,lid:id(),pid,agent_id:w.agent.id,origin:wire.OriginMentionReaction,ref:{id:original.lid,fingerprint:a.fp}};
+ for(const e of [a,b]){const rid=await w.receive(await control(c,e,fields),e);check(!!await e.store.get('inbox',rid),'ordinary mention reaction admitted at '+e.address);}
+ let message=(await a.dm(w.conv)).messages.find(x=>x.lid===original.lid);
+ check(byOf(message,'🎉').some(x=>x.id==='assistant:'+pid),'ordinary mention retains exact agent actor');
+ check(!(await c.store.all('inbox')).some(x=>['question','task'].includes(x.kind)),'ordinary mention fabricates no inbound work');
+ const phone=await w.sibling(b,'bob/mention-phone',true),dev=b.me.devices.find(d=>d.address===phone.address),bc=await b.store.get('convs',w.conv),rows=await b.store.all('inbox');
+ await w.caps(phone,[wire.CapEnv2,wire.CapPerson,wire.CapControl,wire.CapRoom,wire.CapMentionReaction]);
+ for(const row of [rows.find(r=>r.pid===pid&&r.sub==='event'&&wire.parseEvent(r.body).type==='invite'),rows.find(r=>r.pid===pid&&r.sub==='event'&&wire.parseEvent(r.body).type==='accept'),rows.find(r=>r.lid===original.lid&&!r.control),rows.find(r=>r.pid===pid&&r.control)]){const copy=await b.historyCopy(dev,bc,b.itemOf(row,false));await w.receive(copy.envelope,phone);}
+ await phone.retryHeld();check(byOf((await phone.dm(w.conv)).messages.find(r=>r.lid===original.lid),'🎉').some(r=>r.id==='assistant:'+pid),'ordinary mention history converges under exact agent identity '+JSON.stringify((await phone.store.all('held')).map(r=>({reason:r.reason,detail_code:r.detail_code})))+' rows='+JSON.stringify((await phone.store.all('inbox')).map(r=>({sub:r.sub,pid:r.pid,origin:r.origin,control:r.control}))));
+ check(!(await phone.store.all('inbox')).some(r=>['agent-waiting','task-waiting','running'].includes(r.state)),'new ordinary history starts no work');
+ await w.receive(await control(c,a,{...fields,lid:id(),body:reactionBody('🎉','remove',2)}),a);
+ check(byOf((await a.dm(w.conv)).messages.find(x=>x.lid===original.lid),'🎉').length===0,'ordinary mention remove resolves');
+ for(const bad of [{host:m,key:a.fp},{host:c,key:m.fp}]){const rid=await w.receive(await control(bad.host,a,{...fields,lid:id(),ref:{id:original.lid,fingerprint:bad.key}}),a);check(await held(a,rid)===(bad.host===m?'invalid':'proof_pending')&&!await a.store.get('inbox',rid),'foreign host/key ordinary mark refused');}
+ const plain=await a.sendDM({conv:w.conv,body:'plain @Agent label'});await w.drain(b);
+ const forged=await w.receive(await control(c,a,{...fields,lid:id(),ref:{id:plain.lid,fingerprint:a.fp}}),a);check(await held(a,forged)==='invalid','plain label is neither canonical PID nor admitted selection');
+ await a.dismissAgent(pid);await w.drain(b);await w.drain(c);
+ const revoked=await w.receive(await control(c,a,{...fields,lid:id()}),a);check(await held(a,revoked)==='invalid','revoked agent cannot react to ordinary mention');
+}
+
+// The compact native-author proof and canonical JSON must agree with Go.
+{
+ const key=await wire.parsePublic(organization.public),p=organization.proof;
+ await wire.verifyTopicRequestProof(p,key);check(new TextDecoder().decode(wire.topicRequestProofCanonical(p))===organization.canonical,'compact proof canonical agrees with Go');
+ check(wire.topicEventJSON(wire.parseTopicEvent(organization.event))===organization.event_json,'extended topic event JSON agrees with Go');
+ check(await wire.groupHistoryContentHash(organization.request.conv,organization.request)===organization.hash,'immutable private request hash agrees with Go');
+ for(const changed of [{hash:'d'.repeat(64)},{pid:id()},{lid:id()},{target:{...p.target,agent_id:id()}},{author:{...p.author,address:'foreign/phone'}}])await refuses(()=>wire.verifyTopicRequestProof({...p,...changed},key),/proof|signature|author/);
+ check(!wire.topicRequestJSON(organization.event.request).includes('SYNTHETIC_PRIVATE_REQUEST'),'compact event discloses no private body');
+}
+
+// Real remote human original; missing original waits and then recovers. A
+// received move grants no new request, agent context or native execution.
+{
+ const w=await world(),{alice:a,bob:b,charlie:c,mallory:m}=w;
+ const selected=await a.sendDM({conv:w.conv,body:'Related selected discussion'});await w.drain(b);
+ const invite=await a.inviteAgent({conv:w.conv,host:c.address,agent_id:w.agent.id,share:[selected.id]});await w.drain(b);await w.drain(c);await w.accept(invite.pid);
+ const q=await a.askAgent({pid:invite.pid,kind:'question',body:'SYNTHETIC_PRIVATE organize selected discussion'});await w.drain(b);await w.drain(c);
+ const original=(await a.followupOriginal(w.conv,{id:q.lid,fingerprint:a.fp})).item,hash=await wire.groupHistoryContentHash(w.conv,original),source=await a.store.get('outbox',selected.id),topic=id();
+ const fields={lid:id(),pid:invite.pid,agent_id:w.agent.id,origin:wire.OriginAgentOrganization,emotion:'neutral',topic,body:'Moved selected messages to this topic.',topic_event:{action:'move',moves:[{lid:selected.lid,author:a.fp,hash:await wire.groupHistoryContentHash(w.conv,a.itemOf(source,true))}],request:{lid:q.lid,author:a.fp,hash}}};
+ b.queueOutbox=()=>{};b.caps=[wire.CapTopicOrganization,wire.CapAgentOrganization];
+ const before=(await b.store.all('inbox')).filter(x=>['question','task'].includes(x.kind)).length;
+ await b.followupOriginal(w.conv,{id:q.lid,fingerprint:a.fp});
+ await b.agentOrganizationAdmission({...w.c,peer:a.me.person},{...fields,kind:"message",conv:w.conv,v:wire.Version2},c.address,c.fp,[]);
+ const rid=await w.receive(await w.from(c,b,fields),b);check(!!await b.store.get('inbox',rid),'real foreign human proof authorizes exact agent move: '+JSON.stringify({reason:(await b.store.get('held',rid))?.reason,detail_code:(await b.store.get('held',rid))?.detail_code}));
+ check(chatTopicAssignments(await b.convMessages(w.conv,await b.store.all('inbox'),await b.store.all('outbox'))).get(selected.lid)===topic,'browser projects selected original to new topic');
+ check((await b.store.all('inbox')).filter(x=>['question','task'].includes(x.kind)).length===before,'move creates no inbound work');
+ const phone=await w.sibling(b,'bob/organization-phone',true),dev=b.me.devices.find(d=>d.address===phone.address),bc=await b.store.get('convs',w.conv),rows=await b.store.all('inbox');
+ await w.caps(phone,[wire.CapEnv2,wire.CapPerson,wire.CapControl,wire.CapRoom,wire.CapAgentOrganization,wire.CapTopicOrganization]);
+ for(const row of [rows.find(r=>r.pid===invite.pid&&r.sub==='event'&&wire.parseEvent(r.body).type==='invite'),rows.find(r=>r.pid===invite.pid&&r.sub==='event'&&wire.parseEvent(r.body).type==='accept'),rows.find(r=>r.lid===selected.lid&&!r.control),rows.find(r=>r.lid===q.lid&&!r.control),rows.find(r=>r.id===rid)]){const copy=await b.historyCopy(dev,bc,b.itemOf(row,false));await w.receive(copy.envelope,phone);}
+ await phone.retryHeld();check(chatTopicAssignments(await phone.convMessages(w.conv,await phone.store.all('inbox'),await phone.store.all('outbox'))).get(selected.lid)===topic,'exact agent organization converges through own-human inert history');
+ check(!(await phone.store.all('inbox')).some(r=>['agent-waiting','task-waiting','running'].includes(r.state)),'organization history starts no work');
+ const undo={conv:w.conv,lid:fields.lid,author:c.fp,id:id()},restored=await b.undoTopicOrganization(undo);
+ check(restored.length===1,'human restores Main with one exact inverse');
+ check(chatTopicAssignments(await b.convMessages(w.conv,await b.store.all('inbox'),await b.store.all('outbox'))).get(selected.lid)==='', 'inverse returns selected original to Main');
+ check((await b.undoTopicOrganization(undo))[0].lid===restored[0].lid,'browser undo retry keeps same action');
+ await refuses(()=>b.undoTopicOrganization({...undo,id:id()}),/moved again|changed|undo/i);
+ await refuses(()=>b.previewTopicOrganization({conv:w.conv,ids:[selected.lid]}),/topic|choose|chat/i);
+
+ for(const changed of [{topic_event:{...fields.topic_event,request:{...fields.topic_event.request,hash:'f'.repeat(64)}}},{agent_id:id()}]){const bad=await w.receive(await w.from(c,b,{...fields,...changed,lid:id()}),b);check(await held(b,bad)==='invalid','forged human binding/executor refused');}
+ const missing=id(),pending={...fields,lid:id(),topic_event:{...fields.topic_event,request:{lid:missing,author:a.fp,hash:await wire.groupHistoryContentHash(w.conv,{...original,lid:missing,id:missing})}}};
+ const pendingRaw=await w.from(c,b,pending),pendingID=await w.receive(pendingRaw,b);check(await held(b,pendingID)==='proof_pending','missing exact original waits explicitly');
+ await w.receive(await w.from(a,b,{...original,id:missing,lid:missing,replica:true,v:wire.Version2}),b);await b.store.write([{s:'held',k:pendingID}]);await w.receive(pendingRaw,b);check(!!await b.store.get('inbox',pendingID),'actual original arrival recovers the held move');
+}
+
+// Mixed inert ciphertext uses both independent reader extensions, including
+// expiry/repacking after the local classification plaintext is erased.
+{
+ const w=await world(),a=w.alice,phone=await w.sibling(a,'alice/archive-phone',true),dev=a.me.devices.find(d=>d.address===phone.address);
+ const full=[wire.CapEnv2,wire.CapPerson,wire.CapControl,wire.CapRoom,wire.CapHistoryArchive,wire.CapTopicOrganization,wire.CapMentionReaction,wire.CapAgentOrganization];
+ await w.caps(phone,full);a.queueOutbox=()=>{};a.runHistory=async()=>{};
+ const refs={lid:id(),author:a.fp,hash:'a'.repeat(64),topic:id()},pid=id(),copies=[];
+ for(const item of [{v:1,id:id(),lid:id(),from:a.address,from_key:a.fp,ts:1,at:1000,kind:'message',sub:wire.SubReaction,pid,origin:wire.OriginMentionReaction,ref:{id:id(),fingerprint:a.fp},body:reactionBody('👍','add',1),attachments:[]},{v:1,id:id(),lid:id(),from:a.address,from_key:a.fp,ts:1,at:1000,kind:'message',origin:'ui',body:'Restore Main',topic_event:{action:'move',moves:[refs]},attachments:[]}]){
+   const body=wire.historyJSON(item),rid=id(),envelope=await wire.seal({v:2,id:rid,lid:rid,conv:w.conv,root:w.c.root,from:a.address,to:phone.address,ts:1,kind:'message',sub:'history',body,replica:true},a.keys,phone.pub);
+   copies.push({id:rid,conv:w.conv,to:phone.address,recipient_fp:phone.fp,sub:'history',body,envelope,at:1000,state:'queued'});
+ }
+ await a.store.write(await a.archives().prepare(copies,[],[],dev));await a.archives().wake();
+ let descriptors=(await a.store.all('outbox')).filter(r=>r.sub===wire.SubHistoryArchive),first=descriptors[0];
+ check(descriptors.length===1&&first.mention_cap&&first.organization_cap,'mixed browser archive retains both independent requirements '+JSON.stringify((await a.store.all('outbox')).map(r=>({sub:r.sub,state:r.state,detail:r.detail,mention:r.mention_cap,organization:r.organization_cap})))+' jobs='+JSON.stringify((await a.store.prefix('kv','history-archive/out/')).map(j=>({state:j.state,error:j.error}))));
+ a.connected=false;await a.dispatch('receipt',JSON.stringify({id:first.id,state:'expired',seq:1}));await a.archiveReceiptRun;await a.archiveRun;
+ for(const row of copies){const current=await a.store.get('outbox',row.id);await a.store.write([{s:'outbox',k:row.id,v:{...current,body:''}}]);}
+ a.connected=true;await a.archives().wake();descriptors=(await a.store.all('outbox')).filter(r=>r.sub===wire.SubHistoryArchive);const repacked=descriptors.find(r=>r.id!==first.id);
+ check(!!repacked&&repacked.mention_cap&&repacked.organization_cap,'expired browser archive repacks without weakening either requirement');
+ for(const missing of [wire.CapMentionReaction,wire.CapAgentOrganization]){await w.caps(phone,full.filter(c=>c!==missing));await a.postStored({...repacked,state:'queued'});const held=await a.store.get('outbox',repacked.id);check(held.state==='waiting'&&/read|update|support/i.test(held.detail),'browser archive independently waits for '+missing);}
+ await w.caps(phone,full);await a.postStored({...repacked,state:'queued'});const released=await a.store.get('outbox',repacked.id);check(released.state==='custody'&&released.envelope===repacked.envelope,'browser signed support releases same sealed descriptor to custody');
+}
+
 console.log(JSON.stringify({ shapes, checks }));

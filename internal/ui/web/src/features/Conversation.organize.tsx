@@ -18,12 +18,12 @@ export function OrganizeMessages({ dm, ids, merge, onClose, onDone }: {
   const count = ids.length, tooMany = count > 200;
   const current = () => alive.current && store.isActive() && store.get().open === original.current && !store.get().pending;
   const topics = (dm.topics || []).filter(t => t.state === "active" && t.id !== merge);
-  const destinationName = destination === "new" ? title.trim() : topics.find(t => t.id === destination)?.title || "Selected topic";
+  const destinationName = destination === "new" ? title.trim() : destination==="main"?"Main":topics.find(t => t.id === destination)?.title || "Selected topic";
   const prepare = async () => {
     if (running.current || !count || tooMany || destination === "new" && !title.trim() || !current()) return;
     running.current = true; setBusy(true); setError("");
     try {
-      const value = await store.api.previewTopicOrganization({ conv: dm.id, ids, topic: destination === "new" ? fresh.current : destination,
+      const value = await store.api.previewTopicOrganization({ conv: dm.id, ids, topic: destination === "new" ? fresh.current : destination==="main"?"":destination,...(destination==="main"?{main:true}:{}),
         ...(merge ? { merge } : {}), ...(destination === "new" ? { new: true, title: title.trim() } : {}) });
       if (current()) setReview(value);
     } catch (e) { if (current()) setError(errorText(e)); }
@@ -56,7 +56,7 @@ export function OrganizeMessages({ dm, ids, merge, onClose, onDone }: {
     {review ? <p className="mb-4 font-semibold">Move {count} {count === 1 ? "message" : "messages"} to “{destinationName}”?</p>
       : <fieldset disabled={busy} className="mb-4 space-y-3">
         <label className="block font-semibold">Destination<select aria-label="Destination topic" value={destination} onChange={e => setDestination(e.target.value)} className="mt-1 h-12 w-full rounded-xl bg-surface px-3 stroke">
-          <option value="new">A new topic</option>{topics.map(t => <option key={t.id} value={t.id}>{t.title || "Untitled topic"}</option>)}
+          <option value="new">A new topic</option>{!merge&&<option value="main">Main flow</option>}{topics.map(t => <option key={t.id} value={t.id}>{t.title || "Untitled topic"}</option>)}
         </select></label>
         {destination === "new" && <label className="block font-semibold">New topic name<input autoFocus value={title} maxLength={TOPICS.titleMax} onChange={e => setTitle(e.target.value)} className="mt-1 h-12 w-full rounded-xl bg-surface px-3 stroke" /></label>}
       </fieldset>}

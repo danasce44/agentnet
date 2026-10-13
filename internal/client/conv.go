@@ -249,7 +249,7 @@ func (a *Agent) relayFeatures(ctx context.Context) ([]string, error) {
 // hint (advertisedCaps) it is at most protocol.MaxAdvertisedCaps long;
 // rm1 (protocol.CapRoom) says this program enforces every room reader rule
 // (ROOM_V1 §2.1), so what rm1 implies (rcv1 among them) is not listed.
-var ownCaps = []string{protocol.CapProactiveAgent, protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSync, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 23 includes agent1
+var ownCaps = []string{protocol.CapMentionReaction, protocol.CapProactiveAgent, protocol.CapAgentOrganization, protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSync, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 26 includes agent1; independent amr1/aorg1 leave six reader slots
 
 // capsPublisher is the one publisher of this run's capability records:
 // the daemon's and link.go's waiting session share the session id, and the
@@ -282,6 +282,9 @@ func (a *Agent) putCaps(ctx context.Context, session string) error {
 	p.lastTS = max(time.Now().Unix(), p.lastTS+1)
 	rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: p.lastTS}
 	rec.Sign(a.id.Sign)
+	if err := rec.ValidateAdvertisement(); err != nil {
+		return err
+	}
 	if err := a.hub.do(ctx, "PUT", "/v1/caps", rec, nil); err != nil {
 		return err
 	}
@@ -519,22 +522,25 @@ func (a *Agent) conversationMessages(conv, reply string) ([]ConvMessage, error) 
 
 // ConvOutgoing is a message to send in a conversation.
 type ConvOutgoing struct {
-	Followup      *envelope.Ref // explicit original request, never inferred from a reply or quotation
-	SendGroup     string        // explicit human composer gesture; presentation only
-	Kind          string        // message (default), question or task
-	Body          string
-	ReplyTo       string
-	Quote         string
-	Topic         string
-	TopicEvent    *envelope.TopicEvent
-	TopicDone     bool
-	Origin        string           // envelope.OriginUI (default) or "agent:<harness>"
-	Emotion       string           // required with an agent origin
-	Target        *envelope.Target // the one execution recipient of a question or task, if any
-	PID           string           // the agent participation (AskAgent sets it with the target)
-	AgentID       string           // named executor author on an answer/result
-	Files         []OutgoingFile   // files to attach (a turn only): encrypted to the recipient while sending
-	ReplyReceiver *ReplyReceiver   // private local return selection
+	organizationBatch        *topicUndoBatch
+	agentOrganizationCause   string
+	agentOrganizationAttempt int
+	Followup                 *envelope.Ref // explicit original request, never inferred from a reply or quotation
+	SendGroup                string        // explicit human composer gesture; presentation only
+	Kind                     string        // message (default), question or task
+	Body                     string
+	ReplyTo                  string
+	Quote                    string
+	Topic                    string
+	TopicEvent               *envelope.TopicEvent
+	TopicDone                bool
+	Origin                   string           // envelope.OriginUI (default) or "agent:<harness>"
+	Emotion                  string           // required with an agent origin
+	Target                   *envelope.Target // the one execution recipient of a question or task, if any
+	PID                      string           // the agent participation (AskAgent sets it with the target)
+	AgentID                  string           // named executor author on an answer/result
+	Files                    []OutgoingFile   // files to attach (a turn only): encrypted to the recipient while sending
+	ReplyReceiver            *ReplyReceiver   // private local return selection
 
 	stored       func()                                 // the message and its files are stored: the spool is theirs
 	sub          string                                 // envelope.SubEvent for participation events (participation.go)
@@ -609,14 +615,15 @@ func (a *Agent) SentCopies(lid string) ([]ConvCopy, error) {
 
 // outCopy is one device's copy being stored.
 type outCopy struct {
-	env            envelope.Envelope
-	in             envelope.Inner
-	state          string
-	live           bool // fresh post-snapshot mirror, never cold bootstrap
-	why            string
-	required       string
-	recipientFP    string // exact sealed ordinary group recipient; never inferred on retry
-	groupAdmission string // ordinary: original own admission; history: frozen receiver grant epoch
+	env                         envelope.Envelope
+	in                          envelope.Inner
+	state                       string
+	live                        bool // fresh post-snapshot mirror, never cold bootstrap
+	why                         string
+	required                    string
+	recipientFP                 string // exact sealed ordinary group recipient; never inferred on retry
+	groupAdmission              string // ordinary: original own admission; history: frozen receiver grant epoch
+	mentionCap, organizationCap bool   // explicit v27 retained reader extensions
 }
 
 // SendConv sends m in conversation conv: one copy to each current device of
@@ -636,7 +643,10 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 		return ConvSent{}, err
 	}
 	var err error
-	if m.Topic, err = a.outgoingTopic(conv, m.Topic, m.ReplyTo); err != nil {
+	if !envelope.TopicOrganization(m.TopicEvent) {
+		m.Topic, err = a.outgoingTopic(conv, m.Topic, m.ReplyTo)
+	}
+	if err != nil {
 		return ConvSent{}, err
 	}
 	if err := a.prepareTopicOrganization(ctx, conv, &m); err != nil {
@@ -663,7 +673,7 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 	if !found {
 		return ConvSent{}, fmt.Errorf("no conversation %s here", conv)
 	}
-	if m.PID != "" && m.sub == "" {
+	if m.PID != "" && m.sub == "" && !envelope.AgentTopicOrganization(envelope.Inner{Conv: conv, PID: m.PID, Origin: m.Origin, TopicEvent: m.TopicEvent}) {
 		p, e := a.Participation(m.PID)
 		if e != nil {
 			return ConvSent{}, e
@@ -794,7 +804,8 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 		}
 		m.Quote = parent
 	}
-	if m.ReplyTo != "" && (m.claim == nil || m.Origin == envelope.OriginUI) && !envelope.AgentOrigin(m.Origin) { // human replies use a logical parent
+	organizationParent := envelope.AgentTopicOrganization(envelope.Inner{PID: m.PID, Origin: m.Origin, TopicEvent: m.TopicEvent})
+	if m.ReplyTo != "" && (organizationParent || (m.claim == nil || m.Origin == envelope.OriginUI) && !envelope.AgentOrigin(m.Origin)) { // display organization and human replies use a logical parent
 		parent, known, e := humanReplyParent(a.store.db, conv, m.ReplyTo)
 		if e != nil {
 			return ConvSent{}, e
@@ -805,7 +816,7 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 		m.ReplyTo = parent
 	}
 
-	if m.ReplyTo != "" && (m.claim != nil && m.Origin != envelope.OriginUI || envelope.AgentOrigin(m.Origin)) {
+	if m.ReplyTo != "" && !organizationParent && (m.claim != nil && m.Origin != envelope.OriginUI || envelope.AgentOrigin(m.Origin)) {
 		// Agent output authorization still names the held request's physical ID.
 		if c, e := a.store.convOf(m.ReplyTo); e != nil {
 			return ConvSent{}, e
@@ -1006,7 +1017,7 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 	}
 	priorClaim := m.claim
 	m.claim = func(tx *sql.Tx, id string) error {
-		if m.PID != "" && m.sub == "" {
+		if m.PID != "" && m.sub == "" && !envelope.AgentTopicOrganization(local) {
 			members, e := membersIn(tx, conv)
 			if e != nil {
 				return e
@@ -1024,7 +1035,14 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 		}
 		return nil
 	}
-	if err := a.store.addConvOutbox(copies, local, a.queuedClaim(ctx, conv, m.claim), jobKey, binding); err != nil {
+	claim := a.queuedClaim(ctx, conv, m.claim)
+	if m.organizationBatch != nil {
+		if jobKey != "" || binding != nil {
+			return ConvSent{}, errors.New("topic inverse cannot carry a request or receiver")
+		}
+		return m.organizationBatch.stage(a, copies, local, claim)
+	}
+	if err := a.store.addConvOutbox(copies, local, claim, jobKey, binding); err != nil {
 		return ConvSent{}, err
 	}
 	receiverStored = true
@@ -1497,11 +1515,12 @@ func (a *Agent) admitConv(ctx context.Context, env envelope.Envelope, in envelop
 		also = func(tx *sql.Tx) error { return insertParticipationEvent(tx, ev, raw) }
 	}
 	if envelope.TopicOrganization(in.TopicEvent) {
-		if err := topicOrganizationAuthor(a.store.db, in.Conv, sender.Address, sender.Fingerprint()); err != nil {
-			return hold(reasonInvalid, err.Error())
+		if reason, err := a.topicOrganizationAdmission(a.store.db, in, sender.Address, sender.Fingerprint(), false); err != nil {
+			return hold(reason, err.Error())
 		}
 		also = func(tx *sql.Tx) error {
-			return topicOrganizationAuthor(tx, in.Conv, sender.Address, sender.Fingerprint())
+			_, err := a.topicOrganizationAdmission(tx, in, sender.Address, sender.Fingerprint(), false)
+			return err
 		}
 	}
 	now, event := time.Now(), also
@@ -1512,7 +1531,7 @@ func (a *Agent) admitConv(ctx context.Context, env envelope.Envelope, in envelop
 				return err
 			}
 		}
-		if in.PID != "" && in.Sub == "" {
+		if in.PID != "" && in.Sub == "" && !envelope.AgentTopicOrganization(in) {
 			members, e := membersIn(tx, in.Conv)
 			if e != nil {
 				return e

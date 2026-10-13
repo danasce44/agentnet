@@ -304,15 +304,33 @@ class MainActivity : Activity() {
                     require(request.get("enabled") is Boolean)
                     val enabled = request.getBoolean("enabled")
                     if (enabled) askPermission { granted ->
-                        if (granted) { host.setKeepConnected(true); startForegroundService(Intent(this, ConnectionService::class.java)) }
-                        reply(JSONObject().put("enabled", host.keepConnected()))
+                        try {
+                            if (granted) {
+                                host.setKeepConnected(true)
+                                try { startForegroundService(Intent(this, ConnectionService::class.java)) }
+                                catch (e: Exception) { host.setKeepConnected(false); host.background(false); throw e }
+                            }
+                            reply(JSONObject().put("enabled", host.keepConnected()))
+                        } catch (_: Exception) { reply(error = "Android could not start the background connection. Try again from Connection settings.") }
                     } else {
                         host.setKeepConnected(false); stopService(Intent(this, ConnectionService::class.java)); host.background(false)
                         reply(JSONObject().put("enabled", false))
                     }
                 }
-                "notifications:status" -> reply(JSONObject().put("granted", permitted()))
-                "notifications:request" -> askPermission { reply(JSONObject().put("granted", it)) }
+                "notifications:status" -> reply(host.notificationStatus())
+                "notifications:settings" -> {
+                    require(resumed && request.keys().asSequence().all { it == "id" || it == "type" })
+                    host.prepareNotificationChannel()
+                    startActivity(activityNotificationSettings(packageName))
+                    reply(JSONObject().put("opened", true))
+                }
+                "notifications:request" -> askPermission { granted ->
+                    try {
+                        if (granted) host.prepareNotificationChannel()
+                        host.afterNotificationConsent(granted) { startForegroundService(Intent(this, ConnectionService::class.java)) }
+                        reply(host.notificationStatus())
+                    } catch (_: Exception) { reply(error = "Android allowed notifications, but could not start the background connection. Try again from Connection settings.") }
+                }
                 "export:start" -> files.execute {
                     try {
                         val number = request.get("size") as? Number ?: throw IllegalArgumentException()

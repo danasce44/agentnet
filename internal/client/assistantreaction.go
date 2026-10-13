@@ -136,6 +136,14 @@ func (a *Agent) reactAsAssistant(ctx context.Context, id, harness, emoji string,
 	if err != nil {
 		return ControlSent{}, err
 	}
+	return a.sendAssistantReactionTarget(ctx, t, id, agentID, pid, origin, emoji, remove)
+}
+
+func (a *Agent) sendAssistantReactionTarget(ctx context.Context, t reactionTarget, id, agentID, pid, origin, emoji string, remove bool) (ControlSent, error) {
+	if !envelope.OneEmoji(emoji) {
+		return ControlSent{}, errors.New("a reaction is one emoji")
+	}
+	self := a.Address
 	op := "add"
 	if remove {
 		op = "remove"
@@ -256,7 +264,11 @@ func (a *Agent) reactAsAssistant(ctx context.Context, id, harness, emoji string,
 		if err != nil {
 			return ControlSent{}, err
 		}
-		c := outCopy{env: env, in: in, state: stateQueued, required: protocol.CapAgentReaction, recipientFP: key.Fingerprint()}
+		required := protocol.CapAgentReaction
+		if origin == envelope.OriginMentionReaction {
+			required = protocol.CapMentionReaction
+		}
+		c := outCopy{env: env, in: in, state: stateQueued, required: required, recipientFP: key.Fingerprint()}
 		if group != nil {
 			adm, e := groupMemberAdmission(a.store.db, *group, d.dev.Address, key.Fingerprint())
 			if e != nil {
@@ -313,6 +325,9 @@ func (a *Agent) reactAsAssistant(ctx context.Context, id, harness, emoji string,
 // A guest who joined after the request, or has ended, is never in it.
 func (a *Agent) reactionAudience(ctx context.Context, id, conv string) (*envelope.HumanTurn, error) {
 	req, err := storedHuman(a.store.db, "in", id)
+	if errors.Is(err, sql.ErrNoRows) {
+		req, err = storedHuman(a.store.db, "out", id)
+	}
 	if err != nil || req == nil {
 		return nil, err
 	}
@@ -374,6 +389,9 @@ func (a *Agent) humanHostDevices(h *envelope.HumanTurn) ([]identity.Public, erro
 // device's assistant may still react on t as in names it: the request is
 // unchanged and, for a participation, the agent may still give output.
 func (a *Agent) assistantReactionCurrent(q dbq, t reactionTarget, in envelope.Inner, group *GroupContext) error {
+	if in.Origin == envelope.OriginMentionReaction {
+		return a.mentionReactionCurrent(q, in)
+	}
 	now, err := reactionTargetIn(q, t.ref.ID)
 	if t.conv != "" {
 		var id string
@@ -475,6 +493,25 @@ func (a *Agent) mayDeliverAssistantReaction(env envelope.Envelope) (handled, all
 		if err := humanAuthority(a.store.db, conv, &h, a.Address, a.Self().Fingerprint(), env.To, fp, false, true, false); err != nil {
 			return stop(err.Error())
 		}
+	}
+	in.Ref = &envelope.Ref{ID: refID, Fingerprint: refFP}
+	if origin == envelope.OriginMentionReaction {
+		if err := a.mentionReactionCurrent(a.store.db, in); err != nil {
+			return stop(err.Error())
+		}
+		if conv != "" {
+			if root, _, found, _ := a.store.conversation(conv); found && root.Kind == protocol.ConvKindGroup {
+				packet, e := groupTurnPacketIn(a.store.db, conv)
+				if e != nil {
+					return true, false, nil
+				}
+				adm, e := groupMemberAdmission(a.store.db, packet, env.To, fp)
+				if e != nil || adm.Hash() != fence {
+					return stop("the reader's group admission changed")
+				}
+			}
+		}
+		return true, true, nil
 	}
 	id := refID
 	if conv != "" {
@@ -595,7 +632,13 @@ func (a *Agent) admitAssistantReaction(ctx context.Context, env envelope.Envelop
 				}
 				return reasonInvalid, err
 			}
+			if in.Origin == envelope.OriginMentionReaction {
+				return mentionReactionRequest(q, in, p, selfFP)
+			}
 			return humanReactionRequest(q, in, p, selfFP)
+		}
+		if in.Origin == envelope.OriginMentionReaction {
+			return mentionReactionRequest(q, in, p, selfFP)
 		}
 		request := envelope.Inner{Conv: in.Conv, PID: in.PID, Kind: envelope.KindMessage, Status: envelope.StatusProgress, ReplyTo: in.Ref.ID, AgentID: in.AgentID}
 		if reason, err := externalOutputRequest(q, request, p, m, self, selfFP); err != nil {
@@ -772,6 +815,9 @@ func assistantHistoryCheck(q dbq, orig envelope.Inner, from, fromFP, self, selfF
 	}
 	if p.Host.Address != from || p.Host.Fingerprint != fromFP || p.AgentID != orig.AgentID {
 		return reasonInvalid, errors.New("history assistant reaction differs from its participation's exact host and agent")
+	}
+	if orig.Origin == envelope.OriginMentionReaction {
+		return mentionReactionRequest(q, orig, p, selfFP)
 	}
 	request := envelope.Inner{Conv: orig.Conv, PID: orig.PID, Kind: envelope.KindMessage, Status: envelope.StatusProgress, ReplyTo: orig.Ref.ID, AgentID: orig.AgentID}
 	return externalOutputRequest(q, request, p, m, self, selfFP)

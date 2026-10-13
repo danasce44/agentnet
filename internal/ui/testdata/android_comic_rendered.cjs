@@ -11,11 +11,17 @@ const fs = require('node:fs');
       page.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/app/'))appHTTP.push(request.url());});
       await page.addInitScript(() => {
         window.androidAppCalls=[];window.androidNotificationGranted=true;window.androidNotificationCalls=[];
+        window.androidNotificationChannel={importance:3,sound:true,vibration:true};
         window.androidUpdateResult='';
         let updateCalls=0;
         window.AgentNetAndroid = { postMessage(raw) {
           const request=JSON.parse(raw);
-          if(request.type.startsWith('notifications:')) {window.androidNotificationCalls.push(request.type);queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,granted:window.androidNotificationGranted})}));return;}
+          if(request.type.startsWith('notifications:')) {
+            window.androidNotificationCalls.push(request.type);
+            const channel=window.androidNotificationChannel;
+            const status={granted:window.androidNotificationGranted && channel.importance>0,app_granted:window.androidNotificationGranted,channel};
+            queueMicrotask(()=>this.onmessage?.({data:JSON.stringify({id:request.id,ok:true,...(request.type==='notifications:settings'?{opened:true}:status)})}));return;
+          }
           if (request.type.startsWith('app:')) {
             window.androidAppCalls.push(request.type);
             let result;
@@ -136,6 +142,23 @@ const fs = require('node:fs');
       await page.getByText('Allow notifications in Android settings to receive alerts.',{exact:true}).waitFor();
       assert.equal(await notificationToggle.getAttribute('aria-checked'),'false');
       assert.equal(await page.evaluate(()=>window.androidNotificationCalls.filter(x=>x==='notifications:request').length),1,'only explicit click requests permission');
+      await page.getByRole('button',{name:'Android notification settings',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.androidNotificationCalls.filter(x=>x==='notifications:settings').length),1);
+      await page.evaluate(()=>{window.androidNotificationGranted=true;window.androidNotificationChannel.vibration=false;window.agentnetNativeVisibility(true);});
+      await page.getByText(/Chat activity vibration is off in Android/).waitFor();
+      assert.equal(await notificationToggle.getAttribute('aria-checked'),'true','vibration-off does not disable permitted visual alerts');
+      await page.getByRole('button',{name:'Android notification settings',exact:true}).click();
+      assert.equal(await page.evaluate(()=>window.androidNotificationChannel.vibration),false,'recovery action preserves a legacy saved choice');
+      await page.evaluate(()=>{window.androidNotificationChannel={importance:2,sound:false,vibration:false};window.agentnetNativeVisibility(true);});
+      await page.getByText(/Chat activity is set to silent in Android/).waitFor();
+      await page.evaluate(()=>{window.androidNotificationChannel={importance:0,sound:false,vibration:false};window.agentnetNativeVisibility(true);});
+      await page.getByText(/Chat activity notifications are blocked in Android settings/).waitFor();
+      assert.equal(await notificationToggle.getAttribute('aria-checked'),'false');
+      await page.evaluate(()=>{window.androidNotificationChannel={importance:3,sound:true,vibration:true};window.agentnetNativeVisibility(true);});
+      await page.getByText(/Chat activity notifications are blocked/).waitFor({state:'hidden'});
+      assert.equal(await page.getByText(/Chat activity vibration is off/).count(),0);
+      assert.equal(await notificationToggle.getAttribute('aria-checked'),'true');
+      assert.equal(await page.evaluate(()=>window.androidNotificationCalls.filter(x=>x==='notifications:request').length),1,'status refresh and settings recovery never request a new permission');
       await context.unroute('**/api/overview*');
       await snap('notifications'); await fits('notifications');
       await back();

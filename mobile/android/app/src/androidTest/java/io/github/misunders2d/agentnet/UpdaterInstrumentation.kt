@@ -116,14 +116,52 @@ class UpdaterInstrumentation : Instrumentation() {
     /** OS-boundary test on the owned emulator; never grants or changes permissions. */
     private fun checkNotifications(activity: MainActivity, denied: Boolean, result: Bundle) {
         val host = (targetContext.applicationContext as AgentNetApp).host
+        // Disposable preferences exercise the actual consent implementation,
+        // without changing an Android permission or starting a live service.
+        val consentPreferences = targetContext.getSharedPreferences("notification-consent-fixture", 0)
+        consentPreferences.edit().clear().commit()
+        var starts = 0
+        startConnectionAfterConsent(consentPreferences, false) { starts++ }
+        check(!consentPreferences.getBoolean("keep-connected", false) && starts == 0 && !consentPreferences.contains("keep-connected"))
+        startConnectionAfterConsent(consentPreferences, true) { starts++ }
+        check(consentPreferences.getBoolean("keep-connected", false) && starts == 1)
+        startConnectionAfterConsent(targetContext.getSharedPreferences("notification-consent-fixture", 0), true) { starts++ }
+        check(starts == 1) // saved on survives restart without a second consent start
+        consentPreferences.edit().putBoolean("keep-connected", false).commit()
+        startConnectionAfterConsent(consentPreferences, true) { starts++ }
+        check(!consentPreferences.getBoolean("keep-connected", false) && starts == 1) // explicit off wins
+        consentPreferences.edit().clear().commit()
+        var refused = false
+        try { startConnectionAfterConsent(consentPreferences, true) { throw IllegalStateException("Fixture service refusal") } }
+        catch (_: IllegalStateException) { refused = true }
+        check(refused && !consentPreferences.getBoolean("keep-connected", false))
+        consentPreferences.edit().clear().commit()
+        // In-memory OS channel objects exercise the actual status/intent code;
+        // no saved app channel, permission, sound mode or DND choice is changed.
+        val fresh = activityNotificationChannel()
+        val freshStatus = activityNotificationStatus(true, fresh)
+        check(freshStatus.getBoolean("granted") && freshStatus.getBoolean("app_granted"))
+        check(freshStatus.getJSONObject("channel").getBoolean("sound") && freshStatus.getJSONObject("channel").getBoolean("vibration"))
+        fresh.enableVibration(false)
+        check(!activityNotificationStatus(true, fresh).getJSONObject("channel").getBoolean("vibration"))
+        check(!fresh.shouldVibrate()) // reading a legacy vibration-off channel never changes it
+        val muted = android.app.NotificationChannel("fixture-muted", "Fixture", android.app.NotificationManager.IMPORTANCE_NONE)
+        check(!activityNotificationStatus(true, muted).getBoolean("granted"))
+        check(activityNotificationStatus(true, muted).getBoolean("app_granted"))
+        check(!activityNotificationStatus(false, fresh).getBoolean("granted"))
+        check(!activityNotificationStatus(true, null).has("channel"))
+        val settings = activityNotificationSettings(targetContext.packageName)
+        check(settings.action == android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+        check(settings.getStringExtra(android.provider.Settings.EXTRA_APP_PACKAGE) == targetContext.packageName)
+        check(settings.getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID) == ACTIVITY_CHANNEL)
         val manager = targetContext.getSystemService(android.app.NotificationManager::class.java)
-        val post = NativeHost::class.java.getDeclaredMethod("notifyActivity", String::class.java, String::class.java).apply { isAccessible = true }
+        val post = NativeHost::class.java.getDeclaredMethod("notifyActivity", String::class.java, String::class.java, String::class.java, String::class.java).apply { isAccessible = true }
         val dismiss = NativeHost::class.java.getDeclaredMethod("dismissActivity", String::class.java, String::class.java).apply { isAccessible = true }
         val workspace = "default"
         val routes = listOf("conv=" + "a".repeat(64), "review", "msg=" + "b".repeat(32) + "&dir=in")
         val tags = routes.map { WebPolicy.notificationDestination(workspace, it)!! }.toSet()
         fun active() = manager.activeNotifications.filter { it.tag in tags }
-        fun emit(fragment: String) = runOnMainSync { post.invoke(host, workspace, fragment) }
+        fun emit(fragment: String) = runOnMainSync { post.invoke(host, workspace, fragment, "Fixture sender", "Locally decrypted fixture preview") }
         fun waitFor(label: String, predicate: () -> Boolean) {
             val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (!predicate() && System.nanoTime() < end) Thread.sleep(50)
@@ -148,7 +186,10 @@ class UpdaterInstrumentation : Instrumentation() {
             uiAutomation.executeShellCommand("input keyevent 223").close()
             emit(routes[2])
             waitFor("Screen-off message/reminder route missing") { active().size == 3 }
-            check(active().all { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString() == "AgentNet" })
+            check(active().all { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString() == "Fixture sender" })
+            check(active().all { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT).toString() == "Locally decrypted fixture preview" })
+            check(active().all { it.notification.publicVersion.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString() == "AgentNet" })
+            check(active().all { !it.notification.publicVersion.extras.getCharSequence(android.app.Notification.EXTRA_TEXT).toString().contains("fixture preview") })
             check(active().all { it.notification.visibility == android.app.Notification.VISIBILITY_PRIVATE })
             uiAutomation.executeShellCommand("input keyevent 224").close()
             val target = active().single { it.tag == WebPolicy.notificationDestination(workspace, routes[2]) }

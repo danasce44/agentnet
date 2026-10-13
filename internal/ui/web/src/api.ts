@@ -7,6 +7,7 @@ import type { Host } from "./host";
 export type { T };
 
 export interface TopicOrganizationRequest {
+	main?: boolean;
   conv: string; ids: string[]; topic: string; merge?: string; new?: boolean; title?: string;
 }
 export interface TopicOrganizationReview extends TopicOrganizationRequest {
@@ -91,6 +92,7 @@ export function api(host: Host) {
     changeTopic: (what: "create" | "archive" | "delete" | "rename" | "done" | "reopen", c: T.TopicChange) => post<{ note: string }>("/api/topic/" + what, c),
     previewTopicOrganization: (d: TopicOrganizationRequest) => post<TopicOrganizationReview>("/api/topic/organization/preview", d),
     applyTopicOrganization: (d: TopicOrganizationReview) => post<T.Sent>("/api/topic/organization/apply", d),
+	undoTopicOrganization:(d:{conv:string;lid:string;author:string;id:string})=>post<T.Sent[]>("/api/topic/organization/undo",d),
     previewHistoryContribution: (d: HistoryContributionRequest) => post<HistoryContributionReview>("/api/history/contribution/preview", d),
     applyHistoryContribution: (d: HistoryContributionReview) => post<T.Sent>("/api/history/contribution/apply", d),
 

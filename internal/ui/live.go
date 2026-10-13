@@ -150,6 +150,9 @@ func (l *Live) overview(listArchived bool) (Overview, error) {
 	if err := l.selfConsentReview(&o); err != nil { // own agents that joined without a click (liveselfconsent.go)
 		return o, err
 	}
+	if r := l.a.LocalNativeReport(); len(r.Items) > 0 {
+		o.Review = append(o.Review, ReviewItem{ID: r.Items[0].Native.Token, Peer: l.a.Address, Kind: KindMessage, Notice: true, At: time.Now(), Report: &r})
+	}
 	notices, err := l.a.DeviceAdminNotices()
 	if err != nil {
 		return o, err
@@ -516,8 +519,13 @@ func (l *Live) Act(x Action) (string, error) {
 		_, err = l.a.ConfirmRevisedProposal(client.WithQueuedSend(ctx, x.SendID), x.ID, x.Body)
 		note = "Revised task saved; the agent’s normal task permissions apply."
 	case DoContinue:
-		err = l.a.ContinueRequest(x.ID, x.SendID, x.Attempt, x.Body, x.Key)
-		note = "Answer saved. Continuing the same request with fresh context."
+		if strings.HasPrefix(x.Body, "agentnet-native-response-v1\n") {
+			err = l.a.RespondNativeRequest(x.ID, x.Key, x.Attempt, x.Body, x.SendID)
+			note = "Response saved for the same native operation. Completion is not yet proven."
+		} else {
+			err = l.a.ContinueRequest(x.ID, x.SendID, x.Attempt, x.Body, x.Key)
+			note = "Answer saved. Continuing the same request with fresh context."
+		}
 	case DoAccept:
 		err = l.a.Accept(x.ID)
 		note = "Accepted. Your responder takes it from here."

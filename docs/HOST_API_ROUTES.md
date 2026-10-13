@@ -66,7 +66,7 @@ are not checked strictly. An error from a relay call carries `.status`, the
 - While a workspace closes, these routes refuse with "This workspace is
   closing. Your draft is kept.": `/api/send`, `/api/dm/send`,
   `/api/dm/agent/ask`, `/api/request/followup`,
-  `/api/topic/organization/apply`, `/api/history/contribution/apply`, and
+  `/api/topic/organization/apply`, `/api/topic/organization/undo`, `/api/history/contribution/apply`, and
   `/api/act` with `do` `reply` or `do_it`.
 
 **Feature detection.** Use the overview booleans (below), then try the route
@@ -156,8 +156,9 @@ and catch the error. Failures differ by platform.
 | `POST /api/topic/reopen` | D B | Reopen a topic, or the Main flow with `root:true`. | `{peer or conv, id, count?}` or `{conv, root:true, peer:"", id:"", count?}` | `{note}` |
 | `POST /api/topic/archive` | D B | Archive a topic. This deletes nothing. Works in batches and with `root:true`. | `{peer or conv, id}`, `{…, ids, counts?}` or `{conv, root:true, peer:"", id:"", count?}` | `{note}` |
 | `POST /api/topic/delete` | D B | Delete a topic: on this device for an agent thread, on your devices for a chat. Works in batches and with `root:true`. | as for archive | `{note}` |
-| `POST /api/topic/organization/preview` | D B | Review moving selected messages into another topic. | `{conv, ids:[up to 200 ids], topic, merge?, new?, title?}` | review: the request plus `{operation, token, moves:[{lid, author, hash, topic?}], parent?}` |
+| `POST /api/topic/organization/preview` | D B | Review moving selected messages into another topic. Main is an explicit choice: `topic:"", main:true`. | `{conv, ids:[up to 200 ids], topic, main?, merge?, new?, title?}` | review: the request plus `{operation, token, moves:[{lid, author, hash, topic?}], parent?}` |
 | `POST /api/topic/organization/apply` | D B | Apply exactly the reviewed move. If anything changed, it is refused. | the review, unchanged | D: `{ID, LID, State, Detail, Copies}`. B: `{id, lid, state, detail?, copies?}` (a repeated apply answers without `detail`) |
+| `POST /api/topic/organization/undo` | D B | A current full-member human restores an admitted agent move to its persisted prior source topics, including Main. All source groups are checked and committed together; intervening changes refuse the inverse. Reuse the same `id` for a retry. | `{conv, lid, author, id}` | array of sent operations, in the platform's existing sent shape |
 
 ## Files and Drive
 
@@ -179,9 +180,9 @@ Host-internal). Google Drive is outside AgentNet end-to-end encryption.
 | Route | Platforms | Purpose | Request | Response |
 |---|---|---|---|---|
 | `POST /api/act` | D B | A local decision on a received item, or a local permission change. Show only the verbs listed in the item's `actions`. B accepts 7 of the 17 verbs (table below). | `{do, id?, body?, reason?, ids?, key?, attempt?, send_id?, held?}` | `{note}` |
-| `POST /api/operator/decide` | D B | Decide a request that another host reported, as its granted operator. On your own host you can also `continue`, `resolve` or `cancel` it. `check:true` only checks that you may, and only for your own waiting request with `report:""`: `resolve` with `expect:"needs_human"` or `cancel` with `expect:"running"`. | `{host, id, key, action, expect, attempt, report, text?, send_id?, check?}`, where `action` is accept, decline, resolve, reply, cancel or continue | `{note}` |
+| `POST /api/operator/decide` | D B | Decide a request that another host reported, as its granted operator. A current owner-human device may also answer a private native callback, without an operator grant; see the native contract below. On your own host you can also `continue`, `resolve` or `cancel` it. `check:true` only checks that you may, and only for your own waiting request with `report:""`: `resolve` with `expect:"needs_human"` or `cancel` with `expect:"running"`. | `{host, id, key, action, expect, attempt, report, text?, send_id?, check?}`, where `action` is accept, decline, resolve, reply, cancel or continue | `{note}` |
 | `POST /api/request/followup` | D B | Follow up on a request you sent, to its same executor. | `{id, conv?, ref:{id, fingerprint}, body, files?: [staged]}` | `{note}` |
-| `GET /api/approvals` | D B | Standing grants, as `agentnet approvals` lists them. B always answers `{questions:[], tasks:[], participations:[], read_only:true}`, and refuses a body. | — | `{questions, tasks, native_tasks?, own_devices?, participations, read_only, unresolved?}` |
+| `GET /api/approvals` | D B | Standing grants, as `agentnet approvals` lists them. B always answers `{questions:[], tasks:[], participations:[], read_only:true}`, and refuses a body. | — | `{questions, tasks, native_tasks?, own_devices?, removed_devices?, participations, read_only, unresolved?}` |
 | `POST /api/approvals/revoke` | D B† | End one standing grant. B: "Nothing runs in this browser: approvals and grants are made and revoked on a computer with AgentNet." | `{kind:"question" or "task", person}`, `{kind, address}` or `{kind:"participation", pid}` | `{note}` |
 | `GET /api/agents` | D B | Without `host`: this computer's agents (`local:true`, with harnesses). With `?host=`: that host's verified public catalog. B needs another device's `host`; without it, it refuses "This browser runs no local agents or responders." | `?host=` optional | `{host, local, agents:[{record:{v, id, host, host_key, label, ts, sig?}, enabled, responder?}], harnesses?}` |
 | `POST /api/agents` | D B† | Configure the agents on this computer. B: "This browser runs no local agents or responders; configure agents on their host computer." Android refuses (409). | `{action, id?, label?, harness?, dir?}`, where `action` is create, update, disable or publish | `{saved, published, agent?, note}` |
@@ -201,7 +202,7 @@ Host-internal). Google Drive is outside AgentNet end-to-end encryption.
 | `reply` | `id, body, send_id?` | Answer a received question or task by hand, which takes it over. | yes |
 | `do_it` | `id, send_id?` | Confirm a stored proposal as a task to the same agent. | yes |
 | `change_proposal` | `id, body, send_id?` | Confirm a revised proposal. | yes |
-| `continue` | `id, body, attempt, key, send_id` | Continue a `needs_human` request held on this device (the item's `continuation`) with an answer. When `continuation.host` is set, send `POST /api/operator/decide` `{host: continuation.host, id: continuation.id, key: continuation.key, action:"continue", expect:"needs_human", attempt: continuation.attempt, text, send_id, report:""}` instead. | no (B uses `/api/operator/decide`); Android no |
+| `continue` | `id, body, attempt, key, send_id` | Continue a `needs_human` request held on this device (the item's `continuation`) with an answer, or return the domain-tagged native response described below to the exact current local callback. When `continuation.host` is set, send `POST /api/operator/decide` `{host: continuation.host, id: continuation.id, key: continuation.key, action:"continue", expect:"needs_human", attempt: continuation.attempt, text, send_id, report:""}` instead. | no (B uses `/api/operator/decide`); Android no |
 | `accept` | `id` | Run a task once, let the responder answer a held question, or run again. | no; Android no |
 | `accept_always` | `id` | Accept, and let later tasks from that sender run without asking. | no; Android no |
 | `decline` | `id, reason?` | Decline. The requester is told, and nothing runs. | no |
@@ -271,6 +272,21 @@ assistants. Use your linked agent computer." An unknown verb gives 409
 | `POST /api/remind` | D | Set or move a "remind me later" reminder on a received message. B: "Unknown request." (`overview.remind` is absent there.) | `{id, due: unix seconds}` | `{note}` |
 | `POST /api/remind/done` | D | Mark a reminder done. B: "Unknown request." | `{id}` | `{note}` |
 | `POST /api/remind/cancel` | D | Cancel a reminder. B: "Unknown request." | `{id}` | `{note}` |
+
+A validated `ReportItem.native` is an actionable native request for the current
+owner-human device even with `actionable:false`; it never grants operator access.
+The complete DTO/forms/lifetime contract is in [UI_SKINS.md](UI_SKINS.md).
+For a local daemon use the existing `POST /api/act` continue action with
+`{id,key,attempt,body,send_id}`. For another own host use existing
+`POST /api/operator/decide` with `{host,id,key,attempt,action:"continue",
+expect:"running",report:<exact private notice id>,text,send_id}`.
+`body`/`text` is `agentnet-native-response-v1\n` followed by JSON
+`{token,choice,answers?,values?}`. Retry the identical text and send ID after an
+ambiguous transport result. `expires:0` means the exact live process lifetime;
+nonzero expiry is Unix milliseconds. Native resolution/end/cancel/restart
+remove the action. The host rechecks current exact human/host keys, admission,
+report/ref/attempt/token/native call and one-shot lifetime; operator, agent-host,
+foreign and historical claims never authorize it. Saved is not completed.
 
 ## Workspace, storage and setup
 

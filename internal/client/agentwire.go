@@ -53,6 +53,12 @@ func agentRequirement(in envelope.Inner) string {
 		}
 		in = h.inner(in.Conv)
 	}
+	if envelope.MentionReaction(in) {
+		return protocol.CapMentionReaction
+	}
+	if envelope.OrganizationReaderExtension(in) {
+		return protocol.CapAgentOrganization
+	}
 	if envelope.AssistantReaction(in) { // as history too: never stored by an older reader as its host's mark
 		return protocol.CapAgentReaction
 	}
@@ -151,7 +157,7 @@ func (a *Agent) requireParticipationCaps(ctx context.Context, key identity.Publi
 		}
 		return nil
 	}
-	if required != protocol.CapModelSync && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent {
+	if required != protocol.CapModelSync && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent && required != protocol.CapMentionReaction && required != protocol.CapAgentOrganization {
 		return errors.New("unknown queued capability requirement")
 	}
 	label, device, err := protocol.SplitAddress(key.Address)
@@ -225,6 +231,9 @@ func agentTurn(sub, kind, status, replyTo, pid, origin string) bool {
 // outlive the participation. Missing participation evidence stays on the
 // existing proof retry path.
 func (a *Agent) checkConversationAgent(in envelope.Inner, sender identity.Public, historical bool) (string, error) {
+	if envelope.AgentTopicOrganization(in) {
+		return a.topicOrganizationAdmission(a.store.db, in, sender.Address, sender.Fingerprint(), historical)
+	}
 	agent := agentTurn(in.Sub, in.Kind, in.Status, in.ReplyTo, in.PID, in.Origin)
 	if !namedAgentFields(in) && !agent && !(in.Sub == "" && in.PID != "" && in.Target != nil) || envelope.AssistantReaction(in) { // a reaction is bound by assistantHistoryCheck / admitAssistantReaction
 		return "", nil
@@ -364,6 +373,10 @@ func (e *NeedsUpdateError) Error() string {
 		message = "cannot read selected receiver delegation yet"
 	case protocol.CapGroup:
 		message = "cannot read group context yet"
+	case protocol.CapAgentOrganization:
+		message = "cannot verify agents’ human-request topic moves yet; update all its active AgentNet sessions"
+	case protocol.CapMentionReaction:
+		message = "cannot read agents’ ordinary mention reactions yet; update all its active AgentNet sessions"
 	case protocol.CapAgentReaction:
 		message = "cannot read assistant reactions yet; update all its active AgentNet sessions"
 	case protocol.CapProgress:

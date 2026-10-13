@@ -7,11 +7,18 @@ assert(evidence,'private screenshot directory required');fs.mkdirSync(evidence,{
 const at='2026-10-06T10:00:00Z',local='sergey/laptop',remote='sergey/zenbook',localID='a'.repeat(32),remoteID='b'.repeat(32);
 const me={person:'sergey',label:'Sergey',address:local,state:'self',devices:[{address:local,fingerprint:'local-key'},{address:remote,fingerprint:'remote-key'},{address:'sergey/iphone',fingerprint:'phone-key'}]};
 const overview={version:'fixture',seq:1,me:{address:local,fingerprint:'local-key',responder:'codex',responder_dir:'/fixture',agent:true},person:me,persons:true,agents:true,role:'person',people:[],review:[],links:[],reminders:[],threads:[],dms:[],agent_devices:[remote],directory:{current:true,members:[]},quarantine:[],files:{max_count:8,max_file:100000,max_message:200000}};
+if(process.env.AGENTNET_REMOVED_PERMISSIONS){
+ me.devices.push({address:'sergey/android-phone-3',fingerprint:'replacement-key'});
+ overview.people.push({person:'bob',label:'Bob',address:'bob/laptop',state:'pinned',devices:[{address:'bob/laptop',fingerprint:'bob-key'}]});
+ overview.directory.members.push({address:'bob/laptop'},{address:'sergey/android-phone-2'},{address:'service/bot'});
+ overview.agent_devices.push('service/bot');
+ overview.threads.push(...['sergey/android-phone-2','bob/laptop','service/bot'].map((peer,i)=>({id:String(i+1).repeat(32),peer,title:'Retained history',last:'Historical message',last_at:at,count:1,review:0,unread:0,running:0,waiting:false,state:'active',quiet_since:at})));
+}
 if(process.env.AGENTNET_MODEL_REPORT){overview.model_reports=[{host:local,host_key:"local-key",agent_id:"",model:"gpt-6.1-sol",harness:"codex",executor:"a".repeat(64),at:1791280800,revision:1},{host:remote,host_key:"remote-key",agent_id:remoteID,model:"Claude Opus 4.6",harness:"claude",executor:"b".repeat(64),at:1791280800,revision:1}];}
 const responder={chosen:true,manual:false,harness:'codex',dir:'/fixture',ready:true,harnesses:[{name:'codex',found:true}]};
 const record=(host,id,label)=>({v:1,id,host,host_key:host===local?'local-key':'remote-key',label,ts:1});
 const boot=`
-const seed=${JSON.stringify({overview,responder,local,remote,localID,remoteID,assignMode:!!process.env.AGENTNET_ASSIGN_MESSAGE})};window.fixture={...seed,requests:[],threads:{},staged:[],uploads:{},storedBytes:{},discarded:[],fileReads:0,disabled:false,badRemote:false};
+const seed=${JSON.stringify({overview,responder,local,remote,localID,remoteID,assignMode:!!process.env.AGENTNET_ASSIGN_MESSAGE,removedMode:!!process.env.AGENTNET_REMOVED_PERMISSIONS})};window.fixture={...seed,requests:[],threads:{},staged:[],uploads:{},storedBytes:{},discarded:[],fileReads:0,disabled:false,badRemote:false};
 let opened,changed;
 const host={version:1,platform:'daemon',workspace:{id:'default',name:'Agent starter fixture',endpoint:location.origin,address:seed.local,realm:'',state:'enrolled'},workspaces:null,skins:[],onSkinsChange(){return()=>{};},onOpen(fn){opened=fn;},listen(fn){changed=fn;return()=>{};},stage:async file=>{if(fixture.failStageAfterFirst&&Object.keys(fixture.uploads).length){fixture.failStageAfterFirst=false;throw Error('Temporary upload failure');}const value={name:file.name,text:await file.text()};fixture.staged.push(value);const id='upload-'+fixture.staged.length;fixture.uploads[id]=value;return id;},file:async(id,index,dir)=>{fixture.fileReads++;const kept=fixture.storedBytes[id+':'+index];return {bytes:new TextEncoder().encode(kept===undefined?'Reviewed source file':fixture.corruptStoredBytes?'Different saved file':kept)};},api:async(p,body)=>{
 fixture.requests.push({path:p,body});
@@ -21,7 +28,7 @@ if(p.startsWith('/api/agents')){const h=new URL(p,location.origin).searchParams.
 if(p==='/api/upload/discard'){for(const id of body.ids){fixture.discarded.push(id);delete fixture.uploads[id];}return {};}
 if(p==='/api/send'){const staged=(body.files||[]).map(id=>fixture.uploads[id]);for(const id of body.files||[])delete fixture.uploads[id];if(fixture.failNextSend){fixture.failNextSend=false;throw Error('Temporary send failure');}const id=body.kind==='task'?body.id:(Object.keys(fixture.threads).length+1).toString(16).padStart(32,'0');if(fixture.threads[id])throw Error('This send is already kept here.');for(const [index,file] of staged.entries())fixture.storedBytes[id+':'+index]=file.text;const message={id,dir:'out',from:seed.local,to:body.to,kind:body.kind,body:body.body,at:'${at}',state:'queued',author:{label:'You',about:''},files:seed.assignMode&&body.body==='Default question'?[{name:'source.txt',size:20,openable:true},{name:'second.txt',size:20,openable:true},{name:'missing.txt',size:40,openable:false}]:staged.length?staged.map((f,index)=>({index,name:f.name,size:f.text.length,openable:true})):undefined,target:body.agent_id?{address:body.to,fingerprint:body.to===seed.local?'local-key':'remote-key',agent_id:body.agent_id}:undefined};const summary={id,peer:body.to,title:body.body,last:body.body,last_at:'${at}',count:1,review:0,unread:0,running:0,waiting:false,state:'active',quiet_since:'${at}',agent_id:body.agent_id};fixture.threads[id]={id,peer:body.to,key:{pinned:'fixture-key'},approved:true,task_grant:'',messages:[message],topic:summary};fixture.overview.threads.push(summary);fixture.overview.seq++;if(fixture.loseNextSendSuccess){fixture.loseNextSendSuccess=false;fixture.lostTask=id;throw Error('Response lost after durable storage');}return {id,state:'queued',path:'fixture'};}
 if(p.startsWith('/api/thread?'))return structuredClone(fixture.threads[new URL(p,location.origin).searchParams.get('id')]);
-if(p==='/api/groups/invitations')return [];if(p.startsWith('/api/typing/status'))return {send:false,scopes:[]};if(p.includes('/topics'))return {topics:[],placements:[]};if(p==='/api/permissions')return {questions:[],tasks:[]};return {};
+if(p==='/api/groups/invitations')return [];if(p.startsWith('/api/typing/status'))return {send:false,scopes:[]};if(p.includes('/topics'))return {topics:[],placements:[]};if(p==='/api/approvals')return {questions:[],tasks:[],removed_devices:seed.removedMode?['sergey/android-phone-2']:[],own_devices:fixture.overview.person.devices.map(d=>({address:d.address,questions:'own',tasks:'own',this:d.address===seed.local}))};return {};
 }};
 const base='/assets/skins/comic/',manifest=await(await fetch(base+'skin.json')).json();
 if(manifest.document){const css=new CSSStyleSheet();css.replaceSync(await(await fetch(base+manifest.document)).text());document.adoptedStyleSheets=[css];}
@@ -40,6 +47,21 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    await page.goto(origin);await page.waitForFunction(()=>window.ready);
    const nav=page.getByRole('navigation',{name:'Main'}),sent=()=>page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/send').map(r=>r.body));
    await nav.getByRole('button',{name:'Agents',exact:true}).click();
+   if(process.env.AGENTNET_REMOVED_PERMISSIONS){
+    for(let attempt=0;attempt<2;attempt++){
+     if(attempt){await page.reload();await page.waitForFunction(()=>window.ready);await page.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'Agents',exact:true}).click();}
+     const devices=page.getByRole('list',{name:'Your devices and current permissions'});
+     await devices.getByText(/Android phone 3/i).waitFor();
+     await page.getByRole('button',{name:/Turn on automatic answers for .*Bob/i}).waitFor();
+     await page.getByRole('button',{name:/Turn on automatic answers for .*Bot/i}).waitFor();
+     assert.equal(await page.getByRole('button',{name:/Turn on.*phone.?2/i}).count(),0,'removed device cannot return as an actionable historical fallback');
+     assert(!/phone.?2/i.test(await devices.innerText()),'removed device absent from current roster controls');
+     assert.equal(await page.evaluate(()=>fixture.overview.threads.filter(t=>t.peer==='sergey/android-phone-2').length),1,'historical thread retained');
+     assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.body!==undefined).length),0,'reading permissions makes no grants or sends');
+    }
+    await settle(page);const shot=path.join(evidence,'comic-removed-permissions-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'permissions fit viewport');assert.deepEqual(errors,[]);await context.close();continue;
+   }
    await page.getByRole('button',{name:'Chat with Laptop agent',exact:true}).waitFor();
    assert(await page.getByRole('button',{name:'Chat with Sleeping agent',exact:true}).isDisabled());
    assert(await page.getByRole('button',{name:'Chat with Zenbook agent',exact:true}).isVisible(),'own remote agent discoverable without threads');
@@ -125,6 +147,6 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'document overflow');assert.deepEqual(errors,[]);await context.close();
   }
   if(process.env.AGENTNET_RENDERED_RETAIN){const keep=path.resolve(process.env.AGENTNET_RENDERED_RETAIN);assert(keep.startsWith('/tmp/'));fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  console.log(JSON.stringify({ok:true,checks:'No-history agent discovery; local default and exact local/remote named question; fresh readiness/catalog refusal keeps draft, no default substitution; no human DM/group; desktop/phone',shots}));
+  console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_REMOVED_PERMISSIONS?'Removed phone has no active permission action before/after reload; replacement and Bob remain; history retained; no writes; desktop/phone':'No-history agent discovery; local default and exact local/remote named question; fresh readiness/catalog refusal keeps draft, no default substitution; no human DM/group; desktop/phone',shots}));
  }finally{if(browser)await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

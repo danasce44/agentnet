@@ -87,7 +87,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) error {
 	// Publish immutable callbacks before any worker can read them, including
 	// a review already waiting when this run starts.
 	a.openConv, a.openPage = opts.OpenConv, opts.OpenPage
-	a.nativeNotify = opts.Notify
+	a.nativeNotify, a.nativeNotifyContent = opts.Notify, opts.NotifyContent
 	if !opts.HumanOnly {
 		stopWorker, err := a.startWorker(ctx)
 		if err != nil {
@@ -95,7 +95,7 @@ func (a *Agent) Run(ctx context.Context, opts RunOptions) error {
 		}
 		defer stopWorker()
 	}
-	if opts.HumanOnly && opts.Notify != nil {
+	if opts.HumanOnly && a.hasNativeNotifier() {
 		// Observe the existing review projection without starting any executor.
 		a.notifyTried = nil
 		reviewCtx, stopReview := context.WithCancel(ctx)

@@ -193,7 +193,7 @@ func (a *Agent) groupParticipationHistoryCheck(q dbq, root protocol.ConvRoot, fo
 	// addressed history. Reuse the live role/target checks with only that
 	// lifecycle gate adapted; unresolved evidence and fresh delivery stay closed.
 	roleInfo := info
-	if item.Sub == envelope.SubExcerpt || item.Sub == "" && (item.Kind == envelope.KindQuestion || item.Kind == envelope.KindTask || item.Kind == envelope.KindAnswer || item.Kind == envelope.KindResult || isResponderProgress(original) || envelope.ProactiveAgent(original)) {
+	if item.Sub == envelope.SubExcerpt || item.Sub == "" && (item.Kind == envelope.KindQuestion || item.Kind == envelope.KindTask || item.Kind == envelope.KindAnswer || item.Kind == envelope.KindResult || isResponderProgress(original) || envelope.ProactiveAgent(original) || envelope.AgentTopicOrganization(original)) {
 		retained, e := retainedAssistant(q, info, m.historyEvents)
 		if e != nil {
 			return nil, e
@@ -219,6 +219,14 @@ func (a *Agent) groupParticipationHistoryCheck(q dbq, root protocol.ConvRoot, fo
 			return nil, ErrGroupContextPending
 		}
 		return nil, e
+	}
+	if envelope.AgentTopicOrganization(original) {
+		if reason, e := a.topicOrganizationAdmission(q, original, item.From, item.FromKey, true); e != nil {
+			if reason == reasonProof {
+				return nil, ErrGroupContextPending
+			}
+			return nil, e
+		}
 	}
 	return ev, nil
 }

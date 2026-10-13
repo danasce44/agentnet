@@ -243,7 +243,7 @@ func (a *Agent) remindDue(now time.Time) (time.Time, error) {
 		body := "A reminder is due"
 		var argv []string
 		var onClick func()
-		if a.nativeNotify == nil {
+		if !a.hasNativeNotifier() {
 			switch {
 			case len(dues) > 1:
 				body = fmt.Sprintf("%d reminders are due", len(dues))
@@ -254,7 +254,7 @@ func (a *Agent) remindDue(now time.Time) (time.Time, error) {
 				argv, onClick = a.reviewClick(dues[0].message) // the message's whole thread
 			}
 		}
-		if a.nativeNotify != nil {
+		if a.hasNativeNotifier() {
 			fragment := ""
 			if len(dues) == 1 {
 				if protocol.ValidHash(dues[0].conv) {
@@ -263,7 +263,14 @@ func (a *Agent) remindDue(now time.Time) (time.Time, error) {
 					fragment = a.nativeReviewFragment(dues[0].message)
 				}
 			}
-			a.nativeNotify(fragment)
+			id := ""
+			if len(dues) == 1 {
+				id = dues[0].message
+				if a.nativeNotifyContent != nil {
+					fragment = a.nativeReviewFragment(id)
+				}
+			}
+			a.nativeNotification(fragment, id, "Reminder", body)
 		} else if err := a.notify("AgentNet", body, argv, onClick); err != nil {
 			a.Logf("reminder notification not shown (%v); see agentnet remind list", err)
 		}

@@ -514,7 +514,7 @@ const CapAgent = "agent1"
 // advertises (ROOM_V1 §2.1: parse headroom).
 const (
 	MaxCaps           = 32
-	MaxAdvertisedCaps = 24
+	MaxAdvertisedCaps = 26
 	MaxCapsRecord     = 1024
 )
 
@@ -539,6 +539,25 @@ func (c *CapsRecord) Sign(key ed25519.PrivateKey) { c.Sig = ed25519.Sign(key, c.
 
 // Has reports whether c lists capability name.
 func (c CapsRecord) Has(name string) bool { return slices.Contains(c.Caps, name) }
+
+// ValidateAdvertisement bounds our producer, retaining reader headroom. The
+// receiver's Validate/ParseCapsRecord still accepts later 32-name records.
+func (c CapsRecord) ValidateAdvertisement() error {
+	if len(c.Caps) > MaxAdvertisedCaps {
+		return errors.New("caps: advertisement exceeds producer ceiling")
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	if len(raw) > MaxCapsRecord {
+		return errors.New("caps: advertisement exceeds signed byte budget")
+	}
+	return nil
+}
 
 // Reads reports whether c says its session reads capability name: it lists
 // it, or lists CapRoom, which implies each of RoomImplies.

@@ -179,6 +179,8 @@ func runDM(ctx context.Context, a *client.Agent, args []string, stdout io.Writer
 		return errors.New("usage: dm new ADDRESS | dm list | dm show ID | dm send [--question|--task] ID TEXT | dm invite ID HOST | dm agents ID | dm accept-agent PID | dm decline-agent PID | dm dismiss-agent PID | dm ask-agent [--task] PID TEXT | dm invite-guest ID HOST | dm accept-guest PID | dm decline-guest PID | dm end-guest PID (see agentnet help dm)")
 	}
 	switch args[0] {
+	case "react-agent":
+		return runRoom(ctx, a, append([]string{"react"}, args[1:]...), stdout)
 	case "new":
 		if len(args) != 2 {
 			return errors.New("usage: dm new ADDRESS")

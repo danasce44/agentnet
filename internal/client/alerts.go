@@ -305,8 +305,11 @@ func (a *Agent) showDueAlerts(now time.Time) (time.Time, error) {
 		if !protocol.ValidHash(target.conv) {
 			fragment = "msg=" + target.id + "&dir=in"
 		}
-		if a.nativeNotify != nil {
-			a.nativeNotify(fragment)
+		if a.hasNativeNotifier() {
+			if a.nativeNotifyContent != nil {
+				fragment = "msg=" + target.id + "&dir=in"
+			}
+			a.nativeNotification(fragment, target.id, "AgentNet", "New activity")
 		} else {
 			argv, onClick := a.convClick(target.conv)
 			if !protocol.ValidHash(target.conv) {

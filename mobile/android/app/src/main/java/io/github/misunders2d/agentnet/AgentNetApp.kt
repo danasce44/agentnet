@@ -17,10 +17,39 @@ import io.github.misunders2d.agentnet.core.core.Notifier
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
 
 class AgentNetApp : Application() { val host by lazy { NativeHost(this) } }
 
 data class HostState(val url: String = "", val origin: String = "", val error: String = "")
+
+internal const val ACTIVITY_CHANNEL = "activity"
+
+internal fun activityNotificationChannel() = NotificationChannel(ACTIVITY_CHANNEL, "Chat activity", NotificationManager.IMPORTANCE_DEFAULT).apply {
+    enableVibration(true)
+    setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI, android.media.AudioAttributes.Builder()
+        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION).setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+    lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+}
+
+// Read actual OS choices; a missing channel is distinct from a muted one.
+internal fun activityNotificationStatus(appGranted: Boolean, channel: NotificationChannel?) = JSONObject()
+    .put("granted", appGranted && channel?.importance != NotificationManager.IMPORTANCE_NONE)
+    .put("app_granted", appGranted).apply {
+        if (channel != null) put("channel", JSONObject().put("importance", channel.importance)
+            .put("sound", channel.sound != null).put("vibration", channel.shouldVibrate()))
+    }
+
+internal fun activityNotificationSettings(packageName: String) = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, ACTIVITY_CHANNEL)
+
+internal fun startConnectionAfterConsent(options: android.content.SharedPreferences, granted: Boolean, start: () -> Unit) {
+    if (!granted || options.contains("keep-connected")) return
+    options.edit().putBoolean("keep-connected", true).apply()
+    try { start() }
+    catch (e: Exception) { options.edit().putBoolean("keep-connected", false).apply(); throw e }
+}
 
 /** Owns the embedded host once. UI data/events go directly through Comic's existing API. */
 class NativeHost(private val application: Application) {
@@ -40,6 +69,11 @@ class NativeHost(private val application: Application) {
     fun remove(observer: (HostState) -> Unit) { observers.remove(observer) }
     fun keepConnected() = options.getBoolean("keep-connected", false)
     fun setKeepConnected(value: Boolean) { options.edit().putBoolean("keep-connected", value).apply() }
+    // First consent uses the existing visible foreground service. A saved Stop
+    // or settings choice always wins, including after upgrades and restarts.
+    fun afterNotificationConsent(granted: Boolean, start: () -> Unit) {
+        startConnectionAfterConsent(options, granted, start)
+    }
     fun foreground(value: Boolean) { val resumed = value && !foreground; foreground = value; if (value) open(); reconcile(resumed) }
     fun background(value: Boolean) { background = value; if (value) open(); reconcile() }
     private fun publish(next: HostState) = main.post { state = next; observers.toList().forEach { it(next) } }
@@ -53,7 +87,7 @@ class NativeHost(private val application: Application) {
                     app.close(); throw IllegalStateException("Cannot preserve this app's local web address.")
                 }
                 app.setNotifier(object : Notifier {
-                    override fun notify(workspace: String, fragment: String) { main.post { notifyActivity(workspace, fragment) } }
+                    override fun notify(workspace: String, fragment: String, title: String, body: String) { main.post { notifyActivity(workspace, fragment, title, body) } }
                     override fun dismiss(workspace: String, fragment: String) { main.post { dismissActivity(workspace, fragment) } }
                 })
                 core = app
@@ -84,28 +118,41 @@ class NativeHost(private val application: Application) {
         }
         catch (_: Exception) { /* The page's existing connection state reports transport failures. */ }
     }
-    fun notificationsPermitted(): Boolean {
+    private fun notificationAppPermitted(): Boolean {
         if (Build.VERSION.SDK_INT >= 33 && application.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
         val manager = application.getSystemService(NotificationManager::class.java)
-        return manager.areNotificationsEnabled() && manager.getNotificationChannel("activity")?.importance != NotificationManager.IMPORTANCE_NONE
+        return manager.areNotificationsEnabled()
+    }
+    fun notificationStatus(): JSONObject = activityNotificationStatus(notificationAppPermitted(),
+        application.getSystemService(NotificationManager::class.java).getNotificationChannel(ACTIVITY_CHANNEL))
+    fun notificationsPermitted(): Boolean = notificationStatus().getBoolean("granted")
+    fun prepareNotificationChannel() {
+        application.getSystemService(NotificationManager::class.java).createNotificationChannel(activityNotificationChannel())
     }
     private fun dismissActivity(workspace: String, fragment: String) {
         WebPolicy.notificationDestination(workspace, fragment)?.let { route ->
             application.getSystemService(NotificationManager::class.java).cancel(route, 0)
         }
     }
-    private fun notifyActivity(workspace: String, fragment: String) {
+    private fun notifyActivity(workspace: String, fragment: String, title: String, body: String) {
         if (!notificationsPermitted()) return
         val route = WebPolicy.notificationDestination(workspace, fragment) ?: return
         val manager = application.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("activity", "Chat activity", NotificationManager.IMPORTANCE_DEFAULT))
+        // Defaults apply to a newly created channel only. Reusing its id leaves
+        // existing sound/vibration/mute/DND choices under Android's authority.
+        prepareNotificationChannel()
         val click = Intent(application, MainActivity::class.java).putExtra("destination", fragment).putExtra("workspace", workspace)
             .setData(android.net.Uri.Builder().scheme("agentnet-notification").authority("open").appendQueryParameter("workspace", workspace).appendQueryParameter("destination", fragment).build())
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pending = PendingIntent.getActivity(application, 0, click, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val note = Notification.Builder(application, "activity").setSmallIcon(R.drawable.ic_agentnet)
+        val redacted = Notification.Builder(application, ACTIVITY_CHANNEL).setSmallIcon(R.drawable.ic_agentnet)
             .setContentTitle("AgentNet").setContentText("New activity needs your attention.")
-            .setVisibility(Notification.VISIBILITY_PRIVATE).setContentIntent(pending).setAutoCancel(true).build()
+            .setVisibility(Notification.VISIBILITY_PUBLIC).build()
+        val note = Notification.Builder(application, ACTIVITY_CHANNEL).setSmallIcon(R.drawable.ic_agentnet)
+            .setContentTitle(title.ifBlank { "AgentNet" }).setContentText(body)
+            .setStyle(Notification.BigTextStyle().bigText(body)).setCategory(Notification.CATEGORY_MESSAGE)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(redacted)
+            .setContentIntent(pending).setAutoCancel(true).build()
         manager.notify(route, 0, note)
     }
 }

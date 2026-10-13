@@ -39,6 +39,7 @@
     setConnection: enabled => request('connection:set', { enabled: !!enabled }),
     requestNotifications: () => request('notifications:request'),
     notificationStatus: () => request('notifications:status'),
+    notificationSettings: () => request('notifications:settings'),
     copyText: text => request('clipboard:write', {text}),
     legacyDrafts: () => request('drafts:legacy'),
     acknowledgeLegacyDraft: (key, value) => request('drafts:ack', {key, value}),

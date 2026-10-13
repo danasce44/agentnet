@@ -4,7 +4,8 @@
 // what a request asked of an agent and how far it got (only what its
 // executor or an answer proves), and the approval card when the server
 // lists actions for it. Delivery says only what receipts prove.
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type ReactNode } from "react";
+import { sendID } from "../optimistic.mjs";
 import {
   IconArrowBackUp, IconBolt, IconMessageQuestion, IconCheck, IconChecks, IconClock, IconAlertTriangle, IconEye, IconCircleCheckFilled, IconCircle,
 } from "@tabler/icons-react";
@@ -142,6 +143,7 @@ function Bubble({ m, ctx, all, first = true, last = true, status, compact, group
           </> : !compact && text ? <Markdown text={text} mention={mention} tail={time} />
             : null}
       {!m.deleted && !editing && <MessageFiles m={m} />}
+	  {!readOnly&&!isThreadMsg(m)&&m.verified_agent&&m.topic_event?.request&&m.origin==="agent:organization"&&ctx.dm&&(ctx.dm.role||"member")==="member"&&ctx.canReply&&<UndoTopicMove m={m} conv={ctx.dm.id} />}
       {(!text || compact) && !m.deleted && !editing && <div className="flow-root">{time}</div>}
     </div>
   );
@@ -297,6 +299,12 @@ function Under({ m, ctx, all, who, status, answer, onDetails, onJump }: { m: Any
 
 // The words for joining and leaving are the room panel's: "Ledger joined to
 // help · saw 10 messages · invited by you", "Ledger left · dismissed by you".
+function UndoTopicMove({m,conv}:{m:T.DMMessage;conv:string}){
+	const store=useApp(),id=useRef(sendID()),running=useRef(false),[busy,setBusy]=useState(false),[done,setDone]=useState(false);
+	const undo=async()=>{if(running.current||done)return;running.current=true;setBusy(true);try{const result=await store.run(a=>a.undoTopicOrganization({conv,lid:m.lid||m.id,author:m.send_group_author||m.claimed_key||"",id:id.current}));if(result){setDone(true);store.toast("Restored selected messages","ok");}}finally{running.current=false;setBusy(false);}};
+	return <button type="button" className="mt-2 min-h-11 rounded-lg px-2 text-[13px] underline" disabled={busy||done} onClick={()=>{void undo();}}>{done?"Topic move undone":busy?"Restoring…":"Undo topic move"}</button>;
+}
+
 function EventDivider({ m, ctx, all }: { m: T.DMMessage; ctx: Ctx; all: AnyMsg[] }) {
   const [saw, setSaw] = useState<boolean | null>(null);
   const text = m.event || "";

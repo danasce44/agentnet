@@ -39,6 +39,7 @@ if(importMode){
 }
 if(draftsMode)overview.files={max_file:1048576,max_message:2097152,max_count:8};
 window.fixture={overview,thread,requests:[],topics,destination,previews:0,shares:{}};let open,changed;
+window.refreshFixture=()=>changed?.({type:'change',seq:++overview.seq});
 
 window.confirmStop=()=>{thread.messages[0].exec.state="cancelled";delete thread.messages[0].stop;changed?.({type:"change",seq:++overview.seq});};
 window.resolvePending=()=>{topics[0].pending_ids=[];topics[0].pending=topics[0].waiting=false;changed?.({type:'change',seq:++overview.seq});};
@@ -63,6 +64,7 @@ const host={version:1,platform:'daemon',workspace:{id:'default',name:'P11 local 
  }
  if(p==='/api/topic/organization/preview')return {...body,operation:String(++fixture.previews+5).repeat(32),token:'7'.repeat(64),moves:body.ids.map(id=>({lid:thread.messages.find(m=>m.id===id).lid,author:'11111111-22222222-33333333-44444444',hash:'8'.repeat(64),topic:thread.messages.find(m=>m.id===id).topic||''}))};
  if(p==='/api/topic/organization/apply'){if(fixture.rejectOrganizationStale){fixture.rejectOrganizationStale=false;throw Error('The selected messages, topic or audience changed; review the move again.');}for(const id of body.ids){const m=thread.messages.find(m=>m.id===id);m.topic=body.topic;}changed?.({type:'change',seq:++overview.seq});return {id:body.operation,lid:body.operation,state:'queued'};}
+ if(p==='/api/topic/organization/undo'){if(fixture.loseUndo){fixture.loseUndo=false;throw Error('Synthetic lost response; retry the same undo.');}return [{id:body.id,lid:body.id,state:'queued'}];}
 
  if(p==='/api/dm/send'||p==='/api/send'){
   const id='f'.repeat(32),lid='e'.repeat(32),t={id, ...(kind==='agent'?{peer:peer.address}:{conv}),title:body.body,last:body.body,last_at:at,count:1,unread:0,review:0,running:0,waiting:false,pending:false,state:'active',quiet_since:at};
@@ -239,6 +241,7 @@ const server = http.createServer((req, res) => {
           await page.getByText('2 messages selected',{exact:true}).waitFor();
           await page.getByRole('button',{name:'Move to topic',exact:true}).click();
           let sheet=page.getByRole('dialog',{name:'Move selected messages',exact:true});
+          assert.equal(await sheet.getByRole('option',{name:'Main flow',exact:true}).count(),1,'Main is an explicit move destination');
           await sheet.getByRole('textbox',{name:'New topic name',exact:true}).fill('Reviewed launch history');
           await sheet.getByRole('button',{name:'Review move',exact:true}).click();
           await sheet.getByText('Move 2 messages to “Reviewed launch history”?',{exact:true}).waitFor();
@@ -264,6 +267,12 @@ const server = http.createServer((req, res) => {
           await sheet.getByRole('button',{name:'Review move',exact:true}).click();await sheet.getByRole('button',{name:'Move 1 message',exact:true}).click();await sheet.waitFor({state:'hidden'});
           const merged=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/topic/organization/apply').at(-1));
           assert.deepEqual(merged.body.ids,['3'.repeat(32)]);assert.equal(merged.body.merge,'3'.repeat(32));
+          // New Main choice is explicit and the current verified agent move
+          // exposes a single human Undo with a stable retry identity.
+          await page.evaluate(()=>{fixture.thread.messages.push({id:'9'.repeat(32),lid:'9'.repeat(32),from:'vitalii/desktop',send_group_author:'11111111-22222222-33333333-44444444',dir:'in',kind:'message',body:'Moved selected messages to this topic.',topic:'2'.repeat(32),at:'2026-10-05T10:00:01Z',state:'stored',verified_agent:true,pid:'b'.repeat(32),origin:'agent:organization',topic_event:{action:'move',moves:[{lid:'a'.repeat(32),author:'11111111-22222222-33333333-44444444',hash:'8'.repeat(64)}],request:{lid:'c'.repeat(32),author:'11111111-22222222-33333333-44444444',hash:'8'.repeat(64)}}});fixture.loseUndo=true;});
+          await page.evaluate(()=>refreshFixture());await all().click();await page.getByRole('dialog',{name:'All topics',exact:true}).getByRole('button',{name:/^Topic 2(?:\b)/}).click();
+          const undo=page.getByRole('button',{name:'Undo topic move',exact:true});await undo.click();await undo.waitFor({state:'visible'});await undo.click();await page.getByRole('button',{name:'Topic move undone',exact:true}).waitFor();
+          const undos=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/topic/organization/undo'));assert.equal(undos.length,2);assert.equal(undos[0].body.id,undos[1].body.id);assert.equal(undos[1].body.lid,'9'.repeat(32));assert.equal(undos[1].body.author,'11111111-22222222-33333333-44444444');
           assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,tag+': organization fits narrow view');
           combinations++;console.log('ORGANIZE PASS '+tag);await ctx.close();continue;
         }

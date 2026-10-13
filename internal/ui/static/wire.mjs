@@ -82,6 +82,11 @@ export const StatusProposal = "proposal";
 // protocol.CapAgentReaction: this device reads an assistant's own reactions
 // (envelope.AssistantReaction).
 export const CapAgentReaction = "agr1";
+export const CapMentionReaction = "amr1";
+export const CapAgentOrganization = "aorg1";
+export const OriginAgentOrganization = "agent:organization";
+export const OriginMentionReaction = "agent:mention-reaction";
+export const mentionReaction = n => assistantReaction(n) && !!n.conv && !!n.pid && n.origin === OriginMentionReaction;
 // assistantReaction is envelope.AssistantReaction: a version 3 reaction that
 // names an assistant: a device thread's named executor (agent_id), a
 // conversation participation (pid, maybe agent_id), or a device thread's
@@ -600,13 +605,13 @@ export const clearJSON = (c) => '{"deletion":' + goString(c.deletion) + ',"part"
 // one exact earlier message and carries nothing of a turn.
 function checkV3(n) {
   if (n.kind !== "message" || !n.ref || !validID(n.ref.id) || !validFingerprint(n.ref.fingerprint)) throw new Error("a control is a message about one exact earlier message (ref: id and sender key)");
-  if (n.receiver_route || n.root || n.target || n.pid && !assistantReaction(n) || n.attachments.length || n.reply_to || n.origin && !defaultAssistantReaction(n) || n.emotion || n.status || n.session || n.fallback) {
+  if (n.receiver_route || n.root || n.target || n.pid && !assistantReaction(n) || n.attachments.length || n.reply_to || n.origin && !defaultAssistantReaction(n) && !mentionReaction(n) || n.emotion || n.status || n.session || n.fallback) {
     throw new Error("a control carries nothing but its ref and payload");
   }
   // An assistant's reaction names the assistant: a device thread's named
   // executor or default responder, or a conversation participation.
   if (assistantReaction(n) && (n.agent_id && !validID(n.agent_id) || n.pid && !validID(n.pid) || !n.conv && n.pid || n.conv && !n.pid ||
-    n.origin && (n.conv || n.agent_id || !validToken(n.origin.slice(6), 32)))) {
+    n.origin && !mentionReaction(n) && (n.conv || n.agent_id || !validToken(n.origin.slice(6), 32)))) {
     throw new Error("an assistant reaction names its executor or default responder (device thread) or its participation (conversation)");
   }
   if (n.sub === SubDecision && n.conv) throw new Error("a decision is device-scoped: it goes to the host that holds the request");
@@ -635,21 +640,48 @@ const goBlank = (s) => /^[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029
 // version 2, and their shapes. (The pid rules follow the core as it is now;
 // participation is still in review there.)
 export const topicOrganization=e=>!!e&&["move","merge"].includes(e.action);
+export const mainTopicOrganization=n=>!n.topic&&topicOrganization(n.topic_event)&&n.topic_event.action==="move";
+export const organizationReaderExtension=n=>agentTopicOrganization(n)||mainTopicOrganization(n);
+export const agentTopicOrganization=n=>topicOrganization(n.topic_event)&&n.topic_event.action==="move"&&!!n.topic_event.request&&!!n.pid&&n.origin===OriginAgentOrganization;
+export function parseTopicRequest(r) {
+ const v=strict(r,"organization request",{lid:"string",author:"string",hash:"string",proof:"object"});
+ if(!validID(v.lid)||!validFingerprint(v.author)||!validHash(v.hash))throw Error("invalid organization request binding");
+ const out={lid:v.lid,author:v.author,hash:v.hash};
+ if(v.proof){const p=parseTopicRequestProof(v.proof);if(p.lid!==v.lid||p.author.fingerprint!==v.author||p.hash!==v.hash)throw Error("compact proof differs from organization request");out.proof=p;}
+ return out;
+}
+export function parseTopicRequestProof(value) {
+ const p=strict(value,"compact topic proof",{v:"number",conv:"string",lid:"string",pid:"string",author:"object",target:"object",hash:"string",kind:"string",topic:"string",sig:"string"}),a=strict(p.author,"proof author",{person:"string",roster:"string",address:"string",fingerprint:"string",group_admission:"string"}),t=strict(p.target,"proof target",{address:"string",fingerprint:"string",agent_id:"string",group_admission:"string"});
+ if(p.v!==1||!validHash(p.conv)||!validID(p.lid)||!validID(p.pid)||!validID(a.person)||!validHash(a.roster)||!validAddress(a.address)||!validFingerprint(a.fingerprint)||!validHash(p.hash)||!["question","task"].includes(p.kind)||p.topic&&!validID(p.topic)||a.group_admission&&!validHash(a.group_admission)||t.agent_id&&!validID(t.agent_id)||t.group_admission&&!validHash(t.group_admission)||a.address!==t.address||a.fingerprint!==t.fingerprint||unb64(p.sig,"proof signature").length!==64)throw Error("invalid compact local topic request proof");
+ return {...p,author:a,target:t};
+}
+function topicProofJSON(p,signed=true) {
+ const a=p.author,t=p.target;
+ return '{"v":1,"conv":'+goString(p.conv)+',"lid":'+goString(p.lid)+',"pid":'+goString(p.pid)+',"author":{"person":'+goString(a.person)+',"roster":'+goString(a.roster)+',"address":'+goString(a.address)+',"fingerprint":'+goString(a.fingerprint)+(a.group_admission?',"group_admission":'+goString(a.group_admission):'')+'},"target":{"address":'+goString(t.address)+',"fingerprint":'+goString(t.fingerprint)+(t.agent_id?',"agent_id":'+goString(t.agent_id):'')+(t.group_admission?',"group_admission":'+goString(t.group_admission):'')+'},"hash":'+goString(p.hash)+',"kind":'+goString(p.kind)+(p.topic?',"topic":'+goString(p.topic):'')+(signed?',"sig":'+goString(p.sig):'')+'}';
+}
+export const topicRequestProofCanonical=p=>utf8.encode("agentnet-topic-request-v1\n"+topicProofJSON(p,false));
+export async function verifyTopicRequestProof(value,key) {
+ const p=parseTopicRequestProof(value);await checkPublic(key);
+ if(key.address!==p.author.address||await fingerprint(key)!==p.author.fingerprint||!await verifyBytes(key.sign_key,topicRequestProofCanonical(p),unb64(p.sig)))throw Error("compact topic request author signature differs");return p;
+}
+export function topicRequestJSON(r) {return '{"lid":'+goString(r.lid)+',"author":'+goString(r.author)+',"hash":'+goString(r.hash)+(r.proof?',"proof":'+topicProofJSON(r.proof):'')+'}';}
+
 export function topicEventJSON(e) {
- return '{"action":'+goString(e.action)+(e.seen?.length?',"seen":['+e.seen.map(goString).join(',')+']':'')+(e.moves?.length?',"moves":['+e.moves.map(m=>'{"lid":'+goString(m.lid)+',"author":'+goString(m.author)+',"hash":'+goString(m.hash)+(m.topic?',"topic":'+goString(m.topic):'')+'}').join(',')+']':'')+(e.merge?',"merge":'+goString(e.merge):'')+'}';
+ return '{"action":'+goString(e.action)+(e.seen?.length?',"seen":['+e.seen.map(goString).join(',')+']':'')+(e.moves?.length?',"moves":['+e.moves.map(m=>'{"lid":'+goString(m.lid)+',"author":'+goString(m.author)+',"hash":'+goString(m.hash)+(m.topic?',"topic":'+goString(m.topic):'')+'}').join(',')+']':'')+(e.merge?',"merge":'+goString(e.merge):'')+(e.request?',"request":'+topicRequestJSON(e.request):'')+'}';
 }
 export function parseTopicEvent(e) {
- const v=strict(e,"topic event",{action:"string",seen:"array",moves:"array",merge:"string"});
+ const v=strict(e,"topic event",{action:"string",seen:"array",moves:"array",merge:"string",request:"object"});
  if(!["create","done","open","move","merge"].includes(v.action)||v.seen?.some(id=>typeof id!=="string"||!validID(id)))throw Error("invalid topic action");
- if(!topicOrganization(v)){if(v.moves?.length||v.merge)throw Error("unexpected organization fields");return {action:v.action,...(v.seen?.length?{seen:v.seen}:{})};}
+ if(!topicOrganization(v)){if(v.moves?.length||v.merge||v.request)throw Error("unexpected organization fields");return {action:v.action,...(v.seen?.length?{seen:v.seen}:{})};}
  if(v.seen?.length||!v.moves?.length||v.moves.length>200||v.action==="merge"&&!validID(v.merge)||v.action==="move"&&v.merge)throw Error("invalid selected topic action");
  const seen=new Set(),moves=v.moves.map(ref=>{const m=strict(ref,"topic move",{lid:"string",author:"string",hash:"string",topic:"string"}),key=m.author+":"+m.lid;if(!validID(m.lid)||!validFingerprint(m.author)||!validHash(m.hash)||m.topic&&!validID(m.topic)||seen.has(key)||v.merge&&m.topic!==v.merge)throw Error("invalid selected topic message");seen.add(key);return {lid:m.lid,author:m.author,hash:m.hash,...(m.topic?{topic:m.topic}:{})};});
- return {action:v.action,moves,...(v.merge?{merge:v.merge}:{})};
+ return {action:v.action,moves,...(v.merge?{merge:v.merge}:{}),...(v.request?{request:parseTopicRequest(v.request)}:{})};
 }
 export function checkTopic(n) {
  if(n.topic && (n.v!==Version2||!validID(n.topic)||n.sub))throw Error("topic belongs only on a conversation turn");
- if(n.topic_event){parseTopicEvent(n.topic_event);if(!n.topic||n.kind!=="message"||n.target||agentOrigin(n.origin)||n.status||n.attachments?.length)throw Error("topic event belongs only on a human conversation message");}
- if(topicOrganization(n.topic_event)&&(n.pid||n.human||n.agent_id||n.ref||n.receiver_route||n.followup||n.topic_event.merge===n.topic||n.topic_event.moves.some(m=>m.topic===n.topic)))throw Error("topic organization is an original-member display action");
+ if(n.topic_event){parseTopicEvent(n.topic_event);if(!n.topic&&!mainTopicOrganization(n)||n.kind!=="message"||n.target||agentOrigin(n.origin)&&!agentTopicOrganization(n)||n.status||n.attachments?.length)throw Error("topic event belongs only on a human conversation message");}
+ if(topicOrganization(n.topic_event)&&(n.pid&&!agentTopicOrganization(n)||n.agent_id&&!agentTopicOrganization(n)||n.topic_event.request&&!agentTopicOrganization(n)||n.human||n.ref||n.receiver_route||n.followup||n.topic_done||n.topic_event.merge&&n.topic_event.merge===n.topic||n.topic_event.moves.some(m=>(m.topic||"")===(n.topic||""))))throw Error("topic organization is an original-member display action");
+ if(agentTopicOrganization(n)){const r=parseTopicRequest(n.topic_event.request);if(!validID(n.pid)||n.agent_id&&!validID(n.agent_id)||r.proof&&(n.conv&&r.proof.conv!==n.conv||r.proof.pid!==n.pid||r.proof.target.agent_id!==(n.agent_id||"")))throw Error("compact proof differs from exact organization binding");}
  if(n.topic_done&&(![Version,Version2].includes(n.v)||n.status!=="done"||!["answer","result"].includes(n.kind)||n.v===Version2&&(!n.topic||!n.pid||!agentOrigin(n.origin))))throw Error("topic_done belongs only on a completed agent answer or result");
 }
 export function checkSendGroup(n) {
@@ -695,7 +727,7 @@ async function checkV2(n) {
     const root = parseGroupRoot(n.root);
     if (root.kind !== "group" || !n.pid || !validHash(n.target.group_admission) || !["question", "task"].includes(n.kind)) throw new Error("group: requester admission is only for a PID-addressed group request");
   }
-  if (n.agent_id && !assistantReaction(n) && (!validID(n.agent_id) || n.v === Version3 || !proactiveAgent(n) && (!["answer", "result"].includes(n.kind) && n.status !== StatusProgress || !n.reply_to || n.sub))) throw new Error("a named agent author belongs on a reply answer, result or progress");
+  if (n.agent_id && !assistantReaction(n) && (!validID(n.agent_id) || n.v === Version3 || !proactiveAgent(n) && !agentTopicOrganization(n) && (!["answer", "result"].includes(n.kind) && n.status !== StatusProgress || !n.reply_to || n.sub))) throw new Error("a named agent author belongs on a reply answer, result or progress");
   if (n.target?.agent_id && !validID(n.target.agent_id)) throw new Error("invalid named agent target");
   if (n.v === Version3) { checkV3(n); return; }
   if (n.ref) throw new Error("a control ref belongs to a version 3 message");
@@ -754,7 +786,7 @@ async function checkV2(n) {
     if (!validID(n.pid)) throw new Error("invalid participation id");
     const request = n.sub === "" && (n.kind === "question" || n.kind === "task") && n.target;
     const output = n.sub === "" && (n.kind === "answer" || n.kind === "result" || n.kind === "message" && n.status === StatusProgress);
-    if (n.sub !== "event" && n.sub !== "excerpt" && ![SubGroupProof, SubGroupContext].includes(n.sub) && !request && !output && !proactiveAgent(n) && !(n.human && !n.sub && n.kind === "message")) throw new Error("a participation id is not allowed on this message");
+    if (n.sub !== "event" && n.sub !== "excerpt" && ![SubGroupProof, SubGroupContext].includes(n.sub) && !request && !output && !proactiveAgent(n) && !agentTopicOrganization(n) && !(n.human && !n.sub && n.kind === "message")) throw new Error("a participation id is not allowed on this message");
   }
 }
 
@@ -992,7 +1024,7 @@ export const convRootVersionLimit = (v) => v === GroupRootVersion ? MaxGroupRoot
 const convRootSizeLimit = (json) => { try { return convRootVersionLimit(JSON.parse(json).v); } catch (_) { return MaxConvRoot; } };
 export const CapProactiveAgent = "ams1";
 export const proactiveAgent = n => n.kind === "message" && !n.sub && !n.status && !n.reply_to && !n.target && !!n.conv && !!n.pid && n.origin === "agent:proactive" && !n.receiver_route;
-export const MaxCaps = 32, MaxAdvertisedCaps = 24; // older readers already parse up to 32 names
+export const MaxCaps = 32, MaxAdvertisedCaps = 26; // older readers already parse up to 32 names
 export const MaxCapsRecord = 1024;
 export const CapEnv2 = "env2";
 export const CapPerson = "person2"; // reads person roster chains, roots v2, fan-out and history
@@ -1345,8 +1377,8 @@ export function parseHistory(json) {
   const target = f.target ? strict(f.target, "target", { address: "string", fingerprint: "string", agent_id: "string", group_admission: "string" }) : null;
   const assistant = historyAssistantReaction(f); // a conversation assistant's own reaction: its participation, maybe its agent
   const proactive = proactiveAgent({...f,conv:"history"}) && validID(f.pid);
-  if (assistant && (!validID(f.pid || "") || f.agent_id && !validID(f.agent_id) || f.origin || target)) throw new Error("a malformed assistant reaction history item");
-  if (!assistant && f.agent_id && (!validID(f.agent_id) || !proactive && (!["answer", "result"].includes(f.kind) && f.status !== StatusProgress || !f.reply_to || f.sub)) || target?.agent_id && !validID(target.agent_id)) throw new Error("a malformed named history item");
+  if (assistant && (!validID(f.pid || "") || f.agent_id && !validID(f.agent_id) || f.origin && f.origin!==OriginMentionReaction || target)) throw new Error("a malformed assistant reaction history item");
+  if (!assistant && f.agent_id && (!validID(f.agent_id) || !proactive && !agentTopicOrganization({...f,conv:"history"}) && (!["answer", "result"].includes(f.kind) && f.status !== StatusProgress || !f.reply_to || f.sub)) || target?.agent_id && !validID(target.agent_id)) throw new Error("a malformed named history item");
   const ref = f.ref ? strict(f.ref, "ref", { id: "string", fingerprint: "string" }) : null;
   if (ref && (!validID(ref.id || "") || !validFingerprint(ref.fingerprint || ""))) throw new Error("a malformed history item");
   if (ref && !isControl(f.sub || "")) throw new Error("a malformed history item");
@@ -1784,11 +1816,17 @@ export async function verifyAgent(r, host) {
 // The durable outbox keeps this requirement even when ciphertext cannot be reopened.
 // A room shape keeps its conversation's primary (a group's grp1, a DM's
 // hgp1); delivery adds rm1 to it (engine roomCopy, ROOM_V1 §2.5).
+export function retainedAgentActionRequirements(row) {
+ let n=row;if(row.sub==="history"&&row.body)try{n=parseHistory(row.body);}catch{}
+ return {mention_cap:!!(row.mention_cap||row.required_cap===CapMentionReaction||n.origin===OriginMentionReaction&&n.pid&&n.sub===SubReaction),organization_cap:!!(row.organization_cap||row.required_cap===CapAgentOrganization||organizationReaderExtension(n))};
+}
 export function agentRequirement(n) {
   try {
     if (n.human && n.root && parseConvRoot(n.root).kind === "group") return CapGroup; // a captured audience in a group: a group copy
     if (n.sub === "excerpt" && n.pid) return CapExternalParticipation;
     if (n.sub === "history") n = parseHistory(n.body);
+    if (mentionReaction(n)||n.origin===OriginMentionReaction&&historyAssistantReaction(n)) return CapMentionReaction;
+    if (organizationReaderExtension(n)) return CapAgentOrganization;
     if (assistantReaction(n) || historyAssistantReaction(n)) return CapAgentReaction; // as history too: never stored by an older reader as its host's mark
     if (n.sub === "excerpt" && n.pid) return CapExternalParticipation;
     if (n.human) return CapHumanParticipation;

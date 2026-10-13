@@ -33,6 +33,9 @@ type RunOptions struct {
 	// after existing local suppression and due bookkeeping.
 	// Its fragment is a validated destination, never message content. Nil uses desktop notifications.
 	Notify func(fragment string)
+	// NotifyContent opts into bounded locally decrypted display text. Native
+	// platforms must provide a redacted public lock-screen presentation.
+	NotifyContent func(NativeNotification)
 
 	// Listen is the address to accept direct deliveries on (e.g. ":7443").
 	// Empty disables direct delivery; everything then goes through the Hub.

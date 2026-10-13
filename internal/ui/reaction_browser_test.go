@@ -50,7 +50,18 @@ func TestBrowserAssistantReactionsMatchGo(t *testing.T) {
 	if !found || json.Unmarshal(line, &human) != nil {
 		t.Fatalf("guest-audience vectors missing:\n%s", hout)
 	}
-	input, _ := json.Marshal(map[string]any{"vectors": vectors, "human_vectors": human})
+	ogen := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), "test", "-count=1", "-v", "-run", "^TestAgentOrganizationWireVectors$", "github.com/misunders2d/agentnet/internal/client")
+	oout, err := ogen.CombinedOutput()
+	if err != nil {
+		t.Fatalf("organization vector: %v\n%s", err, oout)
+	}
+	_, oline, found := bytes.Cut(oout, []byte("AGENT_ORGANIZATION_VECTOR_JSON "))
+	oline, _, _ = bytes.Cut(oline, []byte("\n"))
+	var organization json.RawMessage
+	if !found || json.Unmarshal(oline, &organization) != nil {
+		t.Fatalf("organization vector missing:\n%s", oout)
+	}
+	input, _ := json.Marshal(map[string]any{"vectors": vectors, "human_vectors": human, "organization": organization})
 	cmd := exec.Command(node, "testdata/reaction_engine_check.mjs")
 	cmd.Stdin = bytes.NewReader(input)
 	var stdout, stderr bytes.Buffer

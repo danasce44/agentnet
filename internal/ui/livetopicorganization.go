@@ -25,6 +25,31 @@ func (l *Live) ApplyTopicOrganization(d client.TopicOrganizationReview) (client.
 	return v, nil
 }
 
+func (l *Live) UndoTopicOrganization(d client.TopicOrganizationUndo) ([]client.ConvSent, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), l.timeout)
+	defer cancel()
+	v, err := l.a.UndoTopicOrganization(ctx, d)
+	if err != nil {
+		return v, Refuse(sentence(err))
+	}
+	return v, nil
+}
+func (s *Server) undoTopicOrganization(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.p.(interface {
+		UndoTopicOrganization(client.TopicOrganizationUndo) ([]client.ConvSent, error)
+	})
+	if !ok {
+		writeErr(w, NotFound("topic undo is not available here"))
+		return
+	}
+	var d client.TopicOrganizationUndo
+	if !readJSON(w, r, &d) {
+		return
+	}
+	v, err := p.UndoTopicOrganization(d)
+	writeResult(w, v, err)
+}
+
 func (s *Server) previewTopicOrganization(w http.ResponseWriter, r *http.Request) {
 	p, ok := s.p.(interface {
 		PreviewTopicOrganization(client.TopicOrganizationRequest) (client.TopicOrganizationReview, error)

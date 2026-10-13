@@ -53,6 +53,7 @@ struct Shell {
     app_calls: Mutex<std::collections::HashMap<u64, Sender<(u16, String)>>>,
     app_call_id: std::sync::atomic::AtomicU64,
     downloads: Mutex<std::collections::HashMap<String, OsString>>,
+    download_destinations: Mutex<std::collections::HashMap<String, PathBuf>>,
     page: Mutex<Option<Url>>,       // the page the program announced last (with its token)
     splash: Mutex<Option<Url>>,     // the window's own starting page
     pending: Mutex<Option<String>>, // a link's fragment that came before the page
@@ -74,7 +75,7 @@ fn main() {
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![clipboard::agentnet_clipboard_image, skinfolder::agentnet_skin_folder, download::agentnet_download_blob, appcontrols::agentnet_app_controls])
+        .invoke_handler(tauri::generate_handler![clipboard::agentnet_clipboard_image, skinfolder::agentnet_skin_folder, download::agentnet_download_blob, download::agentnet_cancel_download, appcontrols::agentnet_app_controls])
         .manage(Shell::default())
         .setup(move |app| {
             #[cfg(target_os = "linux")]
@@ -87,7 +88,7 @@ fn main() {
             let handle = app.handle().clone();
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .initialization_script(include_str!("clipboard.js"))
-                .initialization_script(if cfg!(target_os = "linux") { include_str!("download.js") } else { "" })
+                .initialization_script(if cfg!(target_os = "linux") { concat!("window.__agentnetLinuxDownloads=true;", include_str!("download.js")) } else { include_str!("download.js") })
                 .title("AgentNet")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(380.0, 600.0)
@@ -119,11 +120,29 @@ fn main() {
                             if let Ok(dir) = h.path().download_dir() {
                                 let name = requested_name
                                     .or_else(|| destination.file_name().map(|n| n.to_owned())).unwrap_or_else(|| OsString::from("download"));
-                                *destination = unique(dir.join(name));
+                                // Reserve before the native downloader creates
+                                // the file: simultaneous clicks must not select
+                                // the same as-yet nonexistent destination.
+                                let shell = h.state::<Shell>();
+                                let mut reserved = shell.download_destinations.lock().unwrap();
+                                let Some(available) = unique(dir.join(name), &reserved) else {
+                                    if let Some(window) = h.get_webview_window("main") {
+                                        download::notice(&window, url.as_str(), "", "failed", None);
+                                    }
+                                    return false;
+                                };
+                                *destination = available;
+                                reserved.insert(url.to_string(), destination.clone());
+                            }
+                            if let Some(window) = h.get_webview_window("main") {
+                                download::notice(&window, url.as_str(), &destination.file_name().unwrap_or_default().to_string_lossy(), "starting", None);
                             }
                         } else if let DownloadEvent::Finished { url, success, .. } = event {
                             h.state::<Shell>().downloads.lock().unwrap().remove(url.as_str());
-                            if !success { h.dialog().message("AgentNet could not save this download. Try Download again.").title("Download failed").show(|_| {}); }
+                            h.state::<Shell>().download_destinations.lock().unwrap().remove(url.as_str());
+                            if let Some(window) = h.get_webview_window("main") {
+                                download::notice(&window, url.as_str(), "", if success { "saved" } else { "failed" }, None);
+                            }
                         }
                         true
                     }
@@ -272,19 +291,61 @@ fn open_outside(app: &AppHandle, url: &Url) {
 }
 
 /// unique is path, or path with " (2)", " (3)" … when that file exists.
-fn unique(path: PathBuf) -> PathBuf {
-    if !path.exists() {
-        return path;
+fn unique(path: PathBuf, reserved: &std::collections::HashMap<String, PathBuf>) -> Option<PathBuf> {
+    let taken = |candidate: &PathBuf| candidate.exists() || reserved.values().any(|p| p == candidate);
+    if !taken(&path) {
+        return Some(path);
     }
     let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
     for n in 2..1000 {
         let p = path.with_file_name(format!("{stem} ({n}){ext}"));
-        if !p.exists() {
-            return p;
+        if !taken(&p) {
+            return Some(p);
         }
     }
-    path
+    None
+}
+
+#[cfg(test)]
+mod download_destination_tests {
+    use super::*;
+    #[test]
+    fn independent_click_leases_reserve_every_active_destination() {
+        let path = std::env::temp_dir().join(format!("agentnet-leases-{}.txt", std::process::id()));
+        let mut reserved = std::collections::HashMap::new();
+        for click in 1..=3 {
+            let destination = unique(path.clone(), &reserved).unwrap();
+            assert!(!reserved.values().any(|p| p == &destination));
+            reserved.insert(format!("blob:host/click-{click}"), destination);
+        }
+        assert_eq!(reserved.len(), 3);
+        reserved.remove("blob:host/click-2");
+        let next = unique(path.clone(), &reserved).unwrap();
+        assert_ne!(next, reserved["blob:host/click-1"]);
+        assert_ne!(next, reserved["blob:host/click-3"]);
+        assert_eq!(next, path.with_file_name(format!("agentnet-leases-{} (2).txt", std::process::id())));
+    }
+    #[test]
+    fn exhausted_names_never_overwrite_an_existing_file() {
+        let root = std::env::temp_dir().join(format!("agentnet-download-names-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("result.txt");
+        std::fs::write(&path, b"original").unwrap();
+        let mut reserved = std::collections::HashMap::new();
+        for n in 2..1000 {
+            let name = root.join(format!("result ({n}).txt"));
+            std::fs::write(&name, b"earlier").unwrap();
+        }
+        assert_eq!(unique(path.clone(), &reserved), None);
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        let spare = root.join("result (999).txt");
+        std::fs::remove_file(&spare).unwrap();
+        assert_eq!(unique(path.clone(), &reserved), Some(spare.clone()));
+        reserved.insert("active".into(), spare);
+        assert_eq!(unique(path, &reserved), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// take_link shows a link's destination: in the page when it is known,

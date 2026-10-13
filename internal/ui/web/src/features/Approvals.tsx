@@ -38,7 +38,8 @@ const reviewAsks = (o: T.Overview) => (o.review || []).filter((r) => !r.notice &
  *  are listed in OKs but are not decisions, so they are not counted. */
 export function needsYouCount(o: T.Overview | null, local = false): number {
   if (!o) return 0;
-  return decidable(o).length + reviewAsks(o).length + groupInvites(o).length + deviceAsks(o).length + heldDecisionPeers(o, local).size;
+  const native = (o.review || []).filter(r => r.notice).reduce((count,r) => count + (r.report?.items || []).filter(x => x.native && !x.result && (x.native.expires === 0 || x.native.expires > Date.now())).length,0);
+  return native + decidable(o).length + reviewAsks(o).length + groupInvites(o).length + deviceAsks(o).length + heldDecisionPeers(o, local).size;
 }
 
 /** useNeedsYou: the one count of what waits for you, for the OKs badge, the

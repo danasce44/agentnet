@@ -26,6 +26,7 @@ type copyNeeds struct {
 	v                                                                              int
 	proactive, progress, receiverCap, room, topicScoped, organizationCap, followup bool
 	proposal, groupedWire                                                          bool
+	mentionCap, agentOrganizationCap                                               bool
 	// A history copy's carried item. A copy kept as ciphertext only (empty
 	// body) carries none: its requirement is the stored column.
 	item               HistoryItem
@@ -37,8 +38,8 @@ type copyNeeds struct {
 func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 	n := copyNeeds{v: v}
 	var kind, origin, reply, target string
-	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group,coalesce(kind,''),coalesce(origin,''),coalesce(reply_to,''),coalesce(target,'') FROM outbox WHERE id=?`, id).
-		Scan(&n.stored, &n.conv, &n.sub, &n.body, &n.pid, &n.humanRaw, &n.status, &n.agentID, &n.capturedFP, &n.groupedWire, &kind, &origin, &reply, &target); err != nil {
+	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group,coalesce(kind,''),coalesce(origin,''),coalesce(reply_to,''),coalesce(target,''),mention_cap,organization_cap FROM outbox WHERE id=?`, id).
+		Scan(&n.stored, &n.conv, &n.sub, &n.body, &n.pid, &n.humanRaw, &n.status, &n.agentID, &n.capturedFP, &n.groupedWire, &kind, &origin, &reply, &target, &n.mentionCap, &n.agentOrganizationCap); err != nil {
 		return n, err
 	}
 	n.required = n.stored
@@ -93,6 +94,12 @@ func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 			n.proactive = envelope.ProactiveAgent(n.item.inner(n.conv))
 		}
 	}
+	if n.required == "" && n.mentionCap {
+		n.required = protocol.CapMentionReaction
+	}
+	if n.required == "" && n.agentOrganizationCap {
+		n.required = protocol.CapAgentOrganization
+	}
 	return n, nil
 }
 
@@ -103,7 +110,7 @@ func (n copyNeeds) cacheKey(to string) string {
 	return fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%v%v%v%v%v%v%v%v%v%v%v\x00%s\x00%s\x00%s\x00%s",
 		to, n.v, n.required, n.stored, n.conv, n.sub, n.pid, n.humanRaw, n.status, n.agentID,
 		n.progress, n.receiverCap, n.room, n.topicScoped, n.organizationCap, n.followup, n.proposal, n.groupedWire, n.historical, n.helper, item.GroupHistory != nil,
-		item.Sub, item.Status, item.PID, item.AgentID) + fmt.Sprint(n.proactive)
+		item.Sub, item.Status, item.PID, item.AgentID) + fmt.Sprint(n.proactive, n.mentionCap, n.agentOrganizationCap)
 }
 
 // copyWait is a reason a copy waits that capSupport words itself.
@@ -132,6 +139,16 @@ func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public,
 		return nil
 	}
 	var err error
+	if n.mentionCap {
+		if err = a.requireParticipationCaps(ctx, key, protocol.CapMentionReaction); err != nil {
+			return err
+		}
+	}
+	if n.agentOrganizationCap {
+		if err = a.requireParticipationCaps(ctx, key, protocol.CapAgentOrganization); err != nil {
+			return err
+		}
+	}
 	if n.proactive {
 		if err = capWait(protocol.CapProactiveAgent); err != nil {
 			return err
@@ -170,10 +187,10 @@ func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public,
 	if err == nil && n.progress && required == protocol.CapProgress && n.agentID != "" {
 		err = a.requireParticipationCaps(ctx, key, protocol.CapAgentIdentity)
 	}
-	if err == nil && required == protocol.CapAgentReaction { // and what the assistant's own reply needs there
+	if err == nil && (required == protocol.CapAgentReaction || required == protocol.CapMentionReaction) { // and what the assistant's own reply needs there
 		err = a.assistantReactionCaps(ctx, key, n.conv, n.pid, n.agentID)
 	}
-	if err == nil && required == protocol.CapAgentReaction && n.humanRaw != "" { // to a captured audience: as a human-audience turn
+	if err == nil && (required == protocol.CapAgentReaction || required == protocol.CapMentionReaction) && n.humanRaw != "" { // to a captured audience: as a human-audience turn
 		err = a.requireParticipationCaps(ctx, key, protocol.CapHumanParticipation)
 	}
 	if err == nil && n.groupedWire {

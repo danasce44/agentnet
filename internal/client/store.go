@@ -327,7 +327,7 @@ CREATE TABLE reported(
 CREATE INDEX outbox_conv_lid ON outbox(conv, lid);
 `, historyReceiptSchema, deviceHistorySchema, proposalChoiceSchema, receiptGenerationSchema, requestFollowupSchema, answeredConversationStatusSchema, modelReportSchema, heldCopySchema, retainedConversationStatusSchema, heldLogicalSchema, waitingConversationStatusSchema, topicMarkSyncSchema, skippedCopySchema, historyArchiveSchema, `
 ALTER TABLE quarantine ADD COLUMN relay_ingress INTEGER NOT NULL DEFAULT 0;
-`, deviceHistoryOriginalPeerSchema, groupPublicationBindingSchema}
+`, deviceHistoryOriginalPeerSchema, groupPublicationBindingSchema, agentActionSchema, nativeApprovalSchema}
 
 // Outbox states. Hub states (custody, delivered) are stored as reported.
 const (
@@ -1383,7 +1383,7 @@ func (s *store) finishJob(id, state, detail string) error {
 // waiting here.
 func (s *store) unnotified() (ids []string, total int, err error) {
 	args := append(append([]any{}, alertReviewStates...), envelope.KindMessage, envelope.StatusReviewNotice)
-	rows, err := s.db.Query(`SELECT id, notified FROM inbox WHERE `+inAlertReview+` AND NOT (`+receivedNotice+`) AND (state != 'running' OR detail LIKE 'Seems stuck:%')`, args...)
+	rows, err := s.db.Query(`SELECT id, notified FROM inbox WHERE `+inAlertReview+` AND NOT (`+receivedNotice+`) AND (state != 'running' OR detail LIKE 'Seems stuck:%' OR EXISTS(SELECT 1 FROM native_requests n WHERE n.request=inbox.id AND n.attempt=inbox.attempts AND n.state='pending' AND (n.deadline=0 OR n.deadline>unixepoch('subsec')*1000)))`, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1415,6 +1415,9 @@ func (s *store) markNotified(ids []string) error {
 // rerun automatically: a task may already have had effects. Their
 // requesters are told (status_due; noteStatus).
 func (s *store) interruptRunning() error {
+	if _, err := s.db.Exec(`UPDATE native_requests SET state='ended',view='',params='',response='' WHERE state!='ended'`); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`UPDATE inbox SET state = ?, detail = 'the daemon stopped while this was running', status_due = status_due + 1,
 		run_pgid = NULL, run_start = NULL WHERE state IN (?, ?)`, stateInterrupt, stateRunning, stateCancelReq)
 	return s.done(err)

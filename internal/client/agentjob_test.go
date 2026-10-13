@@ -251,7 +251,7 @@ func TestAgentContextBound(t *testing.T) {
 	setResponder(t, w.bob, "agentstub", st.dir, time.Minute)
 	pid := participate(t, w, conv, lids[:2], nil)
 	old := agentContextBytes
-	agentContextBytes = 90 // one line naming its speaker as a person on a device
+	agentContextBytes = 256 // one line including exact message/author refs and speaker
 	t.Cleanup(func() { agentContextBytes = old })
 	q, err := w.alice.AskAgent(tctx(t), pid, envelope.KindQuestion, "what failed?")
 	if err != nil {
@@ -259,13 +259,13 @@ func TestAgentContextBound(t *testing.T) {
 	}
 	replyAt(t, w.alice, conv, q.ID)
 	prompt := st.last()
-	if !strings.Contains(prompt, "(1 earlier message(s) left out to stay within 90 bytes.)") ||
+	if !strings.Contains(prompt, "(1 earlier message(s) left out to stay within 256 bytes.)") ||
 		strings.Contains(prompt, "deploy failed at step 3\n") || !strings.Contains(prompt, "logs are in the ticket") {
 		t.Fatalf("bounded prompt:\n%s", prompt)
 	}
 	info := stateAt(t, w.bob, pid)
 	c, err := w.bob.agentContext(info, "", 90)
-	if err != nil || c.Bytes > 90 || c.Omitted == 0 || len(c.lines) != len(c.Messages) {
+	if err != nil || c.Bytes > 90 || c.Omitted < 2 || len(c.Messages) != 0 || len(c.lines) != len(c.Messages) {
 		t.Fatalf("context: %+v %v", c, err)
 	}
 }

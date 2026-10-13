@@ -940,9 +940,15 @@ a runtime service.
 Push depends on the v2 `attn` flag, so it cannot ship with v1-only S-W. It is its
 own slice, **S-P**, after S-B.
 
-**Notification content** follows existing owner direction: content-free and
-attention-only. Richer, locally decrypted notification content is a possible later
-option, not a gate.
+**Notification content (v0.8.27 owner requirement)** keeps relay/Web Push,
+browser and desktop payloads content-free. Android's embedded core now decrypts
+locally and supplies a bounded sender title, message preview and exact local
+destination to its private native notification, with a generic public version.
+This supersedes the earlier blanket content-free presentation rule; no preview
+is sent to the relay or push service. Eligibility, mute/read/history/dedup
+suppression remain. Android retains existing channel sound/vibration/importance
+choices and exposes their status and direct channel settings, rather than
+resetting them on upgrade. See `revival/NOTIFY.md` for the current contract.
 
 ## 13. Emotional avatar reactions (Required, DECISIONS §4)
 

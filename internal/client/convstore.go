@@ -564,6 +564,9 @@ func (s *store) addConvOutbox(copies []outCopy, local envelope.Inner, claim func
 			in.Kind, in.Origin, in.Emotion, targetJSON(in.Target), now.UnixMilli(), in.PID, in.Sub, refID, refFP, in.AgentID, copyRequirement(c), c.recipientFP, c.groupAdmission); err != nil {
 			return err
 		}
+		if err := storeAgentActionRequirements(tx, c); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`UPDATE outbox SET send_group=?,wire_send_group=? WHERE id=?`, local.SendGroup, in.SendGroup != "", env.ID); err != nil {
 			return err
 		}

@@ -1,4 +1,20 @@
-# Optional messenger notifications: core contract (checkpoint 1)
+# Optional messenger notifications: core contract
+
+v0.8.27 Android presentation supersedes the original content-free banner rule
+below. Android's embedded core decrypts locally and forwards a bounded sender
+title, message preview and exact local destination to the native shell. No
+plaintext preview enters relay/Web Push payloads; desktop and browser banners
+remain content-free. Android uses a private notification with a generic public
+lock-screen version, subject to the person's OS privacy settings. Existing
+eligibility, mute, read, replica and duplicate suppression rules remain.
+
+Fresh Chat activity channels default to sound and vibration. Existing channels
+retain Android's saved behavior: upgrades cannot repair a vibration-off or silent
+channel automatically. Settings reads the actual channel importance, sound and
+vibration and offers its Android settings screen. It never resets or rotates the
+channel, grants a permission, or changes mute, sound mode or Do Not Disturb.
+First notification consent starts the existing background connection only when
+no connection choice was saved; a saved off or Stop choice wins.
 
 Owner requirement (2026-09-29): optional notifications for ordinary DM
 activity on desktop and mobile, in this release, off until the person turns
@@ -30,11 +46,12 @@ daemon); the browser device (service worker, settings, page controls,
   answer or result (`pid`, `origin: agent:*`). Never: participation events,
   excerpts, replicas, receipts, legacy (v1) agent traffic, agent background
   work. The sender marks it (a hint); the receiver's preferences decide.
-- **Content-free.** Banner "AgentNet" / "New activity". The payload names
+- **Content-free relay, browser and desktop.** Banner "AgentNet" / "New activity". The payload names
   only an opaque channel (§2); the click opens the conversation that the
   device itself resolves from that channel, after syncing if needed, or the
   inbox with an honest "not available here" state. Never a URL or id from
   the payload used as is.
+  Android's locally decrypted preview exception is specified above.
 - **Not a promise.** An alert may be late, dropped or suppressed by the OS
   (permission, Focus, battery, network); a crash between showing it and
   recording it may show it twice. Presentation suppression has a bounded

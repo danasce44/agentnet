@@ -26,6 +26,7 @@ type TopicOrganizationRequest struct {
 	Merge string   `json:"merge,omitempty"`
 	New   bool     `json:"new,omitempty"`
 	Title string   `json:"title,omitempty"`
+	Main  bool     `json:"main,omitempty"` // explicitly chosen; an omitted destination is invalid
 }
 type TopicOrganizationReview struct {
 	TopicOrganizationRequest
@@ -36,15 +37,21 @@ type TopicOrganizationReview struct {
 }
 
 func (a *Agent) PreviewTopicOrganization(request TopicOrganizationRequest) (TopicOrganizationReview, error) {
+	return a.previewTopicOrganization(request, func(q dbq) error {
+		return topicOrganizationAuthor(q, request.Conv, a.Address, a.Self().Fingerprint())
+	})
+}
+
+func (a *Agent) previewTopicOrganization(request TopicOrganizationRequest, authorize func(dbq) error, excerptPID ...string) (TopicOrganizationReview, error) {
 	var out TopicOrganizationReview
-	if !protocol.ValidHash(request.Conv) || len(request.IDs) == 0 || len(request.IDs) > envelope.MaxTopicMoves || !protocol.ValidID(request.Topic) || request.Merge != "" && (!protocol.ValidID(request.Merge) || request.Merge == request.Topic) {
+	if !protocol.ValidHash(request.Conv) || len(request.IDs) == 0 || len(request.IDs) > envelope.MaxTopicMoves || request.Topic == "" && (!request.Main || request.New || request.Merge != "") || request.Topic != "" && (!protocol.ValidID(request.Topic) || request.Main) || request.Merge != "" && (!protocol.ValidID(request.Merge) || request.Merge == request.Topic) {
 		return out, errors.New("choose at most 200 messages and a different topic in this chat")
 	}
 	request.Title = strings.Join(strings.Fields(request.Title), " ")
 	if utf8.RuneCountInString(request.Title) > TopicTitleMax {
 		return out, ErrTopicTitle
 	}
-	if err := topicOrganizationAuthor(a.store.db, request.Conv, a.Address, a.Self().Fingerprint()); err != nil {
+	if err := authorize(a.store.db); err != nil {
 		return out, err
 	}
 	before, err := a.topicOrganizationStamp(a.store.db, request)
@@ -69,7 +76,34 @@ func (a *Agent) PreviewTopicOrganization(request TopicOrganizationRequest) (Topi
 	if err != nil {
 		return out, err
 	}
-	known := false
+	known := request.Main
+	// An inverse may restore an emptied topic. Its accepted original signed
+	// topic/create record persists even when the topic list has no messages.
+	for _, m := range msgs {
+		if m.Topic == request.Topic && request.Topic != "" && (m.TopicEvent == nil || m.TopicEvent.Action == "create") {
+			known = true
+		}
+	}
+	var sourceEvents []ConvMessage
+	for _, m := range msgs {
+		if m.Topic == request.Topic && m.TopicEvent != nil && !envelope.TopicOrganization(m.TopicEvent) {
+			sourceEvents = append(sourceEvents, m)
+		}
+	}
+	sortChatEvents(sourceEvents)
+	if len(sourceEvents) > 0 && sourceEvents[len(sourceEvents)-1].TopicEvent.Action == "done" {
+		return out, errors.New("reopen the destination topic first")
+	}
+	if request.Topic != "" {
+		var mark string
+		err := a.store.db.QueryRow(`SELECT coalesce(mark,'') FROM topic_state WHERE peer=? AND topic=?`, request.Conv, request.Topic).Scan(&mark)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return out, err
+		}
+		if mark == "archived" || mark == "deleted" {
+			return out, errors.New("reopen the destination topic first")
+		}
+	}
 	for _, topic := range topics {
 		if topic.ID == request.Topic {
 			known = true
@@ -98,7 +132,7 @@ func (a *Agent) PreviewTopicOrganization(request TopicOrganizationRequest) (Topi
 			}
 			selected = m
 		}
-		if selected == nil || selected.Sub != "" || selected.TopicEvent != nil || selected.ExcerptPID != "" || selected.Deleted {
+		if selected == nil || selected.Sub != "" || selected.TopicEvent != nil || selected.ExcerptPID != "" && (len(excerptPID) != 1 || selected.ExcerptPID != excerptPID[0]) || selected.Deleted {
 			return out, ErrNoMessage
 		}
 		m := *selected
@@ -109,14 +143,25 @@ func (a *Agent) PreviewTopicOrganization(request TopicOrganizationRequest) (Topi
 		if !protocol.ValidFingerprint(author) || assigned[m.LID] == request.Topic || request.Merge != "" && assigned[m.LID] != request.Merge {
 			return out, ErrTopicOrganizationChanged
 		}
-		rows, e := a.historySourceRows(a.store.db, "conv=? AND (id=? OR lid=?)", "dir,id", 1, request.Conv, m.ID, m.LID)
-		if e != nil || len(rows) != 1 {
-			if e != nil {
-				return out, e
+		var item HistoryItem
+		var e error
+		if m.ExcerptPID != "" {
+			p, err := a.participation(request.Conv, m.ExcerptPID)
+			if err != nil {
+				return out, err
 			}
-			return out, ErrNoMessage
+			item, _, e = grantedAgentSnapshot(a.store.db, p, protocol.GrantRef{LID: m.LID, Fingerprint: author})
+		} else {
+			rows, err := a.historySourceRows(a.store.db, "conv=? AND (id=? OR lid=?)", "dir,id", 1, request.Conv, m.ID, m.LID)
+			e = err
+			if e != nil || len(rows) != 1 {
+				if e != nil {
+					return out, e
+				}
+				return out, ErrNoMessage
+			}
+			item, e = a.historySourceItem(a.store.db, rows[0])
 		}
-		item, e := a.historySourceItem(a.store.db, rows[0])
 		if e != nil {
 			return out, e
 		}

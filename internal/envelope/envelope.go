@@ -139,10 +139,11 @@ type Inner struct {
 // TopicEvent is a shared human action. Seen names exact logical turns covered
 // by done/open; a later or previously unseen turn always ends the mark.
 type TopicEvent struct {
-	Action string      `json:"action"`
-	Seen   []string    `json:"seen,omitempty"`
-	Moves  []TopicMove `json:"moves,omitempty"`
-	Merge  string      `json:"merge,omitempty"` // old topic; only the explicitly selected cutoff moves
+	Action  string        `json:"action"`
+	Seen    []string      `json:"seen,omitempty"`
+	Moves   []TopicMove   `json:"moves,omitempty"`
+	Merge   string        `json:"merge,omitempty"` // old topic; only the explicitly selected cutoff moves
+	Request *TopicRequest `json:"request,omitempty"`
 }
 
 // CheckTopic is shared by live envelopes and retained history.
@@ -151,13 +152,13 @@ func CheckTopic(in Inner) error {
 		return errors.New("topic belongs only on a conversation turn")
 	}
 	if e := in.TopicEvent; e != nil {
-		if in.Topic == "" || in.Kind != KindMessage || in.Target != nil || AgentOrigin(in.Origin) || in.Status != "" || len(in.Attachments) != 0 {
+		if in.Topic == "" && !MainTopicOrganization(in) || in.Kind != KindMessage || in.Target != nil || AgentOrigin(in.Origin) && !AgentTopicOrganization(in) || in.Status != "" || len(in.Attachments) != 0 {
 			return errors.New("topic event belongs only on a human conversation message")
 		}
 		if TopicOrganization(e) {
 			return checkTopicOrganization(in)
 		}
-		if e.Action != "create" && e.Action != "done" && e.Action != "open" || len(e.Moves) != 0 || e.Merge != "" {
+		if e.Action != "create" && e.Action != "done" && e.Action != "open" || len(e.Moves) != 0 || e.Merge != "" || e.Request != nil {
 			return errors.New("invalid topic action")
 		}
 		for _, id := range e.Seen {
@@ -531,7 +532,7 @@ func checkVersion3(in Inner) error {
 		return errors.New("a control is a message about one exact earlier message (ref: id and sender key)")
 	}
 	if in.ReceiverRoute != nil || len(in.Root) != 0 || in.Target != nil || in.PID != "" && !AssistantReaction(in) || len(in.Attachments) != 0 || in.ReplyTo != "" ||
-		in.Origin != "" && !defaultAssistantReaction(in) || in.Emotion != "" || in.Status != "" || in.Session != "" || in.Fallback {
+		in.Origin != "" && !defaultAssistantReaction(in) && !MentionReaction(in) || in.Emotion != "" || in.Status != "" || in.Session != "" || in.Fallback {
 		return errors.New("a control carries nothing but its ref and payload")
 	}
 	if AssistantReaction(in) {
@@ -539,7 +540,7 @@ func checkVersion3(in Inner) error {
 		// named executor, or a conversation participation (and its agent).
 		if in.AgentID != "" && !validID(in.AgentID) || in.PID != "" && !validID(in.PID) ||
 			in.Conv == "" && in.PID != "" || in.Conv != "" && in.PID == "" ||
-			in.Origin != "" && (in.Conv != "" || in.AgentID != "" || !validToken(strings.TrimPrefix(in.Origin, OriginAgentPrefix), 32)) {
+			in.Origin != "" && !MentionReaction(in) && (in.Conv != "" || in.AgentID != "" || !validToken(strings.TrimPrefix(in.Origin, OriginAgentPrefix), 32)) {
 			return errors.New("an assistant reaction names its executor or default responder (device thread) or its participation (conversation)")
 		}
 	}
@@ -632,6 +633,12 @@ func AssistantReaction(in Inner) bool {
 	return in.V == Version3 && in.Sub == SubReaction && (in.AgentID != "" || in.PID != "" || defaultAssistantReaction(in))
 }
 
+const OriginMentionReaction = "agent:mention-reaction"
+
+func MentionReaction(in Inner) bool {
+	return AssistantReaction(in) && in.Conv != "" && in.PID != "" && in.Origin == OriginMentionReaction
+}
+
 // defaultAssistantReaction is a device thread's default responder reacting:
 // no agent or participation, only its harness as an agent origin.
 func defaultAssistantReaction(in Inner) bool {
@@ -708,7 +715,7 @@ func checkVersion2(in Inner) error {
 			return errors.New("group: requester admission is only for a PID-addressed group request")
 		}
 	}
-	if in.AgentID != "" && !AssistantReaction(in) && (!validID(in.AgentID) || in.V == Version3 || !ProactiveAgent(in) && ((in.Kind != KindAnswer && in.Kind != KindResult && in.Status != StatusProgress) || in.ReplyTo == "" || in.Sub != "")) {
+	if in.AgentID != "" && !AssistantReaction(in) && (!validID(in.AgentID) || in.V == Version3 || !ProactiveAgent(in) && !AgentTopicOrganization(in) && ((in.Kind != KindAnswer && in.Kind != KindResult && in.Status != StatusProgress) || in.ReplyTo == "" || in.Sub != "")) {
 		return errors.New("a named agent author belongs on a reply answer, result or progress")
 	}
 	if in.Target != nil && in.Target.AgentID != "" && !validID(in.Target.AgentID) {
@@ -862,6 +869,7 @@ func checkVersion2(in Inner) error {
 			// The carrier branch above validates the bounded PID discriminator.
 		case in.Sub == SubEvent:
 		case ProactiveAgent(in):
+		case AgentTopicOrganization(in):
 		case in.Human != nil && in.Sub == "" && in.Kind == KindMessage:
 		case in.Sub == SubExcerpt && in.Kind == KindMessage && in.Replica && in.Target == nil && in.ReplyTo == "":
 		case in.Sub == "" && (in.Kind == KindQuestion || in.Kind == KindTask) && in.Target != nil:

@@ -124,13 +124,18 @@ func (m dmMembers) requestEpoch(sender, fp string, t *envelope.Target) bool {
 // admission fence. Ordinary/history/file rows keep their existing interpretation.
 func (a *Agent) mayDeliverGroupParticipation(env envelope.Envelope) (bool, bool, error) {
 	var in envelope.Inner
-	var state, required, fp, epoch, target, human string
-	err := a.store.db.QueryRow(`SELECT coalesce(conv,''),coalesce(pid,''),kind,body,coalesce(sub,''),coalesce(origin,''),coalesce(reply_to,''),coalesce(agent_id,''),coalesce(target,''),state,coalesce(required_cap,''),coalesce(recipient_fp,''),coalesce(group_admission,''),coalesce(status,''),coalesce(human,''),coalesce(topic,'') FROM outbox WHERE id=?`, env.ID).Scan(&in.Conv, &in.PID, &in.Kind, &in.Body, &in.Sub, &in.Origin, &in.ReplyTo, &in.AgentID, &target, &state, &required, &fp, &epoch, &in.Status, &human, &in.Topic)
+	var state, required, fp, epoch, target, human, topicEvent string
+	err := a.store.db.QueryRow(`SELECT coalesce(conv,''),coalesce(pid,''),kind,body,coalesce(sub,''),coalesce(origin,''),coalesce(reply_to,''),coalesce(agent_id,''),coalesce(target,''),state,coalesce(required_cap,''),coalesce(recipient_fp,''),coalesce(group_admission,''),coalesce(status,''),coalesce(human,''),coalesce(topic,''),coalesce(topic_event,'') FROM outbox WHERE id=?`, env.ID).Scan(&in.Conv, &in.PID, &in.Kind, &in.Body, &in.Sub, &in.Origin, &in.ReplyTo, &in.AgentID, &target, &state, &required, &fp, &epoch, &in.Status, &human, &in.Topic, &topicEvent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, nil
 	}
 	if err != nil {
 		return true, false, err
+	}
+	if topicEvent != "" {
+		if err = json.Unmarshal([]byte(topicEvent), &in.TopicEvent); err != nil {
+			return true, false, err
+		}
 	}
 	if in.PID == "" || in.Sub == envelope.SubGroupProof || in.Sub == envelope.SubGroupContext {
 		return false, false, nil

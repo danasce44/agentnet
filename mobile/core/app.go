@@ -301,10 +301,11 @@ func (a *appSetup) SetupJoin(j ui.SetupJoin) (ui.SetupResult, error) {
 	return result, nil
 }
 
-// Notifier receives only fixed-content notification destinations.
+// Notifier receives bounded locally decrypted display text and an exact destination.
+// The native implementation must redact the public lock-screen presentation.
 // Implementations must return promptly and marshal OS work onto their own lane.
 type Notifier interface {
-	Notify(workspace, fragment string)
+	Notify(workspace, fragment, title, body string)
 	Dismiss(workspace, fragment string)
 }
 
@@ -320,7 +321,7 @@ func (a *App) deliverNotification(fragment string) {
 	closed := a.closed
 	a.mu.Unlock()
 	if n != nil && !closed {
-		n.Notify(client.DefaultWorkspace, fragment)
+		n.Notify(client.DefaultWorkspace, fragment, "AgentNet", "New activity")
 	}
 }
 

@@ -29,8 +29,14 @@ class ConnectionService : Service() {
             .setContentText("Keeping your chats connected. Tap to open.")
             .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(true).setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build()
-        if (Build.VERSION.SDK_INT >= 34) startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
-        else startForeground(1, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= 34) startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING)
+            else startForeground(1, notification)
+        } catch (_: Exception) {
+            repo.setKeepConnected(false); repo.background(false); stopSelf()
+            android.widget.Toast.makeText(this, "Android could not start AgentNet’s background connection. Try again from Connection settings.", android.widget.Toast.LENGTH_LONG).show()
+            return START_NOT_STICKY
+        }
         repo.background(true)
         return START_STICKY
     }

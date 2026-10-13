@@ -186,12 +186,21 @@ func TestCodexRoomFixtureProcess(t *testing.T) {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
 		}
 		if d.Decode(&m) != nil {
 			os.Exit(0)
 		}
 		switch m.Method {
 		case "initialize":
+			if mode == "native-approval" {
+				f, e := os.OpenFile(os.Getenv("AGENTNET_NATIVE_PROCESS_LOG"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+				if e != nil {
+					os.Exit(2)
+				}
+				_, _ = f.WriteString("started\n")
+				_ = f.Close()
+			}
 			if mode == "eof" {
 				os.Exit(0)
 			}
@@ -201,9 +210,20 @@ func TestCodexRoomFixtureProcess(t *testing.T) {
 			}
 			enc.Encode(map[string]any{"id": m.ID, "result": map[string]any{}})
 		case "thread/start":
-			enc.Encode(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]string{"id": "thread"}, "approvalPolicy": "never", "sandbox": map[string]any{"type": "readOnly", "networkAccess": false}}})
+			policy := "never"
+			if mode == "native-approval" {
+				policy = "on-request"
+			}
+			enc.Encode(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]string{"id": "thread"}, "approvalPolicy": policy, "sandbox": map[string]any{"type": "readOnly", "networkAccess": false}}})
 		case "turn/start":
 			enc.Encode(map[string]any{"id": m.ID, "result": map[string]any{"turn": map[string]string{"id": "turn"}}})
+			if mode == "native-approval" {
+				cwd, _ := os.Getwd()
+				command := "write exact native fixture result"
+				enc.Encode(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "thread", "turnId": "turn", "item": map[string]string{"id": "native-item", "type": "commandExecution", "command": command, "cwd": cwd, "status": "inProgress"}}})
+				enc.Encode(map[string]any{"id": "native-exact-rpc", "method": "item/commandExecution/requestApproval", "params": map[string]any{"threadId": "thread", "turnId": "turn", "itemId": "native-item", "approvalId": "native-distinct-approval", "command": command, "cwd": cwd}})
+				continue
+			}
 			if mode == "steer" {
 				continue
 			}
@@ -222,6 +242,21 @@ func TestCodexRoomFixtureProcess(t *testing.T) {
 			enc.Encode(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread", "turnId": "turn", "item": map[string]string{"type": "agentMessage", "text": "OWNED_CORRECTION_ACCEPTED"}}})
 			enc.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "thread", "turn": map[string]string{"id": "turn", "status": "completed"}}})
 		case "":
+			if mode == "native-approval" && string(m.ID) == `"native-exact-rpc"` {
+				var r struct {
+					Decision string `json:"decision"`
+				}
+				if json.Unmarshal(m.Result, &r) != nil || r.Decision != "accept" {
+					os.Exit(3)
+				}
+				if os.WriteFile(os.Getenv("AGENTNET_NATIVE_RESULT"), []byte("ONE_NATIVE_OPERATION"), 0600) != nil {
+					os.Exit(2)
+				}
+				enc.Encode(map[string]any{"method": "serverRequest/resolved", "params": map[string]any{"threadId": "thread", "requestId": "native-exact-rpc"}})
+				enc.Encode(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread", "turnId": "turn", "item": map[string]string{"type": "agentMessage", "text": "ONE_NATIVE_OPERATION"}}})
+				enc.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "thread", "turn": map[string]string{"id": "turn", "status": "completed"}}})
+				continue
+			}
 			if string(m.ID) == `"tool"` {
 				enc.Encode(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": "thread", "turnId": "turn", "item": map[string]string{"type": "agentMessage", "text": "NATIVE_REPLY"}}})
 				enc.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "thread", "turn": map[string]string{"id": "turn", "status": "completed"}}})

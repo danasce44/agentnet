@@ -337,7 +337,7 @@ func (a *Agent) sendGroupTurn(ctx context.Context, conv string, m ConvOutgoing, 
 		return ConvSent{}, err
 	}
 	beforeOutbox()
-	err = a.store.addConvOutbox(copies, envelope.Inner{}, a.queuedClaim(ctx, conv, func(tx *sql.Tx, _ string) error {
+	claim := a.queuedClaim(ctx, conv, func(tx *sql.Tx, _ string) error {
 		current, e := groupTurnPacketIn(tx, conv)
 		if e != nil {
 			return e
@@ -369,7 +369,14 @@ func (a *Agent) sendGroupTurn(ctx context.Context, conv string, m ConvOutgoing, 
 			return m.claim(tx, copies[0].env.ID)
 		}
 		return nil
-	}), "", binding)
+	})
+	if m.organizationBatch != nil {
+		if binding != nil {
+			return ConvSent{}, errors.New("topic inverse cannot carry a receiver")
+		}
+		return m.organizationBatch.stage(a, copies, envelope.Inner{}, claim)
+	}
+	err = a.store.addConvOutbox(copies, envelope.Inner{}, claim, "", binding)
 	if err != nil {
 		return ConvSent{}, err
 	}
@@ -457,7 +464,7 @@ func (a *Agent) admitGroupTurn(ctx context.Context, env envelope.Envelope, in en
 			}
 		}
 		if envelope.TopicOrganization(in.TopicEvent) {
-			if e = topicOrganizationAuthor(q, in.Conv, sender.Address, sender.Fingerprint()); e != nil {
+			if _, e = a.topicOrganizationAdmission(q, in, sender.Address, sender.Fingerprint(), false); e != nil {
 				return e
 			}
 		}

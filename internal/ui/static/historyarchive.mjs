@@ -68,7 +68,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
       if(!inert.has(row.sub))throw Error('Archive source is not inert.');
       return {
         s:'outbox',k:row.id,v:{
-          ...row,recipient_fp:dev.fingerprint,state:'archive_staged',archive_chunk:''
+          ...row,recipient_fp:dev.fingerprint,state:'archive_staged',archive_chunk:'',...wire.retainedAgentActionRequirements(row)
         }
       };
     }),...ops];
@@ -78,7 +78,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
     for(const job of await e.store.prefix('kv',outgoing)){
       if(job.state!=='published')continue;
       const descriptor=await e.store.get('outbox',job.id);
-      if(descriptor?.state==='delivered')await receipt(descriptor);
+      if(['delivered','expired'].includes(descriptor?.state))await receipt(descriptor);
     }
     const staged=(await e.store.outboxStates(['archive_staged'])).filter(r=>!r.archive_chunk).sort((a,b)=>(a.send_order??a.at)-(b.send_order??b.at)||a.id.localeCompare(b.id));
     const targets=new Map();
@@ -125,11 +125,12 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
           const manifest={
             v:1,person:own.person,roster:own.hash,count:entries.length,format:'agentnet-history-v1'
           };
-          const required_cap=chosen.some(row=>row.sub==='history'&&wire.proactiveAgent({...wire.parseHistory(row.body),conv:row.conv}))?wire.CapProactiveAgent:wire.CapHistoryArchive;
+          const mention_cap=chosen.some(row=>row.mention_cap||row.required_cap===wire.CapMentionReaction),organization_cap=chosen.some(row=>row.organization_cap||row.required_cap===wire.CapAgentOrganization);
+          const required_cap=chosen.some(row=>row.required_cap===wire.CapProactiveAgent||row.sub==='history'&&row.body&&wire.proactiveAgent({...wire.parseHistory(row.body),conv:row.conv}))?wire.CapProactiveAgent:wire.CapHistoryArchive;
           await gate(rows[0],checks);
           await e.store.write([{
             s:'kv',k:outgoing+id,v:{
-              id,to:rows[0].to,recipient_fp:rows[0].recipient_fp,manifest,...sealed,required_cap,order:chosen[0].send_order??chosen[0].at,state:'prepared',children:chosen.map(r=>r.id)
+              id,to:rows[0].to,recipient_fp:rows[0].recipient_fp,manifest,...sealed,required_cap,mention_cap,organization_cap,order:chosen[0].send_order??chosen[0].at,state:'prepared',children:chosen.map(r=>r.id)
             }
           },...chosen.map(row=>({
             s:'outbox',k:row.id,v:{
@@ -200,7 +201,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
         if(previous?.state!=='prepared')continue;
         await e.store.write([{
           s:'outbox',k:row.id,v:{
-            id:row.id,to:row.to,recipient_fp:row.recipient_fp,sub:wire.SubHistoryArchive,body,envelope,at,aside:true,state:'queued',required_cap:row.required_cap||wire.CapHistoryArchive,attachments:[row.attachment],files:[{
+            id:row.id,to:row.to,recipient_fp:row.recipient_fp,sub:wire.SubHistoryArchive,body,envelope,at,aside:true,state:'queued',required_cap:row.required_cap||wire.CapHistoryArchive,mention_cap:row.mention_cap,organization_cap:row.organization_cap,attachments:[row.attachment],files:[{
               attachment:row.attachment,uploaded:true
             }]
           }
@@ -327,21 +328,21 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
   }
   async function receipt(row){
     const key=outgoing+row.id,job=await e.store.get('kv',key);
-    if(!job||job.state==='accepted')return;
-    if(row.state!=='delivered')return;
+    if(!job||['accepted','expired'].includes(job.state))return;
+    if(!['delivered','expired'].includes(row.state))return;
     const ops=[],checks=[{s:'kv',k:key,v:job}];
     for(const id of job.children){
       const child=await e.store.get('outbox',id);
       checks.push({s:'outbox',k:id,v:child});
       if(['archive_staged','not_delivered'].includes(child?.state)&&child.archive_chunk===row.id)ops.push({
         s:'outbox',k:id,v:{
-          ...child,state:'archive_accepted',...(child.files?{files:child.files.map(file=>({...file,ct:null}))}:{})
+          ...child,...(row.state==='expired'?{state:'archive_staged',archive_chunk:'',mention_cap:!!(child.mention_cap||job.mention_cap),organization_cap:!!(child.organization_cap||job.organization_cap),...(job.required_cap===wire.CapProactiveAgent?{required_cap:job.required_cap}:{})}:{state:'archive_accepted',...(child.files?{files:child.files.map(file=>({...file,ct:null}))}:{})})
         }
       });
     }
     ops.push({
       s:'kv',k:key,v:{
-        ...job,state:'accepted'
+        ...job,state:row.state==='expired'?'expired':'accepted'
       }
     });
     try{await e.store.write(ops,checks);}

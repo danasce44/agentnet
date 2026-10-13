@@ -335,7 +335,7 @@ func TestCapsRoomImplicationAndHeadroom(t *testing.T) {
 			t.Errorf("rm1 does not imply %s", name)
 		}
 	}
-	for _, name := range []string{CapGroupInvitationControl, CapGroupHumanParticipation, CapPerson, CapControl, CapHeadless, CapDriveSpace, CapNotify, CapTyping} {
+	for _, name := range []string{CapGroupInvitationControl, CapGroupHumanParticipation, CapPerson, CapControl, CapHeadless, CapDriveSpace, CapNotify, CapTyping, CapMentionReaction, CapAgentOrganization} {
 		if room.Supports("vitalii/desk", pub, name) {
 			t.Errorf("rm1 implies %s, which it does not list", name)
 		}
@@ -365,7 +365,16 @@ func TestCapsRoomImplicationAndHeadroom(t *testing.T) {
 			t.Errorf("a %d-name record: parse error %v, want parsed %v", n, err, ok)
 		}
 	}
-	if MaxCaps != 32 || MaxAdvertisedCaps != 24 || MaxAdvertisedCaps >= MaxCaps {
+	for _, n := range []int{26, 27, 32} {
+		k := CapsRecord{Address: "vitalii/desk", Session: s1, Caps: names(n), TS: 5}
+		k.Sign(key)
+		if err := k.ValidateAdvertisement(); (err == nil) != (n == 26) {
+			t.Errorf("producer %d names: %v", n, err)
+		}
+	}
+	// Explicit v27 producer evolution: two independently signed extensions,
+	// while existing readers still parse 32 and retain six unused slots.
+	if MaxCaps != 32 || MaxAdvertisedCaps != 26 || MaxCaps-MaxAdvertisedCaps != 6 {
 		t.Fatalf("parse %d, advertise %d", MaxCaps, MaxAdvertisedCaps)
 	}
 }

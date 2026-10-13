@@ -527,6 +527,9 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 	if err != nil {
 		return "", err
 	}
+	if err := a.captureAgentContext(j, c); err != nil {
+		return "", err
+	}
 	m, err := a.dmMembers(j.Conv)
 	if err != nil {
 		return "", err
@@ -596,6 +599,7 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 		also = fmt.Sprintf(" It also reaches the guests present now, outside people invited only temporarily: %s.", strings.Join(names, ", "))
 	}
 	var b strings.Builder
+	b.WriteString("If this verified human request explicitly asks you to organize related messages into a topic, use agentnet_room action organize when available, or your allowed bound CLI: agentnet room organize --topic ID|main MESSAGE_LID... or agentnet room organize --new --title TITLE MESSAGE_LID.... Choose only exact message references supplied below; this changes presentation, preserves originals, and needs no second confirmation. It grants no new conversation or future topic access.\n")
 	if m.group != nil {
 		var audience []string
 		for _, p := range m.persons {
@@ -632,6 +636,7 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 	}
 	if info.HostHere && info.Claimable() {
 		fmt.Fprintf(&b, "To send an ordinary proactive message as this exact admitted agent, use agentnet room send --pid %s [--topic ID] TEXT. It requires no incoming request; current admission/topic/audience still apply. This sends now, not on a timer.\n", info.PID)
+		fmt.Fprintf(&b, "You may choose social feedback on an ordinary message mentioning your canonical PID, if it is in your admitted context: agentnet room react --pid %s --message LID --key AUTHOR_KEY [--remove] EMOJI. It posts only your signed reaction, without a question or reply. Names do not authorize it.\n", info.PID)
 	}
 	if j.Kind == envelope.KindTask {
 		if p, err := a.ProposalOf(j.ID); err == nil && p != nil {
@@ -835,7 +840,7 @@ func splitEmotion(out string) (text, emotion string, ok bool) {
 func (a *Agent) holdEndedOutputs(only string) (int, error) {
 	// Agent-to-agent questions/tasks are requests, not completed outputs. Their
 	// captured authority and running origin are checked just before delivery.
-	const outputs = `o.state IN (?, ?) AND o.pid IS NOT NULL AND o.origin LIKE 'agent:%' AND o.kind NOT IN ('question','task') AND NOT (o.kind='message' AND o.origin='agent:proactive' AND o.sub IS NULL AND o.status IS NULL AND o.reply_to IS NULL AND o.target IS NULL) AND (? = '' OR o.id = ?)`
+	const outputs = `o.state IN (?, ?) AND o.pid IS NOT NULL AND o.origin LIKE 'agent:%' AND o.kind NOT IN ('question','task') AND NOT (o.kind='message' AND o.origin='agent:proactive' AND o.sub IS NULL AND o.status IS NULL AND o.reply_to IS NULL AND o.target IS NULL) AND NOT (o.organization_cap=1 AND o.origin='agent:organization' AND o.sub IS NULL AND json_extract(o.topic_event,'$.action')='move') AND NOT (o.mention_cap=1 AND o.origin='agent:mention-reaction' AND o.sub='reaction') AND (? = '' OR o.id = ?)`
 	var n int
 	if err := a.store.db.QueryRow(`SELECT count(*) FROM outbox o WHERE `+outputs,
 		stateQueued, stateConvWaiting, only, only).Scan(&n); err != nil || n == 0 {
@@ -930,6 +935,9 @@ func (a *Agent) holdEndedOutputs(only string) (int, error) {
 // hand-over already started is not stopped. A version 1 envelope is not
 // looked at.
 func (a *Agent) mayDeliver(env envelope.Envelope) (bool, error) {
+	if allowed, err := a.agentOrganizationDeliveryGate(env); err != nil || !allowed {
+		return false, err
+	}
 	if allowed, err := a.proactiveDeliveryGate(env); err != nil || !allowed {
 		return false, err
 	}
@@ -1223,6 +1231,7 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (
 			c.Unrelated++
 		}
 		if line != "" {
+			line = fmt.Sprintf("[message %s; author key %s] %s", ref.LID, ref.Fingerprint, line)
 			if info.Member && (msg.Kind == envelope.KindQuestion || msg.Kind == envelope.KindTask) {
 				line = fmt.Sprintf("[request %s; kind %s; target PID %s] %s", msg.LID, msg.Kind, msg.PID, line)
 			} else if info.Member && msg.VerifiedAgent {

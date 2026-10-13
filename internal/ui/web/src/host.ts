@@ -84,6 +84,12 @@ export interface AppUpdateCheck {
   state: "available" | "current" | "ahead";
 }
 
+export interface AndroidNotificationStatus {
+  granted: boolean;
+  app_granted?: boolean;
+  channel?: { importance: number; sound: boolean; vibration: boolean };
+}
+
 export interface Host {
   /** Native shell fallback, read only in response to paste; absent in browsers. */
   clipboardImage?(): Promise<File | null>;
@@ -93,8 +99,9 @@ export interface Host {
   android?: {
     connection(): Promise<{ enabled: boolean }>;
     setConnection(enabled: boolean): Promise<{ enabled: boolean }>;
-    requestNotifications(): Promise<{ granted: boolean }>;
-    notificationStatus(): Promise<{ granted: boolean }>;
+    requestNotifications(): Promise<AndroidNotificationStatus>;
+    notificationStatus(): Promise<AndroidNotificationStatus>;
+    notificationSettings?(): Promise<{ opened: boolean }>;
     copyText(text: string): Promise<unknown>;
     legacyDrafts(): Promise<{ drafts: { key: string; value: string }[] }>;
     acknowledgeLegacyDraft(key: string, value: string): Promise<{ removed: boolean }>;

@@ -52,7 +52,12 @@ function readGrants(store: Store, o: T.Overview): Promise<Grant[]> {
     if (own?.person && own.state === "self" && !rows.has(own.person)) rows.set(own.person, { peer:own.person, person:own.person, label:own.label, approved:false, tasks:"" });
     const personOf = new Map<string, string>();
     for (const p of [...(o.people || []), ...(own ? [own] : [])]) for (const d of p.devices || []) if (p.person) personOf.set(d.address, p.person);
+    // A historical thread is not a current permission target. Current
+    // signed rosters and a fresh directory keep legitimate devices available.
+    const current = new Set([...personOf.keys(), ...(o.directory?.current ? o.directory.members || [] : []).map(d => d.address)]);
+    const removed = new Set(v.removed_devices || []);
     for (const t of latestThreads(o)) {
+      if (!current.has(t.peer) || removed.has(t.peer)) continue;
       const person = personOf.get(t.peer);
       if (!rows.has(t.peer) && (!own?.person || person !== own.person) && !(person && rows.get(person)?.approved)) rows.set(t.peer, { peer: t.peer, approved: false, tasks: "" });
     }

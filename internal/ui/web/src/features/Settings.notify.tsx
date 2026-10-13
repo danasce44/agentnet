@@ -1,8 +1,9 @@
 // Notifications: off until the person turns them on here. An alert says
-// only "AgentNet: New activity", never what was written. Each chat can be
+// generic desktop/browser text; Android decrypts previews locally. Each chat can be
 // muted from its own menu; chats notify by default once alerts are on.
 import { useEffect, useRef, useState } from "react";
 import type { T } from "../api";
+import type { AndroidNotificationStatus } from "../host";
 import { useApp } from "../context";
 import { useStore } from "../store";
 import { Card, GroupLabel, Hint, PageHead, Skeleton, Toggle } from "./Settings.parts";
@@ -16,32 +17,32 @@ export function notifySummary(n: T.NotifyView | undefined): string {
 
 // Read Android's current grant and channel state on visibility changes; never
 // change the OS permission while merely rendering settings.
-function useNativeNotificationPermission() {
+function useNativeNotificationStatus() {
   const android = useApp().host.android;
-  const [nativeGranted, setNativeGranted] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<AndroidNotificationStatus | null>(null);
   useEffect(() => {
     if (!android) return;
     let alive = true;
-    const refresh = () => { void android.notificationStatus().then(v => { if (alive) setNativeGranted(v.granted); }, () => { if (alive) setNativeGranted(null); }); };
+    const refresh = () => { void android.notificationStatus().then(v => { if (alive) setStatus(v); }, () => { if (alive) setStatus(null); }); };
     refresh();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     const off = android.onVisibility(refresh);
     return () => { alive = false; window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); off(); };
   }, [android]);
-  return [android ? nativeGranted : undefined, setNativeGranted] as const;
+  return [android ? status : undefined, setStatus] as const;
 }
 
 export function NotificationSummary({ n }: { n: T.NotifyView | undefined }) {
-  const [granted] = useNativeNotificationPermission();
-  if (n?.enabled && granted !== undefined) return <>{granted === null ? "Checking…" : granted ? "On" : "Blocked by Android"}</>;
+  const [status] = useNativeNotificationStatus();
+  if (n?.enabled && status !== undefined) return <>{status === null ? "Checking…" : status.granted ? "On" : "Blocked by Android"}</>;
   return <>{notifySummary(n)}</>;
 }
 
 export function NotificationsSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadingElement> }) {
   const store = useApp();
   const o = useStore(store, (s) => s.overview);
-  const head = <PageHead title="Notifications" titleRef={titleRef} lead={<>When someone writes, or an agent you brought in answers, this {store.host.platform !== "daemon" ? "device" : "computer"} shows “AgentNet: New activity”. Never what was written.</>} />;
+  const head = <PageHead title="Notifications" titleRef={titleRef} lead={store.host.android ? <>When someone writes, or an agent you brought in answers, Android shows the sender and a message preview. Your Android notification settings control sound, vibration and lock-screen privacy.</> : <>When someone writes, or an agent you brought in answers, this {store.host.platform !== "daemon" ? "device" : "computer"} shows “AgentNet: New activity”. Never what was written.</>} />;
   if (!o) return <>{head}<Skeleton /></>;
   const n = o.notify;
   if (!n) return <>{head}<Card className="p-4"><p>Notifications aren’t available in this AgentNet.</p></Card><AndroidConnection /><Typing /></>;
@@ -105,8 +106,16 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
   const [busy, setBusy] = useState(false);
   const iphone = !n.native && /iPhone|iPad/.test(navigator.userAgent) && !matchMedia("(display-mode: standalone)").matches;
   const android = store.host.android;
-  const [nativeGranted, setNativeGranted] = useNativeNotificationPermission();
+  const [nativeStatus, setNativeStatus] = useNativeNotificationStatus();
+  const nativeGranted = nativeStatus?.granted ?? (android ? null : undefined);
   const blocked = android ? nativeGranted === false : !n.native && permission() === "denied";
+  const channel = nativeStatus?.channel;
+  const channelQuiet = channel && channel.importance > 0 && (channel.importance < 3 || !channel.sound || !channel.vibration);
+  const openAndroidSettings = async () => {
+    if (!android?.notificationSettings) return;
+    try { await android.notificationSettings(); }
+    catch { store.toast("Android notification settings could not open. Open AgentNet’s Chat activity channel in Android settings.", "error"); }
+  };
 
   // Turning on asks the browser first, from this click: its own question
   // needs one. A computer's own alerts ask nothing.
@@ -114,8 +123,9 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
     setBusy(true);
     if (on && store.host.android) {
       try {
-        const { granted } = await store.host.android.requestNotifications();
-        setNativeGranted(granted);
+        const status = await store.host.android.requestNotifications();
+        setNativeStatus(status);
+        const { granted } = status;
         if (!granted) {
           store.toast("Allow notifications in Android settings to receive alerts.", "error");
           setBusy(false); return;
@@ -138,11 +148,17 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="font-semibold">{n.native && !store.host.android ? "Alerts on this computer" : "Notifications on this device"}</p>
-            <Hint>{store.host.android ? "Android shows alerts while AgentNet is connected." : n.native ? "Shown while AgentNet runs here, even with this page closed." : "Your browser shows them, even with this page closed."}</Hint>
+            <Hint>{store.host.android ? "Android shows alerts while AgentNet is connected. The first time you allow notifications, it also keeps AgentNet connected in the background. Your saved connection choice is respected." : n.native ? "Shown while AgentNet runs here, even with this page closed." : "Your browser shows them, even with this page closed."}</Hint>
           </div>
           <Toggle label="Notifications" checked={n.enabled && !blocked} disabled={busy || (!!android && nativeGranted === null) || (!android && blocked && !n.enabled)} onChange={turn} />
         </div>
-        {blocked && <Hint className="mt-3">Notifications are blocked in {android ? "Android settings (app or Chat activity channel)" : "this browser’s settings"}. Everything else works without them.</Hint>}
+        {blocked && <Hint className="mt-3">{android && nativeStatus?.app_granted && channel?.importance === 0 ? "Chat activity notifications are blocked in Android settings." : `Notifications are blocked in ${android ? "Android settings" : "this browser’s settings"}.`} Everything else works without them.</Hint>}
+        {android && channelQuiet && <Hint className="mt-3">
+          {channel.importance < 3 ? "Chat activity is set to silent in Android. " : !channel.sound ? "Chat activity sound is off in Android. " : ""}
+          {!channel.vibration ? "Chat activity vibration is off in Android. " : ""}
+          Keep this choice or change it in Android notification settings. Android’s sound mode and Do Not Disturb also control alerts.
+        </Hint>}
+        {android?.notificationSettings && <button type="button" className="mt-3 rounded-lg border border-hairline px-3 py-2 font-semibold" onClick={() => void openAndroidSettings()}>Android notification settings</button>}
         {n.pending && <Hint className="mt-3">Your server is told about this change when this page reconnects.</Hint>}
       </Card>
       <Hint className="px-1">Chats notify you unless muted. Use Mute in the chat’s menu to keep it quiet.</Hint>
@@ -153,14 +169,17 @@ function NotifyBody({ n }: { n: T.NotifyView }) {
 /** Android connection lifetime is explicit; the notification carries a Stop action. */
 function AndroidConnection() {
   const store = useApp(), android = store.host.android;
+  const notificationsEnabled = useStore(store, s => s.overview?.notify?.enabled);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   useEffect(() => {
     if (!android) return;
     let alive = true;
-    android.connection().then(v => { if (alive) setEnabled(v.enabled); }, () => { if (alive) setError("Could not read Android connection settings."); });
-    return () => { alive = false; };
-  }, [android]);
+    const refresh = () => { void android.connection().then(v => { if (alive) { setEnabled(v.enabled); setError(""); } }, () => { if (alive) setError("Could not read Android connection settings."); }); };
+    refresh();
+    const off = android.onVisibility(refresh);
+    return () => { alive = false; off(); };
+  }, [android, notificationsEnabled]);
   if (!android) return null;
   const turn = async (on: boolean) => {
     setBusy(true); setError("");

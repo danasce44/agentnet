@@ -151,7 +151,7 @@ func backupSkip(name string) bool {
 
 // Backup writes a gzip-compressed tar of the stopped Hub: database (after a
 // full checkpoint), TLS key and certificate, pending bootstrap invite, and
-// attachment ciphertext. It contains secrets; store it like a private key.
+// profile pictures and attachment ciphertext. It contains secrets; store it like a private key.
 func (m *Maintenance) Backup(w io.Writer) error {
 	if _, err := m.store.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
 		return fmt.Errorf("checkpoint: %w", err)
@@ -196,7 +196,7 @@ func (m *Maintenance) Backup(w io.Writer) error {
 // backupEntry is the exact set of names a backup may contain, so nothing
 // can be written outside the restore directory on any platform.
 var backupEntry = regexp.MustCompile(`^(hub\.db|tls\.crt|tls\.key|` + regexp.QuoteMeta(pushKeyFile) + `|` + regexp.QuoteMeta(BootstrapFile) +
-	`|blobs/[0-9a-f]{32}\.(blob|part))$`)
+	`|blobs/[0-9a-f]{32}\.(blob|part)|pictures/[0-9a-f]{64}\.png)$`)
 
 // RestoreSummary describes a restored data directory.
 type RestoreSummary struct {
@@ -208,6 +208,11 @@ type RestoreSummary struct {
 // with its recorded size. A failed restore leaves dir for inspection.
 func Restore(r io.Reader, dir string) (RestoreSummary, error) {
 	var sum RestoreSummary
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return sum, errors.New("restore destination must not be a symlink")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return sum, err
+	}
 	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
 		return sum, fmt.Errorf("%s is not empty; restore into a new directory", dir)
 	}
@@ -215,6 +220,9 @@ func Restore(r io.Reader, dir string) (RestoreSummary, error) {
 		return sum, err
 	}
 	if err := secfile.EnsureDir(filepath.Join(dir, "blobs")); err != nil {
+		return sum, err
+	}
+	if err := secfile.EnsureDir(filepath.Join(dir, "pictures")); err != nil {
 		return sum, err
 	}
 	gz, err := gzip.NewReader(r)
@@ -233,12 +241,32 @@ func Restore(r io.Reader, dir string) (RestoreSummary, error) {
 		if hdr.Typeflag != tar.TypeReg || !backupEntry.MatchString(hdr.Name) {
 			return sum, fmt.Errorf("backup entry %q is not allowed", hdr.Name)
 		}
+		var picture []byte
+		if strings.HasPrefix(hdr.Name, "pictures/") {
+			if hdr.Size < 1 || hdr.Size > protocol.MaxPictureBytes {
+				return sum, fmt.Errorf("picture %q has invalid size", hdr.Name)
+			}
+			picture, err = io.ReadAll(tr)
+			if err != nil {
+				return sum, fmt.Errorf("reading picture %q: %w", hdr.Name, err)
+			}
+			if err := protocol.ValidatePicture(picture); err != nil {
+				return sum, fmt.Errorf("picture %q: %w", hdr.Name, err)
+			}
+			if protocol.PictureHash(picture) != strings.TrimSuffix(strings.TrimPrefix(hdr.Name, "pictures/"), ".png") {
+				return sum, fmt.Errorf("picture %q hash mismatch", hdr.Name)
+			}
+		}
 		dst := filepath.Join(dir, filepath.FromSlash(hdr.Name))
 		f, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
 			return sum, err
 		}
-		_, err = io.Copy(f, tr)
+		if picture != nil {
+			_, err = f.Write(picture)
+		} else {
+			_, err = io.Copy(f, tr)
+		}
 		if err == nil {
 			err = f.Sync()
 		}
@@ -250,6 +278,9 @@ func Restore(r io.Reader, dir string) (RestoreSummary, error) {
 		}
 	}
 	if err := secfile.SyncDir(filepath.Join(dir, "blobs")); err != nil {
+		return sum, err
+	}
+	if err := secfile.SyncDir(filepath.Join(dir, "pictures")); err != nil {
 		return sum, err
 	}
 	if err := secfile.SyncDir(dir); err != nil {

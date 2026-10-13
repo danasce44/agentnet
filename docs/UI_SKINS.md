@@ -344,7 +344,7 @@ still runs with the page's full trust.
 | `host.api(path, body?)` | The JSON `/api/*` read/action surface: every route, its platforms, request and answer are listed in [HOST_API_ROUTES.md](HOST_API_ROUTES.md). Omit body for GET; provide an object for POST. Resolves parsed JSON or rejects with an `Error` whose `message` is a user-readable sentence. On this computer's program and Android a rejection also carries `status`, the HTTP status: 400 `bad request` for an unknown body field, malformed JSON or an empty body; 404 for an unknown path or a provider's "not available here"; 405 for the wrong method; 409 for a refusal, whose sentence you show as written. Only the 409 message `stale or disconnected workspace` means the program retired this binding (see `host.reconnect`). In a browser, `status` (when present) is the relay's own status (0: unreachable), `code` names some engine refusals, an unknown path rejects with `Unknown request.`, and neither the HTTP method nor unknown body fields are checked: test a skin on both. A skin never fetches `/api` or `/events` itself; the one exception is a `picture_url` from a view, used only as an `<img src>` (a `blob:` URL in a browser, a host-qualified `/api/picture/<hash>` here), never built by the skin. |
 | `host.listen(fn)` | Push events; returns an unsubscribe function. Reload data on `change`; do not poll. This computer's program and Android send one `{type:"change",seq}` as soon as the stream opens and one after changes (changes that come together are sent as one, so `seq` can skip), `{type:"restart"}` only when the daemon serving the page switches to an updated program (the desktop app and Android update as a whole: the app restarts, or Android's installer replaces it, and the page opens again on the new release) and `{type:"disconnect"}` when the stream fails; events carry `workspace`, the bound membership's id. After `restart` or `disconnect` the host has closed the stream: call `host.listen` again. A browser sends only `change` (also when its relay stream drops or returns: read `overview.device.online` for connectivity) and nothing at subscription, so load once in `mount` as well. |
 | `host.onOpen(fn, kinds?)` | Required. Registers notification routing: `fn(target, kind, context)`. Every skin gets `"channel"` (a browser notification's channel: resolve it with GET `/api/notify/resolve?chan=…`, a browser-only route, which answers `{conv}` when this device has that conversation; an empty channel means news in more than one or, on this computer's program and Android, where channels are always empty, open the list) and `"conversation"` (a DM id). Listing `"message"` in `kinds` adds `fn(messageID, "message", {conv?, dir?})` (the conversation and direction the notification names) and `"review"` adds `fn("", "review")`. A destination a skin does not take waits in the switcher with the way to open it in Comic. A missing destination opens the skin's list, never another arbitrary chat. |
-| `host.android` | Present only when `platform` is `android`; the Android app's own actions, each a promise: `connection()` → `{enabled}` and `setConnection(enabled)` (keep the background connection), `requestNotifications()` and `notificationStatus()` → `{granted}`, `copyText(text)` (Android's system clipboard; only while the app is in the foreground, at most 128 KiB), `legacyDrafts()` → `{drafts[{key,value}]}` and `acknowledgeLegacyDraft(key, value)` (drafts saved by the earlier Android preview), `scanQR()` → `{text}` or `{canceled: true}`. `visible()` says whether the app is in the foreground and `onVisibility(fn)` calls `fn(visible)` each time the app reports its state, repeats included (for example after an installer result): re-read what may have changed (returns an unsubscribe function). The WebView's own `document.visibilityState` can lag the app, so treat the page as seen only when both say visible. |
+| `host.android` | Present only when `platform` is `android`; the Android app's own actions, each a promise: `connection()` → `{enabled}` and `setConnection(enabled)` (keep the background connection), `requestNotifications()` and read-only `notificationStatus()` → `{granted, app_granted?, channel?: {importance, sound, vibration}}`. `granted` includes app permission and channel blocking; the optional fields report existing OS choices, without changing them. Optional `notificationSettings()` → `{opened}` opens this app's Chat activity channel settings from a foreground click; it accepts no caller-selected channel/package and preserves saved choices. `copyText(text)` (Android's system clipboard; only while the app is in the foreground, at most 128 KiB), `legacyDrafts()` → `{drafts[{key,value}]}` and `acknowledgeLegacyDraft(key, value)` (drafts saved by the earlier Android preview), `scanQR()` → `{text}` or `{canceled: true}`. `visible()` says whether the app is in the foreground and `onVisibility(fn)` calls `fn(visible)` each time the app reports its state, repeats included (for example after an installer result): re-read what may have changed (returns an unsubscribe function). The WebView's own `document.visibilityState` can lag the app, so treat the page as seen only when both say visible. |
 | `host.onBack(fn)` | Present only on Android. Registers the system Back handler: `fn()` returns `true` when it handled Back (closed a sheet, went up a level); `false` lets Android leave the app. Returns an unsubscribe function; the latest registration wins. |
 | `host.clipboardImage()` | Optional, native shell only. Resolves `File` for a clipboard image or `null` when there is none. Call only for a user paste that contains no browser image file; ordinary text paste stays available. Capture this host callback for the paste operation; standalone skins never read native clipboard globals themselves. |
 | `host.appStatus()` | Desktop-app capability, present on every host: it rejects where there is no app (a browser rejects with "Open the AgentNet app for this computer's settings."; `agentnet ui` rejects with the message `404 page not found`, without `status`). Android answers status, check and update but rejects `appReplaceCommand`; an Android build updated through its app store rejects all four. Show app controls only after `appStatus()` resolved; never decide from the methods' presence. Resolves `{cli_path, cli_state:"installed"\|"custom"\|"error", cli_problem?, version, app_update_supported, problem?, update_result?}`. The location/state describe this computer's AgentNet command; `problem` explains unavailable app updates. Omit unavailable controls. |
@@ -444,12 +444,17 @@ types are the Go structs in `internal/ui/*.go`, generated into
   tasks[{address, fingerprint, status}|{person, label, status}],
   native_tasks?[{address, fingerprint, status}],
   own_devices?[{address, name, this?, questions, tasks}],
+  removed_devices?[address],
   participations[{conv, pid, agent_id?, keys[], tasks_from[PersonView], external?}],
   read_only, unresolved?[]}`. A person grant covers that verified person's
   devices and names no address (its task entry has `address` and
   `fingerprint` empty); a device grant names the exact device.
   `native_tasks` are your own trusted devices' direct-task permissions,
   which revoking a person or device task grant leaves in place;
+  `removed_devices` is read-only evidence that the exact current pinned peer
+  key belonged to a verified roster and has been removed. Suppress new-grant
+  suggestions for those devices; retain saved grants and their revoke controls.
+  A reused address with a new key is not a removed device.
   `own_devices` lists your person's devices with the source of each one's
   question and task permission here. (`unresolved`:
   conversations whose agents cannot be resolved here now, such as a group
@@ -619,10 +624,27 @@ types are the Go structs in `internal/ui/*.go`, generated into
   messages/shared actions clear an archive. Comic implements these controls
   through Host API v1 only, as do Classic and Zoom in the agentnet-skins
   collection.
+- Topic organization uses `/api/topic/organization/preview` and `/apply` with
+  exact selected logical IDs and a different same-chat destination. Main is
+  explicitly `{topic:"", main:true}`; a missing destination is refused.
+  An admitted agent's display move carries `topic_event.request` and
+  `origin:"agent:organization"`; use `verified_agent`, never the origin label,
+  to attribute it. The host validates the exact human request/current run and
+  supplied context. It preserves all original messages, files and audience.
+  A current full-member human may call `/api/topic/organization/undo` with
+  `{conv,lid,author,id}`; keep the action `id` for retries. The host restores
+  persisted source assignments, checks every group before one transaction and
+  refuses intervening changes. See the route reference for sent results.
+  These agent moves and the new explicitly human-to-Main wire shape require
+  independent `aorg1`; ordinary canonical-PID agent reactions require `amr1`.
+  Shipped `org1`/`agr1`/`rm1` meanings are unchanged. v27 advertises at most 26
+  signed names; readers still parse 32 names and records stay bounded at 1024
+  bytes. Missing readers retain their own copies; history/archive/repack keeps
+  each extension independently and never runs the imported work.
 - Headless: a request message may carry `exec` `{state, at, host, stale?, attempt?, detail?}`,
   the executing host's own signed word (never delivery, presence or a timer);
   show it apart from delivery and say when it is stale. A review notice may carry
-  `report` `{host, at, items[{id, from, key, kind, state, blocker, since, attempt, excerpt?, actionable?, conv?, proposal?, result?}]}`:
+  `report` `{host, at, items[{id, from, key, kind, state, blocker, since, attempt, excerpt?, actionable?, conv?, proposal?, native?, result?}]}`:
   a snapshot at `at`, never a live queue; offer actions only for `actionable`
   items, through `POST /api/operator/decide` `{host, id, key, action, expect,
   attempt, text, report}`; the host's answer lands on the item as `result`.
@@ -654,6 +676,41 @@ types are the Go structs in `internal/ui/*.go`, generated into
   already resolved, and so does a late, older report once a newer one was
   stored, open or dismissed. A decision's `result` shows on whichever
   report of that host lists the same request and attempt.
+- Native requests (v0.8.27): a validated current owner-human report item may
+  carry `native` even though `actionable` is false. It is a distinct native
+  response, never an operator grant. Show it on the requesting device:
+  `{token,harness:"codex",host,request,key,attempt,method,thread,turn,item?,
+  approval_id?,agent_id?,operation?,cwd?,reason?,choices,expires,cancel_run?,
+  unsupported?,questions?,fields?}`. `expires` is Unix milliseconds; zero
+  means only the exact live process/turn lifetime. Resolution, ending,
+  cancellation and restart remove the callback. Imported history never
+  creates an active native response. Show the entire supplied operation,
+  working folder, reason and unsupported boundary; never offer Allow from
+  a truncated command or file operation.
+
+  `choices` lists only supported `allow`, `deny`, `cancel`, `submit` responses.
+  Questions are `{id,header?,question,isOther?,isSecret?,options?[{label,
+  description}]}`; use password inputs for `isSecret`, preserve exact question
+  IDs and offered options, and send `{answers:{id:string}}`. Standard MCP form
+  fields are `{id,title?,description?,type:"string"|"boolean",required?,enum?}`;
+  send `{values:{id:string|boolean}}`. Unsupported authenticated/URL or other
+  schemas have no fabricated proof or Allow. `cancel_run:true` means Cancel
+  stops the owned worker rather than supplying a native cancel response.
+
+  Prepare one stable send ID and the exact text
+  `agentnet-native-response-v1\n` followed by JSON `{token,choice,answers?,values?}`.
+  A local daemon uses `/api/act` `{do:"continue",id:native.request,
+  key:native.key,attempt:native.attempt,body:text,send_id}`. A remote requesting
+  human device uses `/api/operator/decide` `{host:native.host,id:native.request,
+  key:native.key,attempt:native.attempt,action:"continue",expect:"running",
+  report:<private notice id>,text,send_id}`. Keep identical text/ID on an
+  ambiguous retry. No second AgentNet confirmation or permission grant is
+  required. The host checks the exact current human key, private report,
+  token, admitted job, native callback and lifetime before one handover to
+  the original process. Saved/delivered responses prove no completed effect;
+  native result reports remain the completion evidence. Results are scoped
+  to the callback token, so an earlier input cannot settle a later one in
+  the same attempt. Other roles receive no private native payload.
 - Proposals (MEL-521): an answer with `status` `proposal` is an agent's offer,
   never run: its body is exactly the task it proposes. A device-thread or
   conversation question's run may propose. The answer carries

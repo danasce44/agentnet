@@ -170,7 +170,8 @@ func (a *Agent) externalHostProof(ctx context.Context, h *protocol.Participation
 
 // externalTurn checks roles without giving the host ordinary DM membership.
 func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender, fp string, queries ...dbq) error {
-	if info.Topic != nil && in.Sub != envelope.SubEvent && in.Sub != envelope.SubExcerpt {
+	organization := envelope.AgentTopicOrganization(in)
+	if info.Topic != nil && in.Sub != envelope.SubEvent && in.Sub != envelope.SubExcerpt && !organization {
 		if len(queries) != 1 {
 			return errParticipationTopicPending
 		}
@@ -180,7 +181,7 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 	}
 	member := m.device(sender, fp)
 	host := sender == info.Host.Address && fp == info.Host.Fingerprint
-	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil && !envelope.ProactiveAgent(in) {
+	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil && !envelope.ProactiveAgent(in) && !organization {
 		return errors.New("external participation has incomplete pinned evidence")
 	}
 	switch in.Sub {
@@ -259,6 +260,9 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 				return errors.New("output does not belong to the exact invited agent")
 			}
 		case envelope.KindMessage:
+			if organization && host && in.AgentID == info.AgentID {
+				return nil // exact request/scope checked by topicOrganizationAdmission
+			}
 			if envelope.ProactiveAgent(in) && host && in.AgentID == info.AgentID {
 				return nil
 			}
@@ -458,7 +462,7 @@ func (a *Agent) sendExternalParticipation(ctx context.Context, root protocol.Con
 		out.Origin = envelope.OriginUI
 	}
 	lid, _ := sendID(ctx)
-	if m.group != nil && out.sub == "" && out.human == nil && info.Member {
+	if m.group != nil && out.sub == "" && out.human == nil && info.Member && !envelope.AgentTopicOrganization(envelope.Inner{PID: out.PID, Origin: out.Origin, TopicEvent: out.TopicEvent}) {
 		if out.Target == nil && out.ReplyTo != "" {
 			c, e := roomCauseIn(a.store.db, info.Conv, out.ReplyTo, a.Address, a.Self().Fingerprint())
 			if e != nil {
@@ -505,6 +509,11 @@ func (a *Agent) sendExternalParticipation(ctx context.Context, root protocol.Con
 	}
 	if err := externalTurn(in, info, m, a.Address, a.Self().Fingerprint(), a.store.db); err != nil {
 		return ConvSent{}, err
+	}
+	if envelope.AgentTopicOrganization(in) {
+		if _, err := a.topicOrganizationAdmission(a.store.db, in, a.Address, a.Self().Fingerprint(), false); err != nil {
+			return ConvSent{}, err
+		}
 	}
 	if _, err := externalOutputRequest(a.store.db, in, info, m, a.Address, a.Self().Fingerprint()); err != nil {
 		return ConvSent{}, err
@@ -1185,6 +1194,11 @@ func (a *Agent) admitExternalParticipation(ctx context.Context, env envelope.Env
 		}
 		return true, hold(reason, err.Error())
 	}
+	if envelope.AgentTopicOrganization(in) {
+		if reason, err := a.topicOrganizationAdmission(a.store.db, in, env.From, sender.Fingerprint(), false); err != nil {
+			return true, hold(reason, err.Error())
+		}
+	}
 	if reason, err := externalOutputRequest(a.store.db, in, info, m, a.Address, a.Self().Fingerprint()); err != nil {
 		if reason != "" {
 			return true, hold(reason, err.Error())
@@ -1252,6 +1266,11 @@ func (a *Agent) admitExternalParticipation(ctx context.Context, env envelope.Env
 		if err := turn(in, current, members, env.From, sender.Fingerprint(), tx); err != nil {
 			return err
 		}
+		if envelope.AgentTopicOrganization(in) {
+			if _, err := a.topicOrganizationAdmission(tx, in, env.From, sender.Fingerprint(), false); err != nil {
+				return err
+			}
+		}
 		if _, err := externalOutputRequest(tx, in, current, members, a.Address, a.Self().Fingerprint()); err != nil {
 			return err
 		}
@@ -1296,14 +1315,19 @@ func (a *Agent) admitExternalParticipation(ctx context.Context, env envelope.Env
 func (a *Agent) mayDeliverExternal(env envelope.Envelope) (bool, bool, error) {
 	var required, state string
 	var in envelope.Inner
-	var target, humanRaw, capturedFP string
-	err := a.store.db.QueryRow(`SELECT coalesce(required_cap,''), state, conv, coalesce(pid,''), kind, body, coalesce(sub,''), coalesce(origin,''), coalesce(target,''), coalesce(agent_id,''), coalesce(reply_to,''),coalesce(human,''),coalesce(recipient_fp,''),coalesce(status,''),coalesce(topic,'') FROM outbox WHERE id=?`, env.ID).
-		Scan(&required, &state, &in.Conv, &in.PID, &in.Kind, &in.Body, &in.Sub, &in.Origin, &target, &in.AgentID, &in.ReplyTo, &humanRaw, &capturedFP, &in.Status, &in.Topic)
+	var target, humanRaw, capturedFP, topicEvent string
+	err := a.store.db.QueryRow(`SELECT coalesce(required_cap,''), state, conv, coalesce(pid,''), kind, body, coalesce(sub,''), coalesce(origin,''), coalesce(target,''), coalesce(agent_id,''), coalesce(reply_to,''),coalesce(human,''),coalesce(recipient_fp,''),coalesce(status,''),coalesce(topic,''),coalesce(topic_event,'') FROM outbox WHERE id=?`, env.ID).
+		Scan(&required, &state, &in.Conv, &in.PID, &in.Kind, &in.Body, &in.Sub, &in.Origin, &target, &in.AgentID, &in.ReplyTo, &humanRaw, &capturedFP, &in.Status, &in.Topic, &topicEvent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, nil
 	}
 	if err != nil {
 		return true, false, err
+	}
+	if topicEvent != "" {
+		if err = json.Unmarshal([]byte(topicEvent), &in.TopicEvent); err != nil {
+			return true, false, err
+		}
 	}
 	if humanRaw != "" {
 		var h envelope.HumanTurn
@@ -1368,7 +1392,7 @@ func (a *Agent) mayDeliverExternal(env envelope.Envelope) (bool, bool, error) {
 	_, rootMember := m.root.Member(info.Host.Person)
 	// A member-hosted participation's own record to an original member device
 	// is ordinary member traffic: a scope's hgp1 only fences its reader.
-	memberEvent := rootMember && externalDM(m.root) && (in.Sub == envelope.SubEvent || envelope.ProactiveAgent(in)) && m.device(env.To, recipientFP(a.store, env.To))
+	memberEvent := rootMember && externalDM(m.root) && (in.Sub == envelope.SubEvent || envelope.ProactiveAgent(in) || envelope.AgentTopicOrganization(in)) && m.device(env.To, recipientFP(a.store, env.To))
 	allowed := memberEvent || !rootMember && externalDM(m.root) && (m.device(env.To, recipientFP(a.store, env.To)) || env.To == info.Host.Address && a.personSendable(info.Host.Address, ""))
 	if env.To == info.Host.Address {
 		p, ok, _ := a.store.personByID(info.Host.Person)

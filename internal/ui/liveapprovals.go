@@ -34,10 +34,13 @@ type ApprovalsView struct {
 	Tasks     []TaskGrantView    `json:"tasks"`
 	// NativeTasks are independent trusted-own-device permissions for direct
 	// tasks, not removed by revoking a person or explicit device task grant.
-	NativeTasks    []TaskGrantView       `json:"native_tasks,omitempty"`
-	OwnDevices     []OwnDevicePermission `json:"own_devices,omitempty"`
-	Participations []ParticipationGrant  `json:"participations"`
-	ReadOnly       bool                  `json:"read_only"`
+	NativeTasks []TaskGrantView       `json:"native_tasks,omitempty"`
+	OwnDevices  []OwnDevicePermission `json:"own_devices,omitempty"`
+	// RemovedDevices hides new-grant suggestions for exact removed roster keys;
+	// existing saved grants remain visible and revocable.
+	RemovedDevices []string             `json:"removed_devices,omitempty"`
+	Participations []ParticipationGrant `json:"participations"`
+	ReadOnly       bool                 `json:"read_only"`
 	// Unresolved: conversations whose agents cannot be resolved here now
 	// (a group whose context is pending). Their grants are not listed, so
 	// not revocable here, until they can be.
@@ -103,6 +106,11 @@ type ApprovalRevoke struct {
 // Approvals implements ApprovalsProvider.
 func (l *Live) Approvals() (ApprovalsView, error) {
 	v := ApprovalsView{Questions: []QuestionApproval{}, Tasks: []TaskGrantView{}, Participations: []ParticipationGrant{}}
+	var err error
+	v.RemovedDevices, err = l.a.RemovedDevices()
+	if err != nil {
+		return v, err
+	}
 	qs, err := l.a.QuestionApprovals()
 	if err != nil {
 		return v, err

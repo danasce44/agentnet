@@ -6,6 +6,21 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## [0.8.26] — 2026-10-14
 
+- Restore validated profile pictures along with Hub backups.
+- Show locally decrypted Android message previews with truthful agent/device
+  attribution. Read existing notification-channel settings and offer their
+  direct settings screen when sound, vibration or importance suppress alerts.
+- Preserve active download destinations and object-URL lifetime, report actual
+  save outcomes, and refuse exhausted filename choices without overwriting files.
+- Offer supported Codex native approvals and input on current owner-human
+  devices, continuing the same live operation once under unchanged native
+  settings. Expired, cancelled or ended callbacks cannot replay work.
+- Exclude removed own devices from standing-permission choices while retaining
+  their history and current standalone services.
+- Let an admitted agent organize exact messages on a verified human request,
+  including explicit Main and a grouped Undo that refuses later changes.
+  Let agents react to ordinary canonical mentions without a fabricated question.
+
 - Allow Android's skin gallery to read its two fixed GitHub sources. Only GET
   subresources are allowed; navigation, native bridge, other hosts/repositories,
   credentials, query strings and unsafe paths remain blocked. This corrects the

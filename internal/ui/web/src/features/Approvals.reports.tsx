@@ -15,6 +15,7 @@ import { Button } from "../ui/Button";
 import { Sheet } from "../ui/Sheet";
 import { capital, deviceWords, kindWord } from "./Approvals.words";
 import { ResolveOwnRequest } from "./RequestResolution";
+import { NativeRequest } from "./NativeRequest";
 
 type Item = T.ReportItem;
 type Decision = "accept" | "decline" | "reply" | "resolve" | "cancel";
@@ -43,6 +44,7 @@ export function decidersWords(report: T.Report | undefined, host: string, o: T.O
   if (!report) return capital(where) + " didn’t say who decides these.";
   const items = report.items || [];
   if (items.length > 0) {
+    if (items.some(x => x.native && (x.native.expires === 0 || x.native.expires > Date.now()))) return "You can answer your agent’s native request from this device. Its host applies the response only to that current operation.";
     return items.some((x) => x.actionable)
       ? "You decide these from this device: they’re in OKs, under Reports from other computers."
       : capital(where) + " listed these but didn’t let this device decide them.";
@@ -59,16 +61,17 @@ export function decidersWords(report: T.Report | undefined, host: string, o: T.O
 
 export function Reports({ notices, o }: { notices: T.ReviewItem[]; o: T.Overview }) {
   const hosts = [...new Set(notices.map((n) => n.peer))];
+  const native = notices.some(n => n.report?.items?.some(x => x.native));
   return (
-    <Collapsible.Root className="mx-4 mt-6 rounded-2xl border-[1.5px] border-ink/15 bg-sunken">
+    <Collapsible.Root defaultOpen={native} className="mx-4 mt-6 rounded-2xl border-[1.5px] border-ink/15 bg-sunken">
       <Collapsible.Trigger className="group flex min-h-14 w-full items-center gap-3 rounded-2xl px-4 text-left">
         <IconDevices size={20} className="shrink-0 text-text-2" aria-hidden="true" />
-        <span className="flex-1 font-bold">Reports from other computers</span>
+        <span className="flex-1 font-bold">{native ? "Requests from your agents" : "Reports from other computers"}</span>
         <span className="tnum grid h-6 min-w-6 place-items-center rounded-full bg-surface px-1.5 text-[13px] font-bold text-text-2 stroke">{hosts.length}</span>
         <IconChevronDown size={20} className="shrink-0 transition-transform duration-200 motion-reduce:transition-none group-data-[panel-open]:rotate-180" aria-hidden="true" />
       </Collapsible.Trigger>
       <Collapsible.Panel className="overflow-hidden px-4 pb-4">
-        <p className="text-[14px] text-text-2">Another computer said requests wait for a person there. Each card says who decides them from their own devices.</p>
+        <p className="text-[14px] text-text-2">{native ? "Your agent is waiting for native permission or input. Answer its exact pending operation here." : "Another computer said requests wait for a person there. Each card says who decides them from their own devices."}</p>
         <div className="pt-3">
           <ul className="flex flex-col gap-3">
             {hosts.map((h) => <HostReport key={h} host={h} notices={notices.filter((n) => n.peer === h)} o={o} />)}
@@ -108,10 +111,10 @@ function HostReport({ host, notices, o }: { host: string; notices: T.ReviewItem[
           </ul>
         </div>
       ) : <p className="pt-1 text-[14px] text-text-2">{decidersWords(latest?.report, host, o)}</p>}
-      <button type="button" disabled={busy} onClick={dismiss}
+      {host !== o.me.address && <button type="button" disabled={busy} onClick={dismiss}
         className="mt-2 -ml-2 inline-flex min-h-11 items-center rounded-xl px-2 text-[14px] font-bold text-text-2 underline decoration-ink/30 underline-offset-4 hover:bg-sunken disabled:opacity-50">
         {notices.length > 1 ? "Dismiss these reports" : "Dismiss this report"}
-      </button>
+      </button>}
     </li>
   );
 }
@@ -119,6 +122,7 @@ function HostReport({ host, notices, o }: { host: string; notices: T.ReviewItem[
 function ReportRow({ x, host, report, o }: { x: Item; host: string; report: T.ReviewItem; o: T.Overview }) {
   const store = useApp();
   const [pick, setPick] = useState<Decision | null>(null);
+  if (x.native) return <li><NativeRequest key={x.native.token} n={x.native} report={report.id} result={x.result} /></li>;
   const decided = x.result && !x.result.refused;
   const state = decided ? x.result!.state : x.state;
   const ownResolution = !decided && !x.actionable ? ownReportResolution(x, host, o) : null;
