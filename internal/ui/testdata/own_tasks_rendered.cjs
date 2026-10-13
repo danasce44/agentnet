@@ -48,7 +48,7 @@ const server=http.createServer((req,res)=>{
    const settings=async()=>{await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();await page.getByRole('button',{name:/^Permissions/}).click();};
    await page.goto(origin);await page.waitForFunction(()=>window.ready);await settings();
    const inventory=page.getByRole('list',{name:'Your devices and current permissions'});
-   await inventory.waitFor();assert.equal(await page.getByText('Questions you send from your personal devices never need another AgentNet approval.',{exact:true}).count(),1);assert.equal(await inventory.getByRole('listitem').count(),3,'all own devices shown before a separate grant is removed');
+   await inventory.waitFor();assert.equal(await page.getByText('Invitations, questions and tasks from your personal devices never need another AgentNet approval.',{exact:true}).count(),1);assert.equal(await inventory.getByRole('listitem').count(),3,'all own devices shown before a separate grant is removed');
    await page.getByRole('button',{name:'Remove separate permission for Your Phone',exact:true}).click();
    await page.getByText(/Removing this separate permission does not turn off/).waitFor();
    await page.getByRole('button',{name:'Remove separate permission',exact:true}).click();
@@ -60,7 +60,8 @@ const server=http.createServer((req,res)=>{
    const on=()=>page.getByRole('button',{name:'Turn on tasks without asking for My devices',exact:true});
    await on().waitFor();assert(await page.getByText(/Permissions on your Laptop/).count(),'receiving host named');
    assert(await page.getByText(/All your verified devices, including phones/).count(),'verified scope');
-   assert(await page.getByText(/Direct tasks allowed/).count(),'native consent shown while off');
+   // An own device's native task consent is shown on that device's line (e2bebdb2), not as a separate permission.
+   assert.equal(await inventory.getByText('Tasks: allowed by device trust',{exact:true}).count(),1,'native consent shown while off');
    await on().click();await page.getByRole('button',{name:'Allow future tasks',exact:true}).click();
    await page.getByText(/Fixture could not save this permission/).waitFor();await on().waitFor();
    await on().click();assert(await page.getByText(/native approval requirements still apply/).count(),'native boundary explained');
@@ -73,7 +74,7 @@ const server=http.createServer((req,res)=>{
    await page.getByRole('button',{name:'Remove permission',exact:true}).click();await on().waitFor();
    assert.deepEqual(await page.evaluate(()=>fixture.actions),[{do:'revoke_tasks',id:person}]);
    await page.getByRole('button',{name:'Turn off tasks without asking for Alex',exact:true}).waitFor();
-   assert(await page.getByText(/Direct tasks allowed/).count(),'separate consent remains visible');
+   assert.equal(await inventory.getByText('Tasks: allowed by device trust',{exact:true}).count(),1,'separate consent remains visible');
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow');
    await page.getByRole('alertdialog').waitFor({state:'hidden'});
    await page.evaluate(async()=>{await document.fonts.ready;const root=document.querySelector('#skin').shadowRoot;await Promise.all(root.getAnimations({subtree:true}).filter(a=>a.effect.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});

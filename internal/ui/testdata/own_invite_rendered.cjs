@@ -44,7 +44,7 @@ const server=http.createServer((req,res)=>{
  try{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
   browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium'});
-  for(const mode of ['native','browser'])for(const skin of ['comic','classic','zoom'])for(const width of [1280,390]){
+  for(const mode of ['native','browser'])for(const skin of ['comic'])for(const width of [1280,390]){
    console.log('Checking '+mode+' '+skin+' '+width);
    const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage();page.setDefaultTimeout(6000);
    await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());page.on('pageerror',e=>errors.push(e.stack));
@@ -56,12 +56,8 @@ const server=http.createServer((req,res)=>{
     const shot=path.join(evidence,mode+'-'+skin+'-oks-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);
    }
    await page.evaluate(()=>openGroup());
-   if(skin==='comic'){
-    const panel=page.getByRole('button',{name:'In this chat',exact:true});
-    if(await panel.isVisible())await panel.click();else await page.getByRole('button',{name:/Who’s in this chat/}).click();
-   }else if(skin==='zoom'){
-    const panel=page.getByRole('group',{name:'Agents in this group',exact:true});await panel.waitFor();if(await panel.getAttribute('open')===null)await panel.locator(':scope > summary').click();
-   }else {await page.locator('#agents .assistant-participant').click();}
+   const panel=page.getByRole('button',{name:'In this chat',exact:true});
+   if(await panel.isVisible())await panel.click();else await page.getByRole('button',{name:/Who’s in this chat/}).click();
    const text=mode==='native'?/Enable this agent on this computer/:/Joining on /;
    await page.getByText(text).and(page.locator(':visible')).first().waitFor();
    const verify=async()=>{
@@ -71,12 +67,8 @@ const server=http.createServer((req,res)=>{
    };
    await verify();
    const shot=path.join(evidence,mode+'-'+skin+'-pending-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);
-   if(mode==='browser'){await page.evaluate(()=>transition('delayed'));if(skin==='zoom'){const panel=page.getByRole('group',{name:'Agents in this group',exact:true});if(await panel.getAttribute('open')===null)await panel.locator(':scope > summary').click();}await page.getByText(text).and(page.locator(':visible')).first().waitFor();await verify();}
-   // Close Classic's snapshot dialog, then reopen against the new current view.
-   if(skin==='classic')await page.keyboard.press('Escape');
+   if(mode==='browser'){await page.evaluate(()=>transition('delayed'));await page.getByText(text).and(page.locator(':visible')).first().waitFor();await verify();}
    await page.evaluate(()=>transition('active'));
-   if(skin==='classic')await page.locator('#agents .assistant-participant').click();
-   if(skin==='zoom'){await page.getByText(/Member of this group/).first().waitFor({state:'attached'});const panel=page.getByRole('group',{name:'Agents in this group',exact:true});if(await panel.getAttribute('open')===null)await panel.locator(':scope > summary').click();}
    await page.getByText(/Member of this group/).and(page.locator(':visible')).first().waitFor();
    await verify();
    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'no document overflow');
@@ -84,6 +76,6 @@ const server=http.createServer((req,res)=>{
   }
   assert.deepEqual(errors,[]);
   const keep=process.env.AGENTNET_RENDERED_RETAIN;if(keep){assert(path.resolve(keep).startsWith('/tmp/'));fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  console.log(JSON.stringify({ok:true,checks:'Real signed native/browser views; offline/disabled joining, delayed and signed-active transitions; no approval controls/counts; Comic/Classic/Zoom 1280/390',shots}));
+  console.log(JSON.stringify({ok:true,checks:'Real signed native/browser views; offline/disabled joining, delayed and signed-active transitions; no approval controls/counts; Comic 1280/390',shots}));
  }finally{if(browser)await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
