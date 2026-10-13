@@ -196,9 +196,10 @@ const T = { timeout: 15000 }, shots = process.env.AGENTNET_SCREENSHOTS || '';
         assert.deepEqual(errors,[],name+': page errors');await context.close();console.log('unified agent setup',name,'PASS');continue;
       }
       await p.getByRole('button', { name: /^People lists/ }).click();
-      await p.getByRole('heading', { name: 'People lists', exact: true }).waitFor(T);
+      // The page names what lists hold since fec2b046 (docs/plans/TEAM_TAGS.md).
+      await p.getByRole('heading', { name: 'People & agent lists', exact: true }).waitFor(T);
       await snap('teams');
-      await p.getByRole('button', { name: /Dock crew.*3 members/ }).click();
+      await p.getByRole('button', { name: /Dock crew.*3 people/ }).click();
       let team = p.getByRole('dialog', { name: 'Dock crew', exact: true });
       await team.getByRole('button', { name: 'Leave list' }).click();
       await p.getByText('The last manager cannot leave.', { exact: true }).waitFor(T);
