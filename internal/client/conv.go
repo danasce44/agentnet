@@ -1391,7 +1391,7 @@ func (a *Agent) admitConv(ctx context.Context, env envelope.Envelope, in envelop
 	}
 	if root.Kind == protocol.ConvKindGroup && in.PID != "" && in.Human != nil {
 		for _, e := range in.Human.Proof {
-			if e.Role == protocol.RoleHuman {
+			if e.Role == protocol.RoleHuman && !envelope.ProactiveAgent(in) {
 				return hold(reasonInvalid, "group human guest execution audience is not enabled")
 			}
 		}

@@ -4,10 +4,43 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## MEL-543 fullscreen chat images — candidate for review
+## v0.8.24 — qualification in progress, October 13, 2026
 
-The candidate is on `fix/mel-543-images`, in `.worktrees/wt-mel543-images`.
-Comic opens each picture's original object URL in a viewport-filling modal,
+The owner assigned Codex full release leadership after dismissing Agy. The
+integrated main base is `f1a92c02`; MEL-597, MEL-613/MEL-502, MEL-582, MEL-605,
+MEL-543 and MEL-603 are merged, alongside MEL-614 and OMP-accepted MEL-525.
+The dated CHANGELOG is prepared; v0.8.23 remains published. See
+[V0_8_24.md](plans/V0_8_24.md) for the root-owned release checklist, exact source
+checkpoints, evidence and limits. No v0.8.24 tag, publication or deployment yet.
+
+Coordinator-reported vet, 15 non-client race packages and both core UI shards
+pass. Original client race runs finished with failures or incomplete coverage;
+these are retained as diagnostics. One duplicate phone-daemon start in a test
+caused a real race and is corrected. Three opt-in rendered failures were stale
+fixture navigation/default assumptions; all now pass without renderer changes.
+
+Focused proactive fixes cover ordinary agent messages to admitted group human
+guests, native/browser named-message history and independent archive format/
+message reader capabilities. Required capabilities survive local deletion and
+expired archive repacking. Rootless descriptors wait rather than repeatedly
+retrying an unsupported reader. Cleanly dismissed agents retain inert linked
+history while current live access stays closed. The focused review race batch
+passes in 90.230s; the native-generated browser group fixture passes 806 memory
+checks. Browser human/guest checks pass 590 assertions, and independent final review
+finds no remaining production blocker in these corrections. Final integrated
+platform/race coverage remains required before tagging. The corrected-source mixed-version gate passes
+in 56.599s against exact v0.8.23, with no skip. None of these isolated results
+establishes physical-device delivery or a live-relay deployment.
+
+Tag-built asset/checksum, APK in-place warm/cold preservation and publication/
+deployment gates remain pending. All existing qualification/review helper results are saved and their panes
+are closed. Codex is the
+sole source writer and release lead.
+
+## MEL-543 fullscreen chat images — integrated into v0.8.24
+
+The reviewed implementation is merged into main. Comic opens each picture's
+original object URL in a viewport-filling modal,
 with Fit, 100% natural size, zoom, wheel, pinch and bounded pan. Image state is
 keyed by message, attachment index and direction. Download and Use as my picture
 remain available. A desktop-only action reuses the verified attachment read,
@@ -26,23 +59,14 @@ stage's actual mount. Local review artifacts are under `dist/mel543/` (ignored).
 
 The Linux OS opener was recorded, not an actual image app display. macOS and
 Windows command arguments are checked; native runs and physical-phone tests
-are not claimed. Full release/platform/mixed-version gates have not been run
-for this change. Agy coordinates review; this note authorizes no merge, release
-or live installation.
+are not claimed. Integrated qualification progress is recorded above; final
+platform and release artifacts remain pending.
 
-## Next release — v0.8.24, not authorized for publication yet
-
-Owner decision, October 12: **MEL-614 must be included in v0.8.24**. Merged
-[PR #7](https://github.com/misunders2d/agentnet/pull/7), implementation commit
-`0fc95aab`, and qualify the integrated candidate before tagging. The fix corrects
-duplicate same-device agent questions, permanent “Sending…” previews and lost
-named-agent selection for new follow-ups. Focused client/UI race tests and
-`go vet ./...` passed; release qualification remains outstanding.
-
-**Do not release now.** Sergey plans additional work tomorrow. This note records
-required scope, not permission to publish or update installed apps. The same
-requirement is tracked in [MEL-614](https://linear.app/mellanni/issue/MEL-614);
-it does not depend on Zenbook being online.
+MEL-614 is integrated through [PR #7](https://github.com/misunders2d/agentnet/pull/7),
+implementation `0fc95aab`: same-device agent questions appear once, delivered
+previews settle, and new follow-ups keep the selected agent. The October 12
+hold for further work is superseded by the October 13 qualification assignment;
+the owner has since authorized release leadership; tagging still requires final qualification.
 
 ## Reopened MEL-525 own-invitation fix — accepted by OMP
 
@@ -93,9 +117,9 @@ as a negative control fails all three cases with zero decisions before fanout
 in 0.660s (`fanout-ordering-negative.log`); the application source was restored
 unchanged afterward. All logs use the `/tmp/agentnet-own-invite-` prefix.
 
-The Comic bundle and local CLI are built. Full release/platform/mixed-version
-and APK preservation gates have not been rerun for this follow-up; no new tag,
-publication, live installation, permission change or deployment is claimed.
+The Comic bundle and local CLI are built. This follow-up is now integrated into
+v0.8.24 qualification above; final client/platform and tag-built APK preservation
+gates remain pending. No v0.8.24 publication or installation is claimed.
 The exact ten-second delay in the owner's ThinkPad attempt remains unmeasured;
 the isolated ordering/recovery defects above are proven, not a complete timing
 trace of that live attempt.

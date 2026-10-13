@@ -142,6 +142,9 @@ func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public,
 	} else {
 		err = a.requireParticipationCaps(ctx, key, required)
 	}
+	if err == nil && n.sub == envelope.SubHistoryArchive && required != protocol.CapHistoryArchive {
+		err = a.requireParticipationCaps(ctx, key, protocol.CapHistoryArchive)
+	}
 	// Captured human controls retain their participation requirement,
 	// and also need the reader's control capability before handover.
 	if err == nil && n.v == envelope.Version3 && groupControlSub(n.sub) && required != protocol.CapControl && required != protocol.CapGroup {

@@ -1344,8 +1344,9 @@ export function parseHistory(json) {
   if (f.v !== 1 || !validID(f.id) || !validID(f.lid) || !validAddress(f.from || "") || !validFingerprint(f.from_key || "")) throw new Error("a malformed history item");
   const target = f.target ? strict(f.target, "target", { address: "string", fingerprint: "string", agent_id: "string", group_admission: "string" }) : null;
   const assistant = historyAssistantReaction(f); // a conversation assistant's own reaction: its participation, maybe its agent
+  const proactive = proactiveAgent({...f,conv:"history"}) && validID(f.pid);
   if (assistant && (!validID(f.pid || "") || f.agent_id && !validID(f.agent_id) || f.origin || target)) throw new Error("a malformed assistant reaction history item");
-  if (!assistant && f.agent_id && (!validID(f.agent_id) || !["answer", "result"].includes(f.kind) && f.status !== StatusProgress || !f.reply_to || f.sub) || target?.agent_id && !validID(target.agent_id)) throw new Error("a malformed named history item");
+  if (!assistant && f.agent_id && (!validID(f.agent_id) || !proactive && (!["answer", "result"].includes(f.kind) && f.status !== StatusProgress || !f.reply_to || f.sub)) || target?.agent_id && !validID(target.agent_id)) throw new Error("a malformed named history item");
   const ref = f.ref ? strict(f.ref, "ref", { id: "string", fingerprint: "string" }) : null;
   if (ref && (!validID(ref.id || "") || !validFingerprint(ref.fingerprint || ""))) throw new Error("a malformed history item");
   if (ref && !isControl(f.sub || "")) throw new Error("a malformed history item");
@@ -1358,7 +1359,7 @@ export function parseHistory(json) {
     const output = (["answer", "result"].includes(f.kind) || f.kind === "message" && f.status === StatusProgress) && !target && pid && !author && !receiver;
     const reaction = f.sub === SubReaction && historyAssistantReaction(f) && f.kind === "message" && pid && !author && !target && !receiver; // an assistant's reaction to its captured audience
     const edit = [SubRevision, SubRetraction].includes(f.sub) && ref && f.kind === "message" && !pid && !target && !receiver && !f.agent_id && !f.origin; // an edit to its turn's captured audience
-    if (!reaction && !edit && (f.sub || !ordinary && !request && !output)) throw new Error("human: malformed history turn");
+    if (!reaction && !edit && (f.sub || !ordinary && !request && !output && !(proactive && agent && pid === author))) throw new Error("human: malformed history turn");
   }
   if (receiver && (receiver.op !== "request" || receiver.request_ref !== f.lid || f.sub || f.agent_id || ref || !["message", "question", "task"].includes(f.kind))) throw Error("receiver: history retains only original inert request routes");
   return { ...(f.group_history?{group_history:parseGroupContext(f.group_history)}:{}), v: f.v, from: f.from, from_key: f.from_key, id: f.id, lid: f.lid, ts: f.ts || 0, at: f.at || 0, kind: f.kind || "", body: f.body || "",

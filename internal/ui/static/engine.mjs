@@ -3452,10 +3452,10 @@ export class Engine {
         await this.requireHumanSupport(rec.to, gate.pin);
         if(c?.kind==="group")await this.requireGroupHumanSupport(rec.to,gate.pin);
       }
-      const proactiveCopy = rec.sub === "history" ? wire.parseHistory(rec.body) : rec.sub === wire.SubDeviceHistory ? wire.parseDeviceHistory(rec.body).item : rec;
-      if (wire.proactiveAgent(proactiveCopy)) {
+      const proactiveCopy = rec.sub === "history" ? {...wire.parseHistory(rec.body),conv:rec.conv} : rec.sub === wire.SubDeviceHistory ? wire.parseDeviceHistory(rec.body).item : rec;
+      if (wire.proactiveAgent(proactiveCopy) || rec.required_cap === wire.CapProactiveAgent) {
         const pin = await this.pinned(rec.to), profile = await this.profile(rec.to);
-        if (!await wire.profileSupports(profile || {},rec.to,(await this.pubOf(pin)).sign_key,wire.CapProactiveAgent)) throw Object.assign(new Error("Recipient cannot read proactive agent messages yet; update that device."), {code:"agent_identity_unsupported"});
+        if (!await wire.profileSupports(profile || {},rec.to,(await this.pubOf(pin)).sign_key,wire.CapProactiveAgent)) throw Object.assign(new Error("Recipient cannot read proactive agent messages yet; update that device."), {code:rec.sub===wire.SubHistoryArchive?"history_archive_unsupported":"agent_identity_unsupported"});
       }
       if(await this.topicCopy(rec))await this.requireTopicSupport(rec.to,await this.pinned(rec.to));
       if (await this.roomCopy(rec)) { // a room shape needs rm1 besides its own requirement (ROOM_V1 §2.5)
@@ -5029,10 +5029,10 @@ export class Engine {
   }
 
   async admitGroupTurn(n,env,pin,base, admission = null) {
-    const room=!!n.human&&!n.sub&&!!n.pid&&n.pid===n.human.author_pid; // a person guest's turn (client roomGroupTurn): its PID is its author's
+    const room=!!n.human&&!n.sub&&!!n.pid&&n.pid===n.human.author_pid&&(!n.origin||n.origin==="ui"); // a person guest's turn (client roomGroupTurn): its PID is its author's
     if(n.pid&&!room) {
       if(n.human) {
-        if(n.human.proof.some(e=>e.role==="human"))throw new Hold("invalid","Group human guest execution audience is not enabled.");
+        if(n.human.proof.some(e=>e.role==="human")&&!wire.proactiveAgent(n))throw new Hold("invalid","Group human guest execution audience is not enabled.");
         const c=await this.groupRecord(n.conv);const sender=await this.personOf(env.from,pin, admission);
         return this.admitHumanTurn(n,env,pin,base,wire.parseGroupRoot(n.root),sender,c, admission);
       } // the group participation path does not read it (client admitConv; ROOM_V1 P3/P4)
@@ -5450,7 +5450,7 @@ export class Engine {
     }
     // Retained own-member history is inert; only its lifecycle gate differs
     // from live delivery. Exact targets, author keys and requests still bind it.
-    const retained=(h.sub==="excerpt"||!h.sub&&(["question","task","answer","result"].includes(h.kind)||progressOutput(h)))&&this.retainedAssistant(info,events);
+    const retained=(h.sub==="excerpt"||!h.sub&&(["question","task","answer","result"].includes(h.kind)||progressOutput(h)||wire.proactiveAgent({...h,conv})))&&this.retainedAssistant(info,events);
     if(!retiredEnd)await this.externalRole({...h,conv,replica:h.sub==="excerpt"},retained?{...info,state:"active"}:info,current,h.from,h.from_key,checks);
     await this.checkExternalReply({...h,conv},info,current,checks,true);
     return info;
@@ -5475,7 +5475,7 @@ export class Engine {
     if(!sender || !n.replica || n.attachments.length)throw new Hold("invalid","Group history is not from a current device or carries unexpected bytes.");
     let h;try{h=wire.parseHistory(n.body);}catch(e){throw new Hold("invalid",e.message);}
     if((JSON.parse(n.body).attachments||[]).some(a=>a.blob?.id||a.blob?.size||a.blob?.sha256))throw new Hold("invalid","Historical group file is not a manifest.");
-    if(h.pid&&h.human?.proof.some(e=>e.role==="human"))throw new Hold("invalid","Group human guest execution audience is not enabled.");
+    if(h.pid&&h.human?.proof.some(e=>e.role==="human")&&!wire.proactiveAgent({...h,conv:n.conv}))throw new Hold("invalid","Group human guest execution audience is not enabled.");
     if(h.pid||h.ref)return this.admitGroupParticipationHistory(n,env,pin,h,checks,packet,members, admission);
     if(h.kind!=="message"||h.sub||h.target||h.pid||h.agent_id||h.status||h.ref||h.origin&&h.origin!=="ui"||h.ts<=0||h.reply_to&&!wire.validID(h.reply_to))throw new Hold("invalid","Group history contains nonordinary input.");
     wire.checkTopic({...h,v:wire.Version2});

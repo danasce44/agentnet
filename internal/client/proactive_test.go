@@ -10,7 +10,7 @@ import (
 )
 
 func TestProactiveAgentMessageAdmission(t *testing.T) {
-	for _, mode := range []string{"dm", "external", "group"} {
+	for _, mode := range []string{"dm", "external", "group", "group_guest"} {
 		t.Run(mode, func(t *testing.T) {
 			var inviter, host *Agent
 			var readers []*Agent
@@ -25,12 +25,30 @@ func TestProactiveAgentMessageAdmission(t *testing.T) {
 				w, h, c, _, _, records, stopped := externalAgentWorld(t)
 				stop = stopped
 				inviter, host, conv, readers, agent = w.alice, h, c, []*Agent{w.alice, w.bob}, records[0].ID
-			case "group":
+			case "group", "group_guest":
 				w, carol, packet, stops := groupTurnsFixture(t)
 				stop = stops[w.bob]
 				inviter, host, conv, readers = w.alice, w.bob, packet.State.Conv, []*Agent{w.alice, carol}
 				if err := host.SetResponder(&Responder{Harness: "claude", Dir: t.TempDir()}); err != nil {
 					t.Fatal(err)
+				}
+				if mode == "group_guest" {
+					guest := proofReader(t, w, "proactive-guest")
+					runAgent(t, guest)
+					publishGroupFixtureCaps(t, guest, true)
+					for _, a := range []*Agent{inviter, host, carol, guest} {
+						roomReader(t, a)
+					}
+					invite, err := inviter.InviteHuman(tctx(t), conv, guest.Address, nil, "guest audience")
+					if err != nil {
+						t.Fatal(err)
+					}
+					eventually(t, "human guest invited", func() bool { return stateAt(t, guest, invite.PID).State == PartInvited })
+					if _, err := guest.AcceptParticipation(tctx(t), invite.PID); err != nil {
+						t.Fatal(err)
+					}
+					eventually(t, "host knows current human guest", func() bool { return stateAt(t, host, invite.PID).HumanActive() })
+					readers = append(readers, guest)
 				}
 			}
 			topic := protocol.NewID()

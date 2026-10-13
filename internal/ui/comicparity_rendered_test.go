@@ -187,8 +187,8 @@ func comicGroupParity(t *testing.T, rendered bool) {
 // device's key changed and one message did not verify: the chat row says
 // "Identity changed", the paused composer offers "Check and trust…", whose
 // Trust stays off until the codes are said to match and then lets writing
-// resume; OKs lists the held message by name with a plain reason, never an
-// address. At 1440x900 light and 390x844 dark. Opt-in as
+// resume; passive held records stay in explicit technical diagnostics, with
+// no approval or verified-author claim. At 1440x900 light and 390x844 dark. Opt-in as
 // TestComicParityRendered.
 func TestComicTrustRendered(t *testing.T) {
 	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {

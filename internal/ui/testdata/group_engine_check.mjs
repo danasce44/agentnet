@@ -937,6 +937,9 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
   await ended.receive(c.proof);await ended.receive(c.context);
   for(const i of [0,1])for(const type of ['invite','scope','accept'])await ended.receive(pv['p6-'+i+'-'+type]);
   for(const name of ['p6-root','p6-ask','p6-answer','p6-status'])await ended.receive(pv[name]);
+  const proactiveInner={...pv['p6-ask'].inner,id:wire.newID(),lid:wire.newID(),kind:'message',pid:pv['p6-source'],target:null,reply_to:'',origin:'agent:proactive',body:'Proactive update before dismissal',agent_id:wire.parseEvent(pv['p6-0-invite'].inner.body).host.agent_id,root:wire.rootJSON(root)};
+  const proactiveEnvelope=await wire.seal(proactiveInner,aliceKeys,pub);await ended.receive({envelope:proactiveEnvelope});
+  check(!!await ended.st.get('inbox',proactiveInner.id)&&!await ended.st.get('held',proactiveInner.id),'current admitted group agent ordinary proactive message stores before dismissal');
   for(const name of ['visitor-invite','visitor-accept'])await ended.receive(pv[name]);
   await ended.receive({envelope:await historyEnvelope(pv['history-visitor-excerpt'])});
   await ended.receive(pv['visitor-dismiss']);
@@ -1001,6 +1004,14 @@ export async function checks(v, realIDB=false, requireWarmRecovery=false, contro
     await target.receive({envelope:historical.envelope});
     check(!await target.st.get('held',historical.id)&&!!await target.st.get('inbox',retained.id),'ended asking assistant retains exact '+name+' history without live authority');
    }
+   const proactive=ended.e.itemOf(await ended.st.get('inbox',proactiveInner.id),false);
+   const proactiveCopy=await ended.e.historyCopy(dev,record,proactive);
+   await target.receive({envelope:proactiveCopy.envelope});await target.receive({envelope:proactiveCopy.envelope});
+   const proactiveRow=await target.st.get('inbox',proactive.id);
+   check(proactiveRow?.history&&proactiveRow.read&&proactiveRow.state===''&&proactiveRow.body===proactive.body&&!await target.st.get('held',proactiveCopy.id)&&(await target.st.all('inbox')).filter(r=>r.lid===proactive.lid).length===1,'dismissed assistant proactive history imports once without restarting work');
+   const endedAgent=await ended.e.agentConv(proactive.pid);let refusedProactive=false;
+   try{await ended.e.externalRole({...proactive,conv},endedAgent.info,endedAgent.members,proactive.from,proactive.from_key);}catch{refusedProactive=true;}
+   check(refusedProactive,'dismissed assistant has no new live proactive authority');
    for(const name of ['visitor-invite','visitor-accept','visitor-dismiss']) {
     const eventItem=ended.e.itemOf(await ended.st.get('inbox',pv[name].inner.id),false),eventCopy=await ended.e.historyCopy(dev,record,eventItem);
     await target.receive({envelope:eventCopy.envelope});

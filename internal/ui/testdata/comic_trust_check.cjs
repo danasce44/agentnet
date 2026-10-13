@@ -40,18 +40,25 @@ const address = /\b[a-z0-9._-]+\/[a-z0-9._-]+\b/;
     await sheet.waitFor({ state: 'hidden', ...T });
     await p.getByText('Sending is paused').waitFor({ state: 'detached', ...T });
 
-    // OKs lists what was held back, by name, in words.
+    // Passive records have no approval action. They stay in explicit technical
+    // diagnostics, with the reason retained and no invented verified author.
     if (w < 1024) await p.getByRole('button', { name: /^Back to chats/ }).click();
     await p.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^OKs/ }).click();
-    const held = p.locator('section[aria-labelledby="oks-heldback"]');
+    assert.equal(await p.locator('section[aria-labelledby="oks-heldback"]').count(), 0, name + ': passive records stay out of OKs');
+    const nav = p.getByRole('navigation', { name: 'Main' });
+    await nav.getByRole('button', { name: w < 1024 ? 'You' : 'Settings', exact: true }).click();
+    await p.getByRole('button', { name: /^About/ }).click();
+    await p.getByRole('button', { name: 'Technical details', exact: true }).click();
+    const held = p.locator('section[aria-labelledby="sync-diagnostics"]');
     await held.waitFor(T);
+    await held.locator('summary').filter({ hasText: 'Retained sync records' }).click();
     const words = await held.textContent();
-    assert.match(words, /couldn’t be verified/, name + ': the reason is in words');
+    assert.match(words, /couldn’t be checked/, name + ': the reason is in words');
     // The demo's unverified message only claims a sender: it isn't drawn as that person.
-    const unverified = held.locator('li', { hasText: 'A message that couldn’t be verified' });
-    assert.match(await unverified.textContent(), /says it’s from /, name + ': an unverified message says who it claims to be from');
+    const unverified = held.locator('li').first();
+    assert.match(await unverified.textContent(), /claiming to be /, name + ': an unverified message only claims a sending device');
     assert.equal(await unverified.locator('[data-size]').count(), 0, name + ': an unverified message has no person’s avatar');
-    assert.ok(!address.test(words), name + ': the held-back list shows an address: ' + words);
+    assert.match(words, /diagnostic records, not approval requests/, name + ': diagnostics explain that nothing awaits consent');
     await held.scrollIntoViewIfNeeded();
     await snap('held');
     assert.deepEqual(errors, [], name + ': page errors');

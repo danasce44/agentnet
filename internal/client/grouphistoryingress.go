@@ -65,7 +65,7 @@ func (a *Agent) admitGroupHistory(ctx context.Context, env envelope.Envelope, in
 	}
 	if item.V == 1 && item.PID != "" && item.Human != nil {
 		for _, ev := range item.Human.Proof {
-			if ev.Role == protocol.RoleHuman {
+			if ev.Role == protocol.RoleHuman && !envelope.ProactiveAgent(item.inner(in.Conv)) {
 				return hold(reasonInvalid, "group human guest execution audience is not enabled")
 			}
 		}
