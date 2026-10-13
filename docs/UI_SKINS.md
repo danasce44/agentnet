@@ -194,7 +194,8 @@ draw its own through `host.gallery`.
 - **Compatibility.** A skin whose `api` is not 1, or whose `agentnet` names
   a release newer than the one serving this page (`overview.version`),
   is listed as incompatible and cannot be installed. An unstamped
-  development build never counts as older.
+  development build never counts as older, and neither does a page that
+  has not read an overview through `host.api` yet.
 - **Stored like an import.** Installing uses the browser-local package
   manager: the same limits, `local:` ids and per-browser, per-origin
   storage. Choosing the skin asks for trust with its exact digest; an
@@ -220,7 +221,8 @@ without hiding the others; a malformed catalog fails as a whole.
 
 ## Manifest
 
-`skin.json`:
+`skin.json` (an illustration: the real Notebook example in
+`examples/skins/notebook/` declares only `entry.mjs` and `style.css`):
 
 ```json
 {
@@ -235,15 +237,33 @@ without hiding the others; a malformed catalog fails as a whole.
 ```
 
 IDs use lowercase letters, digits and hyphens, starting with a letter, at
-most 48 characters; `name` is at most 80 bytes;
+most 48 characters; `name` is at most 80 bytes and is not a built-in
+skin's name (see [Trust](#trust));
 `comic`, `classic`, `zoom` and `default` are reserved. The optional
-`agentnet` field names the oldest AgentNet release the package supports
-(`"agentnet": "v0.8.25"`): a program older than that leaves an installed
-package out of its catalog instead of running it, and the skins gallery
-offers the package only to releases that can run it (see
-[Versions and capabilities](#versions-and-capabilities)). Name the release
-whose contract the package was checked against. `files` lists every
-file the package uses (at most 32, no duplicates); only declared JS/MJS, CSS,
+`agentnet` field names the oldest AgentNet release (vX.Y.Z) the package
+supports (`"agentnet": "v0.8.25"`); the program and browser import both
+treat an empty or `null` value as absent. Where it is checked:
+
+- A program on this computer or a relay leaves an installed package that
+  names a newer release than its own out of its catalog (a relay compares
+  with its own build version). A development build stamped from a release
+  counts as that release; an unknown running version (an unstamped
+  development build) never leaves one out.
+- The [skin gallery](#skin-gallery) (`host.gallery`) refuses to install a
+  package whose catalog entry names a release newer than the page's
+  `overview.version`.
+- Browser import checks only that the field is a vX.Y.Z release; it does
+  not compare it with the running release.
+- `host.selectSkin` refuses a package that names a release newer than the
+  page's `overview.version`, once the page has read an overview through
+  `host.api`. A saved choice, `?skin=<id>` and the host's switcher do not
+  check the field.
+- Releases up to v0.8.24 ignore the field.
+
+Name the release whose contract the package was checked against (see
+[Versions and capabilities](#versions-and-capabilities)). `files` lists every
+file the package uses (at most 32, no duplicates, never `skin.json`
+itself); only declared JS/MJS, CSS,
 JSON, PNG, SVG, WebP and WOFF2 files are served. `entry` (JS/MJS) and the
 optional `style` and `document` (CSS) must appear in `files`. Unsupported API
 versions and invalid packages are omitted. Package-owned imports and assets
@@ -272,7 +292,8 @@ The entry exports `async function mount(root, host)` and optionally
 
 - `root` lives in a shadow tree of `#skin`, under the host's base sheet
   (`/assets/skin-base.css`: `core.css` in the lowest cascade layer, so the
-  package's own rules always win) and the package's stylesheet. Semantic
+  package's own rules win, except over `core.css`'s one `!important` rule,
+  `[hidden] { display: none }`) and the package's stylesheet. Semantic
   colors such as `--surface`, `--text`, `--muted`, `--accent` and `--danger`
   inherit from the page; a package can replace them.
 - The skin's box fills the page under the switcher (or the whole page for
@@ -283,7 +304,8 @@ The entry exports `async function mount(root, host)` and optionally
   viewport, so there the host sets two custom properties on `<html>`, which
   inherit into the shadow tree: `--an-viewport-h`, the page's height while
   the keyboard is open, and `--an-keyboard`, how much of the screen's bottom
-  it covers. Both are absent while nothing covers the page. Size the skin
+  it covers. Both are absent while nothing covers the page and while the
+  page is pinch-zoomed. Size the skin
   from `root` (`height: 100%` down to the frame), never from `vh`, `dvh` or
   `svh`, so the message box stays above the keyboard; a fixed bottom popup
   (a bottom sheet) sits at `bottom: var(--an-keyboard, 0px)` and is no
@@ -300,8 +322,9 @@ The entry exports `async function mount(root, host)` and optionally
   the rest of the skin behind it `inert`, and keep Tab and Shift+Tab within
   it. Page-level scroll locks and `aria-hidden` on the page's other elements
   (what many dialog libraries do in their fully modal mode) write outside
-  `root`. Comic does this for every sheet and confirmation (`owned.tsx`
-  `useModal`).
+  `root`. Comic does this for its sheets and confirmations (`owned.tsx`
+  `useModal`); its picture editor (`pictures.mjs`) is a native
+  `showModal()` dialog.
 - `unmount` stops what `host.listen` returned, timers, object URLs and every
   `window` or `document` listener the skin added, and leaves `root` empty.
   Use DOM text nodes for message and profile content.
@@ -314,28 +337,28 @@ still runs with the page's full trust.
 | Method | Contract |
 | --- | --- |
 | `host.version` | `1`; additive extensions keep this version. What the running release offers is in [Versions and capabilities](#versions-and-capabilities). |
-| `host.platform` | `daemon` (this computer's program: the desktop app or `agentnet ui`), `browser` (a page a relay serves, with its in-browser engine) or `android` (the Android app). Android's pages are served by the same Go program as `daemon`, so every daemon route applies there too, plus `host.android` and `host.onBack`. `daemon` alone never proves the desktop app (see the app methods). |
-| `host.api(path, body?)` | The JSON `/api/*` read/action surface: every route, its platforms, request and answer are listed in [HOST_API_ROUTES.md](HOST_API_ROUTES.md). Omit body for GET; provide an object for POST. Resolves parsed JSON or rejects with an `Error` whose `message` is a user-readable sentence. On this computer's program and Android a rejection also carries `status`, the HTTP status: 400 for an unknown body field or bad input, 404 for an unknown path, 405 for the wrong method, and 409 with the message `stale or disconnected workspace` when the program retired this binding (see `host.reconnect`). In a browser, `status` (when present) is the relay's own status (0: unreachable), `code` names some engine refusals, an unknown path rejects with `Unknown request.`, and neither the HTTP method nor unknown body fields are checked: test a skin on both. A skin never fetches `/api` or `/events` itself; the one exception is a `picture_url` from a view, used only as an `<img src>` (a `blob:` URL in a browser, a host-qualified `/api/picture/<hash>` here), never built by the skin. |
-| `host.listen(fn)` | Push events; returns an unsubscribe function. Reload data on `change`; do not poll. This computer's program and Android send one `{type:"change",seq}` as soon as the stream opens, one per change after it, `{type:"restart"}` when the program switches and `{type:"disconnect"}` when the stream fails; events carry `workspace`, the bound membership's id. A browser sends only `change` (also when its relay stream drops or returns: read `overview.device.online` for connectivity) and nothing at subscription, so load once in `mount` as well. |
-| `host.onOpen(fn, kinds?)` | Required. Registers notification routing: `fn(target, kind, context)`. Every skin gets `"channel"` (a browser notification's channel: resolve it with GET `/api/notify/resolve?chan=…`, which answers `{conv}` when this device has that conversation; an empty channel means news in more than one or, on this computer's program and Android, where channels are always empty, open the list) and `"conversation"` (a DM id). Listing `"message"` in `kinds` adds `fn(messageID, "message", {conv?, dir?})` (the conversation and direction the notification names) and `"review"` adds `fn("", "review")`. A destination a skin does not take waits in the switcher with the way to open it in Comic. A missing destination opens the skin's list, never another arbitrary chat. |
-| `host.android` | Present only when `platform` is `android`; the Android app's own actions, each a promise: `connection()` → `{enabled}` and `setConnection(enabled)` (keep the background connection), `requestNotifications()` and `notificationStatus()` → `{granted}`, `copyText(text)` (the WebView's clipboard), `legacyDrafts()` → `{drafts[{key,value}]}` and `acknowledgeLegacyDraft(key, value)` (drafts saved by the earlier Android preview), `scanQR()` → `{text}` or `{canceled: true}`. `visible()` says whether the app is in the foreground and `onVisibility(fn)` calls `fn(visible)` on every change (returns an unsubscribe function): the WebView's own `document.visibilityState` can lag the app, so treat the page as seen only when both say visible. |
+| `host.platform` | `daemon` (this computer's program: the desktop app or `agentnet ui`), `browser` (a page a relay serves, with its in-browser engine) or `android` (the Android app). Android's pages are served by the same Go UI server as `daemon` (`internal/ui`, embedded in the app's Go core), so the daemon routes apply there too, with the Android refusals [HOST_API_ROUTES.md](HOST_API_ROUTES.md) names, plus `host.android` and `host.onBack`. `daemon` alone never proves the desktop app (see the app methods). |
+| `host.api(path, body?)` | The JSON `/api/*` read/action surface: every route, its platforms, request and answer are listed in [HOST_API_ROUTES.md](HOST_API_ROUTES.md). Omit body for GET; provide an object for POST. Resolves parsed JSON or rejects with an `Error` whose `message` is a user-readable sentence. On this computer's program and Android a rejection also carries `status`, the HTTP status: 400 `bad request` for an unknown body field, malformed JSON or an empty body; 404 for an unknown path or a provider's "not available here"; 405 for the wrong method; 409 for a refusal, whose sentence you show as written. Only the 409 message `stale or disconnected workspace` means the program retired this binding (see `host.reconnect`). In a browser, `status` (when present) is the relay's own status (0: unreachable), `code` names some engine refusals, an unknown path rejects with `Unknown request.`, and neither the HTTP method nor unknown body fields are checked: test a skin on both. A skin never fetches `/api` or `/events` itself; the one exception is a `picture_url` from a view, used only as an `<img src>` (a `blob:` URL in a browser, a host-qualified `/api/picture/<hash>` here), never built by the skin. |
+| `host.listen(fn)` | Push events; returns an unsubscribe function. Reload data on `change`; do not poll. This computer's program and Android send one `{type:"change",seq}` as soon as the stream opens and one after changes (changes that come together are sent as one, so `seq` can skip), `{type:"restart"}` only when the daemon serving the page switches to an updated program (the desktop app and Android update as a whole: the app restarts, or Android's installer replaces it, and the page opens again on the new release) and `{type:"disconnect"}` when the stream fails; events carry `workspace`, the bound membership's id. After `restart` or `disconnect` the host has closed the stream: call `host.listen` again. A browser sends only `change` (also when its relay stream drops or returns: read `overview.device.online` for connectivity) and nothing at subscription, so load once in `mount` as well. |
+| `host.onOpen(fn, kinds?)` | Required. Registers notification routing: `fn(target, kind, context)`. Every skin gets `"channel"` (a browser notification's channel: resolve it with GET `/api/notify/resolve?chan=…`, a browser-only route, which answers `{conv}` when this device has that conversation; an empty channel means news in more than one or, on this computer's program and Android, where channels are always empty, open the list) and `"conversation"` (a DM id). Listing `"message"` in `kinds` adds `fn(messageID, "message", {conv?, dir?})` (the conversation and direction the notification names) and `"review"` adds `fn("", "review")`. A destination a skin does not take waits in the switcher with the way to open it in Comic. A missing destination opens the skin's list, never another arbitrary chat. |
+| `host.android` | Present only when `platform` is `android`; the Android app's own actions, each a promise: `connection()` → `{enabled}` and `setConnection(enabled)` (keep the background connection), `requestNotifications()` and `notificationStatus()` → `{granted}`, `copyText(text)` (Android's system clipboard; only while the app is in the foreground, at most 128 KiB), `legacyDrafts()` → `{drafts[{key,value}]}` and `acknowledgeLegacyDraft(key, value)` (drafts saved by the earlier Android preview), `scanQR()` → `{text}` or `{canceled: true}`. `visible()` says whether the app is in the foreground and `onVisibility(fn)` calls `fn(visible)` each time the app reports its state, repeats included (for example after an installer result): re-read what may have changed (returns an unsubscribe function). The WebView's own `document.visibilityState` can lag the app, so treat the page as seen only when both say visible. |
 | `host.onBack(fn)` | Present only on Android. Registers the system Back handler: `fn()` returns `true` when it handled Back (closed a sheet, went up a level); `false` lets Android leave the app. Returns an unsubscribe function; the latest registration wins. |
 | `host.clipboardImage()` | Optional, native shell only. Resolves `File` for a clipboard image or `null` when there is none. Call only for a user paste that contains no browser image file; ordinary text paste stays available. Capture this host callback for the paste operation; standalone skins never read native clipboard globals themselves. |
-| `host.appStatus()` | Desktop-app capability, present on every host: it rejects where there is no app (a browser rejects with "Open the AgentNet app for this computer's settings."; `agentnet ui` rejects with a 404). Android answers status, check and update but rejects `appReplaceCommand`. Show app controls only after `appStatus()` resolved; never decide from the methods' presence. Resolves `{cli_path, cli_state:"installed"\|"custom"\|"error", cli_problem?, version, app_update_supported, problem?, update_result?}`. The location/state describe this computer's AgentNet command; `problem` explains unavailable app updates. Omit unavailable controls. |
+| `host.appStatus()` | Desktop-app capability, present on every host: it rejects where there is no app (a browser rejects with "Open the AgentNet app for this computer's settings."; `agentnet ui` rejects with the message `404 page not found`, without `status`). Android answers status, check and update but rejects `appReplaceCommand`; an Android build updated through its app store rejects all four. Show app controls only after `appStatus()` resolved; never decide from the methods' presence. Resolves `{cli_path, cli_state:"installed"\|"custom"\|"error", cli_problem?, version, app_update_supported, problem?, update_result?}`. The location/state describe this computer's AgentNet command; `problem` explains unavailable app updates. Omit unavailable controls. |
 | `host.appCheckUpdate()` | Optional desktop-app action, called only from an explicit Check for updates choice. Resolves `{version, latest, state:"available"\|"current"\|"ahead"}` using the app's own version and the latest published stable release. Lookup/comparison errors reject; they never mean up to date. Checking does not install, pause work or change the server recommendation, and works even when this installation cannot update itself. Keep results separate from installation success; discard completions after leaving the view/workspace. Omit this control on browser hosts or when `appStatus()` rejected. |
-| `host.appUpdate()` | Optional desktop-app action, called from the person's Update choice. Resolves `{state:"restarting", message}` after update preparation succeeds, or rejects with a user-readable error. The app restarts when ready; the resolved result does not prove that restart or installation completed. |
+| `host.appUpdate()` | Optional desktop-app action, called from the person's Update choice. Resolves `{state, message}`: `restarting` after the desktop app prepared the update (the app restarts when ready); `complete` (with `version`) when the app already runs that release, or there the state an earlier update recorded (`pending`, `failed` or `partial`); `installer` on Android, whose package installer then asks the person. Otherwise it rejects with a user-readable error. Never treat any state as proof that the restart or installation completed. |
 | `host.appReplaceCommand()` | Optional desktop-app action, called only after explicit confirmation to replace a custom AgentNet command. Resolves the updated command fields `{cli_path, cli_state:"installed"\|"custom"\|"error", cli_problem?}`. Merge these fields into the previous app status, or read `appStatus()` for the complete status. Opening or canceling confirmation never calls this method. |
 | `host.stage(file)` | Prepares a File for sending; resolves an opaque attachment value for `files` in a send. Keep that value only until that send consumes it. Browser encrypts through its engine; daemon stages locally. |
 | `host.file(messageID,index,dir)` | Opens an attachment this device holds: a received one, or a copy kept of one it sent. Pass the message's own `dir` (`in` or `out`): a received id is the sender's choice and can equal a sent one here. Resolves `{bytes:Uint8Array}` (browser may add name/size/image). Show Open only where the view says `openable: true`; a sent file without a kept copy says so in `note`. Validate magic bytes before inline display; never execute HTML or SVG. |
 | `host.drive` | Project-space provider bound to this host's membership, present on every host (presence says nothing about configuration): `drive({conv, action, ...})` resolves the existing Drive view/result; `driveUpload(conv, file, confirm)` uploads plaintext to Google only after explicit confirmation. It reuses the core's Drive actions, consent and permissions. Browser providers also expose `prepareGoogle()` and `beginGoogleConsent({conv, full?, confirm_account})`: prepare first, then call begin directly from the confirming click, with no intervening await, to retain the browser user gesture. Never stage this upload through `host.stage`; Google files are outside AgentNet encryption. Switching workspace never retargets a captured provider; retired/disconnected bindings reject new calls. No tokens or raw transport are exposed. Absence/configuration errors must be shown as unavailable. |
 | `host.skins` | The catalog: `{api, id, name, entry, style, document, files, agentnet?, digest?, local?, builtin?}` (browser-local entries add `package_id` and `size`) for Comic, the other built-in, installed and browser-local skins. `builtin` is the host's word (its fixed list), never a manifest's. The array is updated in place. |
 | `host.onSkinsChange(fn)` | Calls `fn()` when `host.skins` changes (a browser-local skin imported or removed). Returns an unsubscribe function. |
-| `host.selectSkin(id)` | Reloads into a skin from `host.skins`. The current skin must preserve or explicitly resolve unsent drafts first. |
-| `host.manageLocalSkins(root)` | Present on every host; where the browser cannot store skins it draws only that sentence. Draws the host's browser-local skin manager (import files or a folder, the stored skins, Remove) into an element the skin owns; returns its teardown, which empties that element. Consent stays the host's: a stored skin asks for trust when chosen. |
+| `host.selectSkin(id)` | Reloads into a skin from `host.skins`. It throws, without reloading, for an unknown id or a package that needs a newer AgentNet (see [Manifest](#manifest)). The current skin must preserve or explicitly resolve unsent drafts first. |
+| `host.manageLocalSkins(root)` | Present on every host; where the browser cannot store skins it draws only its heading, its introduction and "This browser cannot store skins." Draws the host's browser-local skin manager (import files or a folder, the stored skins, Remove) into an element the skin owns; returns its teardown, which empties that element. Consent stays the host's: a stored skin asks for trust when chosen. |
 | `host.gallery` | The [skin gallery](#skin-gallery), present wherever the host has it: `list({fresh?})` resolves `{release, skins[{id, name, description, version, api, agentnet?, state, installed, previews, alts}]}` (`state`: `install`, `installed`, `update` (a newer digest is published) or `incompatible` (it needs another Host API or a newer AgentNet than the one serving this page); `installed`: this browser's catalog id for a stored version, else `""`); `preview(id, index)` resolves one verified preview as a `Blob` (show it with an object URL and revoke it); `install(id)` downloads, verifies and stores the package in this browser and resolves its catalog id (`local:<id>`), which the skin passes to `host.selectSkin` (trust is then asked as for any stored skin). Every method rejects with a sentence to show: unreachable, busy, no published release, a file that did not match, a skin that needs a newer AgentNet, or a browser that cannot store skins. It never selects a skin or grants trust. |
-| `host.reconnect()` | Optional, present on this computer's program with workspaces and on Android. It works once the skin has read `/api/overview` (with or without a query) through this host, which proves the membership's identity; otherwise it rejects. After the program restarted and retired this membership's handle, binds the same membership again (only when the program still names it with the endpoint, realm, address and key it proved in its own overview) and mounts the skin again over the new binding. Resolves without remounting when the binding still holds. Nothing under way is retargeted or replayed: staged files and sends stay with the old binding, so a skin keeps text drafts and asks for files again. |
+| `host.reconnect()` | Optional, present on this computer's program with workspaces and on Android. It works once the skin has read `/api/overview` (with or without a query) through this host, which proves the membership's identity; otherwise it rejects, as it does for a membership whose `realm` is absent or not 32 hex characters. After the program restarted and retired this membership's handle, binds the same membership again (only when the program still names it with the endpoint, realm, address and key it proved in its own overview) and mounts the skin again over the new binding. Resolves without remounting when the binding still holds. Nothing under way is retargeted or replayed: staged files and sends stay with the old binding, so a skin keeps text drafts and asks for files again. |
 | `host.workspace` | The membership this host is bound to: `{id, handle, name, endpoint, address, realm?, state, hub_name?}` (`realm` may be absent; a browser's never has `hub_name`, read `overview.workspace.name` instead). `name` is this device's own label for it (`""` for none); `hub_name` is the workspace's own name its admin set, as last listed. A host never changes membership: what a skin holds when an operation starts (a send, a staged file, a file open) stays bound to it. |
-| `host.workspaces` | `null` on a program without workspaces. Otherwise `{list(), active(), has(id), select(id), state(id), onChange(fn), join({name, invite, agent, id?}), disconnect(id)}`. `onChange(fn)` calls `fn({id, previous, host, state})` and returns an unsubscribe function; the host then mounts the skin again, so a skin need not use the event's `host` (a bound transport, not a full host). `join` resolves the new membership's bound transport; a rejection may carry `retryID`: offer Retry, which calls `join` again with the same fields and `id: retryID`. A browser cannot disconnect the workspace it was enrolled from (`disconnect` rejects). `has(id)` is by local registration only, never by anything a message or notification says. Optional, present only on this computer's program (never in a browser enrollment), so check before use: `disconnected()` resolves the memberships disconnected here, each `{id, name, endpoint, address, realm, state}` (`list()` leaves them out); `reconnect(id)` routes one of them again, as the same membership with the same keys and history under a new handle, and refuses one whose identity changed. It does not select it. Optional, present where the host can keep it (this computer's program, or a browser with its enrollments): `rename(id, name)` sets this device's own label of a connected membership and resolves its updated entry; `name` `""` clears it, and 1–120 readable characters (no control character) are refused otherwise. It renames nothing on the server and fires no `onChange`. |
+| `host.workspaces` | `null` on a program without workspaces. Otherwise `{list(), active(), has(id), select(id), state(id), onChange(fn), join({name, invite, agent, id?}), disconnect(id)}`. `onChange(fn)` calls `fn({id, previous, host, state})` and returns an unsubscribe function; the host then mounts the skin again, so a skin need not use the event's `host` (a bound transport, not a full host). `join` resolves the new membership's bound transport; a rejection may carry `retryID`: offer Retry, which calls `join` again with the same fields and `id: retryID`. A browser cannot disconnect the workspace it was enrolled from (`disconnect` rejects). `has(id)` is by local registration only, never by anything a message or notification says. Optional, present on this computer's program and on Android (never in a browser enrollment), so check before use: `disconnected()` resolves the memberships disconnected here, each `{id, name, endpoint, address, realm, state}` (`list()` leaves them out); `reconnect(id)` routes one of them again, as the same membership with the same keys and history under a new handle, and refuses one whose identity changed. It does not select it. Optional, present where the host can keep it (this computer's program, Android, or a browser with its enrollments): `rename(id, name)` sets this device's own label of a connected membership and resolves its updated entry; `name` `""` clears it; any other name that is not 1–120 readable characters (no control character) is refused. It renames nothing on the server and fires no `onChange`. |
 
 **Naming a workspace.** Show a workspace by, in this order: this device's own
 label (`name`, unless it is a placeholder such as `""`, "Current workspace",
@@ -345,11 +368,14 @@ relay's host name (`overview.workspace.server`, or the endpoint's host);
 "AgentNet" only when none of these says anything. Comic and the host's bar
 say the same.
 
-The app methods use the app's authenticated loopback origin directly, through
-`GET /api/app/status`, `GET /api/app/check`, `POST /api/app/update` with `{}`, and
-`POST /api/app/cli` with `{replace:true}`. The app checks its exact Host and UI
-session cookie; POST also requires its exact Origin, JSON content type and
-same-origin fetch metadata when supplied. These are computer-wide operations,
+The app methods reach the computer-wide app routes (`GET /api/app/status`,
+`GET /api/app/check`, `POST /api/app/update` with `{}`, `POST /api/app/cli`
+with `{replace:true}`). In the desktop app they go through its native bridge
+(only from its main window, on the page it opened, with that page's session
+cookie), then the routes' own checks. On Android they go to the app's
+updater. Without a bridge the page fetches the routes, which check the exact
+Host and UI session cookie; POST also requires the exact Origin, a JSON
+content type and same-origin fetch metadata when supplied. These are computer-wide operations,
 not membership APIs. A standalone skin uses the host captured when the
 operation starts, never `host.api`, direct fetches, native globals or a later
 workspace's host for these actions. Switching memberships does not send an
@@ -372,8 +398,8 @@ under way goes where it was written, a staged file belongs to the workspace
 it was staged in (the host refuses it elsewhere).
 
 Disconnected memberships (BUG-19): `GET /api/workspaces` lists the mounted
-memberships only, each with its `handle`. This computer's program lists
-every membership with its `state` at `GET /api/workspaces/all` (a
+memberships only, each with its `handle`. This computer's program and
+Android list every membership with its `state` at `GET /api/workspaces/all` (a
 disconnected one has `state: "disconnected"` and no handle) and routes one
 again with `POST /api/workspaces/reconnect` and body `{"id": "<its id>"}`
 (JSON, same origin, at the page's root, never under a membership's
@@ -382,7 +408,7 @@ under a new handle (`state: "enrolled"`); 404 says no disconnected
 membership has that id. `host.api` is bound to one membership's prefix, so
 a skin reaches these two through `host.workspaces.disconnected()` and
 `host.workspaces.reconnect(id)` (above), present on this computer's program
-only; the host's switcher offers Reconnect over every skin but Comic, which
+and on Android; the host's switcher offers Reconnect over every skin but Comic, which
 draws its own workspace menu.
 
 A notification fragment is `#conv=<hash>&workspace=<id>`,
@@ -399,25 +425,37 @@ core checks. A skin should use returned actions/capabilities to decide which
 controls exist. A browser has no local responder or daemon reminders.
 
 What the routes mean for a skin, by area. Every route's exact path,
-platforms, request and answer are in [HOST_API_ROUTES.md](HOST_API_ROUTES.md),
-which a Go test keeps equal to the program's and the browser engine's routes
-(`TestHostAPIRoutesDocumented`); `internal/ui/ui.go` and Comic's typed client
-(`internal/ui/web/src/api.ts`, `model.ts`) give the full view types:
+platforms, request and answer are in [HOST_API_ROUTES.md](HOST_API_ROUTES.md)
+(`TestHostAPIRoutesDocumented` checks its route tables, see
+[Versions and capabilities](#versions-and-capabilities)). The full view
+types are the Go structs in `internal/ui/*.go`, generated into
+`internal/ui/web/src/api.gen.ts`; Comic's typed client is
+`internal/ui/web/src/api.ts` and `model.ts`:
 
 - Reads: `/api/overview`, `/api/thread?id=...`, `/api/dm?id=...`.
-- Conversations: `/api/send` `{to,kind,body,reply_to,files}`;
-  `/api/dm/new`; `/api/dm/send` `{conv,body,reply_to,files}`.
+- Device threads: `/api/send` `{to,kind,body,reply_to,files}`.
+  Conversations: `/api/dm/new`; `/api/dm/send` `{conv,body,reply_to,files}`.
 - Decisions: `/api/act`; returned message actions determine availability.
 - Standing grants: GET `/api/approvals` lists what `agentnet approvals` does:
-  `{questions[{address}], tasks[{address, fingerprint, status}],
-  participations[{conv, pid, agent_id?, keys[], tasks_from[], external?}],
-  read_only, unresolved?[]}` (`unresolved`: conversations whose agents
-  cannot be resolved here now, such as a group whose context is pending;
-  their grants are listed once they can be); `POST /api/approvals/revoke` `{kind: "question"|"task",
-  address}` or `{kind: "participation", pid}` ends that one grant (as
-  `unapprove`, `unapprove --tasks`, `dm dismiss-agent`; an `external` one is
-  ended by a member only). A browser keeps none: its list is empty and
-  `read_only`, and revoking is refused.
+  `{questions[{address, status?}|{person, label, status}],
+  tasks[{address, fingerprint, status}|{person, label, status}],
+  native_tasks?[{address, fingerprint, status}],
+  own_devices?[{address, name, this?, questions, tasks}],
+  participations[{conv, pid, agent_id?, keys[], tasks_from[PersonView], external?}],
+  read_only, unresolved?[]}`. A person grant covers that verified person's
+  devices and names no address (its task entry has `address` and
+  `fingerprint` empty); a device grant names the exact device.
+  `native_tasks` are your own trusted devices' direct-task permissions,
+  which revoking a person or device task grant leaves in place;
+  `own_devices` lists your person's devices with the source of each one's
+  question and task permission here. (`unresolved`:
+  conversations whose agents cannot be resolved here now, such as a group
+  whose context is pending; their grants are listed once they can be.)
+  `POST /api/approvals/revoke` `{kind: "question"|"task", person}` (a person
+  grant), `{kind, address}` (a device grant) or `{kind: "participation",
+  pid}` ends that one grant (as `unapprove`, `unapprove --tasks`, `dm
+  dismiss-agent`; an `external` one is ended by a member only). A browser
+  keeps none: its list is empty and `read_only`, and revoking is refused.
 - Identity: `/api/person` creates a person (it does **not** rename);
   `POST /api/person/label` `{label}` changes the existing person's self-claimed
   display name through a signed roster step. Keep person ID, keys, devices,
@@ -437,8 +475,9 @@ which a Go test keeps equal to the program's and the browser engine's routes
   version of the app, never a terminal command). Google membership (P8):
   GET `/api/google/access` answers `{workspace_url, enabled, can_admin,
   emails[{email, admin, denied, domain_member}], domains[]}`. Only `can_admin` may edit:
-  POST the same route with one `{email}` or `{domain}`, plus `remove` and
-  `admin` (optional promotion only; an invite never demotes an admin). Removal of an email blocks domain admission too and
+  POST the same route with one `{email}` or `{domain}`, plus `remove`, and
+  `admin` with an `{email}` only (optional promotion only; `{domain,
+  admin}` is refused; an invite never demotes an admin). Removal of an email blocks domain admission too and
   revokes its active and pending devices. Offer Invite by email and Allow
   everyone at @domain in Workspaces; the Get AgentNet link uses
   `workspace_url`. A person's optional `email` is checked only by the workspace relay and
@@ -466,9 +505,9 @@ which a Go test keeps equal to the program's and the browser engine's routes
   today; never ask for a typed path.
 - Agents: `/api/dm/agent/invite`, `/decide`, `/dismiss`, `/ask` under that prefix.
 - Notifications: `/api/notify/enable`, `/disable`, `/mute`, `/allow`, `/seen`,
-  plus GET `/api/notify/resolve?chan=...`.
-- Files: `/api/upload/discard`, `/api/file/request`; use host stage/file for
-  platform differences.
+  plus, in a browser only, GET `/api/notify/resolve?chan=...`.
+- Files: `/api/upload/discard` (this computer's program and Android only),
+  `/api/file/request`; use host stage/file for platform differences.
 - Message controls: `POST /api/message/react` `{conv?,id,dir,emoji,remove?}`,
   `/api/message/edit` `{conv?,id,dir,text}`, `/api/message/delete` `{conv?,id,dir}`.
   A message view carries what controls did to it: `reactions[]` (`emoji`, `by[]`
@@ -480,10 +519,12 @@ which a Go test keeps equal to the program's and the browser engine's routes
   never a browser) and `overview.reminders[]` lists the pending ones
   (`{message, conv?, from, title, due, overdue}`, soonest first). POST
   `/api/remind` `{id, due}` (unix seconds, in the future) sets or moves the
-  reminder on a received message; `/api/remind/done` and
-  `/api/remind/cancel` `{id}` end it. Only the person is reminded, on this
+  reminder on a message stored here, received or sent; `/api/remind/done`
+  and `/api/remind/cancel` `{id}` end it. Only the person is reminded, on this
   computer (a notification while AgentNet runs, window open or not): nothing
-  is sent and the message is unchanged; a reply to it ends it.
+  is sent and the message is unchanged; a reply to it ends it, but an
+  automatic report that the work failed, timed out or was cancelled does
+  not.
 - Groups: POST `/api/groups/manage` `{conv, action, person?, title?}` →
   `{queued}`: `rename` (title only), `promote`, `demote`, `remove` (the
   member's `person`), `leave` (nothing else; `queued` until the others
@@ -492,15 +533,26 @@ which a Go test keeps equal to the program's and the browser engine's routes
   `/api/groups/invite` `history` takes `{last}`, `{since}` or exact `{refs}`.
 - Trust and standing answers for a device: `/api/act` `{do: "trust", id:
   address, key}` trusts exactly the compared key (`thread.key.pending`) and
-  lets held messages from it in; `{do: "approve"|"unapprove"|"revoke_tasks",
-  id: address}` turns automatic answers on or off, or stops tasks without
-  asking (nothing running is stopped). A browser does neither: say to do it
+  lets held messages from it in; `{do: "approve"|"unapprove"|"grant_tasks"|"revoke_tasks",
+  id}`, where `id` is a verified person id (all their current and future
+  verified devices) or an exact device address, turns automatic answers on
+  or off, or lets tasks run without asking or stops that (nothing running
+  is stopped; Android refuses `approve` and `grant_tasks`). A browser does neither: say to do it
   in AgentNet on a computer, never as a command. `thread.key_changed` on a
   thread summary flags a paused one.
-- Held back: `overview.quarantine[]` `{id, peer, code, reason, at}`; `code` is
-  `key_changed`, `proof_pending`, `identity_conflict`,
-  `conflicting_duplicate` or `unverified`: write your own sentence from it
-  with the sender's name (`reason` names their address). An `unverified`
+- Held back: `overview.quarantine[]` `{id, peer, code, reason, at,
+  sender_verified?}`; `code` is `key_changed`, `proof_pending`,
+  `identity_conflict`, `conflicting_duplicate`, `invalid` or `unverified`:
+  write your own sentence from it. `sender_verified` is true when the copy
+  opened under `peer`'s pinned key before it was held (always for
+  `proof_pending`, `identity_conflict` and `conflicting_duplicate`; for
+  `invalid` only when its recorded cause is a later check); the program's
+  own definition says that without it `peer` is only a claim. Comic names
+  the sender as that person when `sender_verified` is true or the code is
+  `key_changed`, `proof_pending`, `identity_conflict` or
+  `conflicting_duplicate` (`model.ts` `holdVerified`). `reason` is a
+  fallback sentence; where it names the sender, it names the device in
+  words, not its address. An `unverified`
   one (or a code you don't know) only claims its sender: say who it says it
   is from, never draw it as that person. Content is never shown, and these
   are not decisions to count.
@@ -522,7 +574,8 @@ which a Go test keeps equal to the program's and the browser engine's routes
   "update", id, harness, dir}` (reuse an agent with the same tool, name and
   folder instead of making a second), and one `{action: "publish"}`.
   Read the tool list first: `local: false` (nothing can be installed here)
-  means show `note` and skip `/api/agents`. Say an agent is ready only when
+  means show `note` and skip `/api/agents`. A browser does not serve this
+  route ("Unknown request."): treat that like `local: false`. Say an agent is ready only when
   its `responder.ready` says so. The folder is chosen by browsing GET
   `/api/folders?path=` (read-only), never typed; say so when `truncated` is
   set, and when a folder can't be read (deleted, or closed to the person)
@@ -541,7 +594,8 @@ which a Go test keeps equal to the program's and the browser engine's routes
   `/api/topics?peer=&state=&q=&before=&limit=` pages `{topics, next,
   matched}`; POST `/api/topic/rename` `{peer,id,title}`, `/api/topic/done`
   and `/api/topic/reopen` `{peer,id,count}` (`count`: the messages shown).
-  Names and device-chat Done/Reopen are local; say so. People DMs/groups
+  Names, device-chat Done/Reopen and Archive follow this person's own
+  linked devices, never other people; say so. People DMs/groups
   keep a main flow and opt-in topics: `/api/dm` adds `topics[]`, messages
   have derived `topic` and optional shared `topic_event`, and
   `/api/topics?conv=...` pages the chat's topics. People-topic Done/Reopen
@@ -552,12 +606,13 @@ which a Go test keeps equal to the program's and the browser engine's routes
   `{conv|peer,id:"",ids:[...],counts?:{id:shownCount}}`. Offer one confirmation and a six-second
   pending Undo before calling the host. Delete for me in people chats
   affects only this person's devices; others keep their copies. Archive
-  stays local; new messages/shared actions clear it. Comic, Classic and
+  and names follow this person's own linked devices only; new
+  messages/shared actions clear an archive. Comic, Classic and
   Zoom implement these controls through Host API v1 only.
-- Headless: a request message may carry `exec` `{state, at, host, stale, attempt?, detail}`,
+- Headless: a request message may carry `exec` `{state, at, host, stale?, attempt?, detail?}`,
   the executing host's own signed word (never delivery, presence or a timer);
   show it apart from delivery and say when it is stale. A review notice may carry
-  `report` `{host, at, items[{id, from, kind, state, blocker, since, key?, attempt?, excerpt?, actionable, result?}]}`:
+  `report` `{host, at, items[{id, from, key, kind, state, blocker, since, attempt, excerpt?, actionable?, conv?, proposal?, result?}]}`:
   a snapshot at `at`, never a live queue; offer actions only for `actionable`
   items, through `POST /api/operator/decide` `{host, id, key, action, expect,
   attempt, text, report}`; the host's answer lands on the item as `result`.
@@ -575,11 +630,12 @@ which a Go test keeps equal to the program's and the browser engine's routes
   report (count text) says nothing about who decides: claim nothing. An
   item with `conv` is a DM or group request: offer no Answer for it. A task
   carrying out an agent's proposal has `proposal` `{question_id, question,
-  asker, proposal_id, proposal, confirmed_by}` (first lines; the engine
+  asker, proposal_id, proposal, confirmed_by, edited?, task?}` (first lines; the engine
   parses it for actionable items as Go does). Local device messages carry
   the same `proposal` shape with the full original question and suggestion.
   All skins show the three steps: the asker asked, your agent suggested,
-  the asker chose Do it. This uses only the asker's usual task approval;
+  the asker chose Do it (with `edited`: edited the suggestion and sent
+  `task`). This uses only the asker's usual task approval;
   model output adds no authority. Running items remain visible with their
   start time and the existing Stop action. `blocker: seems_stuck` is a
   once-per-run silence notice, never an automatic kill. The newest report from a
@@ -589,21 +645,31 @@ which a Go test keeps equal to the program's and the browser engine's routes
   stored, open or dismissed. A decision's `result` shows on whichever
   report of that host lists the same request and attempt.
 - Proposals (MEL-521): an answer with `status` `proposal` is an agent's offer,
-  never run: its body is exactly the task it proposes. Only a device-thread
-  question's run proposes (a conversation's run hands the action to its
-  person, needs_human, until conversation proposals can be confirmed). Show
-  it as a suggestion, never as done ("Suggested a task · not run", "Proposed
+  never run: its body is exactly the task it proposes. A device-thread or
+  conversation question's run may propose. The answer carries
+  `actions:["do_it"]` when this device may confirm it (the program lists it
+  only for the verified asker and an unchanged, unconfirmed proposal).
+  Show it as a suggestion, never as done ("Suggested a task · not run", "Proposed
   task (not run)"); confirming it (the CLI's `agentnet do ID`, or the page's
   Do it: `/api/act` `{do: "do_it", ...}`, see HOST_API_ROUTES.md) sends
-  exactly that stored text as a task, under the usual task approval. A review item
-  for such a task carries `proposal` as above.
+  exactly that stored text as a task, under the usual task approval. A
+  revised suggestion goes through `/api/act` `{do: "change_proposal", id,
+  body}` and is sent as an ordinary task, under ordinary task approval. A
+  task carrying out a proposal has `proposal` `{question_id, question,
+  asker, proposal_id, proposal, confirmed_by, edited?, task?}` (`task`: the
+  text sent); with `edited` true, `confirmed_by` edited the suggestion and
+  sent `task` instead (say so: Comic says "edited and sent this task", not
+  "chose Do it"). A
+  review item for such a task carries `proposal` as above.
   A notification's `#msg=<id>` (optionally `&conv=…&dir=in|out`) lands on that
   message and does nothing else.
 - Workspace name: `overview.workspace` `{name, server}` is the workspace's own
   name its admin set (`""` for none) and the relay's host name. GET
   `/api/workspace` adds `can_rename` (this device holds the Hub's admin role:
-  an admin invite made it one, or its person granted it with `agentnet
-  person admin`; a person's devices never inherit it; unknown is false). POST `/api/workspace/name`
+  an admin invite made it one, its person granted it with `agentnet
+  person admin`, or the workspace's Google sign-in made that person's email
+  an admin, which gives the role to all their current devices; otherwise a
+  person's devices never inherit it; unknown is false). POST `/api/workspace/name`
   `{name}` renames it for every member (an empty name clears it); a member is
   refused "Only an admin of this workspace can rename it for everyone." It is
   a company setting: offer it only on the person's own tap, never from an
@@ -620,10 +686,14 @@ which a Go test keeps equal to the program's and the browser engine's routes
   another person's (or yours), or the server only lists them, add the device
   key's first group so a look-alike cannot pass as someone else. The page's
   own sentences (`state_text`, `why`, `reason`) already name people this way.
-- Storage: GET `/api/storage` (read-only; `local.areas[]` with known usage or an
-  `unknown` reason, `local.complete`, `remote.status` available | unsupported |
-  unavailable with the Hub's own-usage report). Show unknown as unknown, never
-  zero; the Hub's quota is the whole server's, never an allowance.
+- Storage: GET `/api/storage` (read-only): `local.areas[]`, each with
+  `status` (available or unavailable), `usage` `{files, bytes}` (absent when
+  unknown) and `reason`; `local.known` (the sum of the areas whose usage is
+  known, never a total of unknown ones) and `local.complete`; `remote`
+  `{status, usage?, reason?}`, `status` available | unsupported |
+  unavailable, `usage` the Hub's own-usage report (absent when unknown).
+  Show unknown as unknown, never zero; the Hub's quota is the whole
+  server's, never an allowance.
 - Messaging: DM/group messages carry `delivery`, `sent_at`, and `quote`;
   device-thread messages carry `sent_at` and `quote`. Use `delivery` for
   delivery ticks: each other person's best device copy, then the least
@@ -638,7 +708,7 @@ which a Go test keeps equal to the program's and the browser engine's routes
   a quote card. Agent answers/results/progress have no quote card; a distant
   request gets a compact jump link, an adjacent request no reference.
 - Human guests: `POST /api/dm/guest/check` `{conv,host}` returns
-  `{ready,needs_update:[{label,me}],offline:[],text}`. Check when the person
+  `{ready,needs_update:[{label,me,role}],offline:[],text}`. Check when the person
   is selected; an older app may still be invited and its stored invitation
   waits for an update. Guest views expose `needs_update` labels for waiting
   copies. “Ask NAME to update” opens a DM and prefills a draft; sending is
@@ -648,12 +718,14 @@ which a Go test keeps equal to the program's and the browser engine's routes
   `reply_to` names the message as this device shows it (an agent's answer
   names its executor's copy of the request; the view links it to the
   request's own `id`); a participation record carries `event_type` (`invite`,
-  `accept`, `decline`, `dismiss` or `scope`) and `event_by` (its author's
+  `accept`, `decline`, `dismiss`, `scope` or `share`) and `event_by` (its author's
   person label as known here, or device address) beside `event`. A DM
-  summary carries `guests` (active participations: people and agents),
-  `decide` (its requests with actions for this device's person; none on a
-  browser) and, when its latest row is a participation record, `last_event`
-  `{kind, pid, by}` (a scope counts as its invite). A device thread summary
+  summary carries the counts `guests` (active participations: people and
+  agents) and `decide` (its requests with actions for this device's person;
+  none on a browser) and, when its latest row is a participation record,
+  `last_event` `{kind, pid, by}` (`kind` as `event_type`; a scope counts as
+  its invite). A DM view lists the participations themselves:
+  `guests[]` (people) and `agents[]` (agents invited into it). A device thread summary
   carries `agent_id` when one is named.
 
 
@@ -664,7 +736,8 @@ routes and view fields are additions, and a skin feature-detects them.
 What a skin can rely on:
 
 - **The running release.** `overview.version` is the program serving this
-  page (a browser reports the build its relay serves). It changes when
+  page (a browser reports its page's own build until a reload is due, then
+  the build its relay serves). It changes when
   AgentNet is updated (see [Staying current](#staying-current)).
   `overview.release`, when set, is a newer published release recommended
   here; `overview.update_required` `{latest, url?, auto?}` says the relay
@@ -680,19 +753,24 @@ What a skin can rely on:
 - **Host members** that exist only somewhere (`host.android`,
   `host.onBack`, `host.clipboardImage`, `host.reconnect`,
   `host.workspaces.disconnected`/`reconnect`/`rename`,
-  `host.drive.prepareGoogle`) are absent elsewhere: check before use. The
+  `host.drive.prepareGoogle`/`beginGoogleConsent`, browser only) are
+  absent elsewhere: check before use. The
   app methods and `host.drive` are always present; handle their rejection.
 - **A minimum release** in the manifest (`agentnet`) for a package that
   needs routes or fields that older releases lack.
 
-When AgentNet changes this contract it changes the reference packages with
-it: Comic in this repository, and every skin in the
-[agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection,
-whose tests run against each AgentNet release candidate before it ships. A
-change that would break a published skin either updates that skin in the
-same release or keeps the old behavior. `TestHostAPIRoutesDocumented` keeps
-[HOST_API_ROUTES.md](HOST_API_ROUTES.md) equal to the program's and the
-browser engine's routes, so a route cannot change without the contract.
+When AgentNet changes this contract it changes its built-in packages
+(Comic, Classic and Zoom) in the same change. Skins in the
+[agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection
+are tested against the AgentNet commit pinned in their `upstream.json`, and
+AgentNet's release checklist (AGENTS.md) runs the agentnet-skins tests
+against each release candidate before it is published.
+`TestHostAPIRoutesDocumented` keeps the route tables of
+[HOST_API_ROUTES.md](HOST_API_ROUTES.md) equal, by method and path, to the
+program's page routes (`internal/ui/server.go`; a `{what}` route, and the
+`POST /api/groups/…` actions read as one subtree, match every documented
+action) and to the paths the browser engine answers; the
+workspace and app routes listed in prose are not checked.
 
 ## Staying current
 
@@ -707,30 +785,42 @@ page current:
   say that AgentNet was updated and that the page reloads once drafts are
   sent or cleared, and offer Reload. Sends already accepted wait in the
   browser's outbox across the reload.
-- On this computer's program and Android the program itself restarts with
-  the update (`restart`, then `change` events): say it is restarting, then
-  reload data.
+- When the daemon serving the page switches to an updated program it sends
+  `restart` and the host closes the stream: say it is restarting, call
+  `host.listen` again, then reload data. The desktop app and Android update
+  as a whole (the app restarts, or Android's installer replaces it) and the
+  page opens again on the new release.
 - While `overview.update_required` is set, keep a notice on top that says
   how to update (the app's own Update where `appStatus()` offers it; never a
   terminal command inside the app).
 
-Comic does exactly this (`internal/ui/web/src/features/Status.tsx`).
+Comic does this (`internal/ui/web/src/store.ts`,
+`internal/ui/web/src/features/Status.tsx`); it offers its update only after
+`appStatus()` says `app_update_supported`.
 
 ## Presentation: motion and avatars
 
 Everything a skin draws is its own: layout, transitions, avatars and
 illustrations. The contract fixes what they may claim and how they move.
 
-**Motion.** Keep transitions short (Comic's last 90–320 ms, easing out),
+**Motion.** Keep transitions short (Comic's last 90–320 ms: entrances
+ease out, exits speed up, and a new item's pop-in overshoots slightly;
+longer effects are its 1.8-second highlight on a message it jumps to and
+the arrow on a request that waits for your decision, which nudges three
+times),
 purposeful (they show where something came from or went) and
 interruptible: a new tap or keystroke never waits for an animation, and an
 action takes effect at once, whatever is still moving. What is already
 there when a view opens appears settled; only new items get an entrance
 (Comic's `ui/Motion.tsx`). Text is readable as soon as it shows: fade or
-rise it in, never type it out or hold it back. Under
+rise it in, never type it out or hold it back (Comic delays only its
+"Loading emoji…" notice, by 350 ms). Under
 `prefers-reduced-motion: reduce` replace movement with an instant change
-or a short plain fade, and stop looping animations (Comic's working robot
-stops scanning).
+or a short plain fade, and stop looping animations. Comic does this for its
+own movement (panes, pages, sheets, popups, switches, chevrons and
+scrolling); its 1.2–1.6-second loops stop, its working robot's scan among
+them, and the arrow does not nudge. Its 1.8-second highlight, a change of
+color, still runs.
 
 **Avatars.** A skin may draw people and agents however it likes, from data
 the views already carry:
@@ -741,10 +831,13 @@ the views already carry:
   use the person id (`person`) or address as the stable seed for colors.
 - Agents: a drawing seeded by the agent's stable id (its address or
   `agent_id`, so the same agent always looks the same), with a mood from
-  real state only: working while its request runs, waiting while a request
-  waits for a person's decision (`decide`, `needs_human`), done for a
-  finished request, asleep when its responder is not ready
-  (`responder.ready` false, or the agent is off), neutral otherwise. The
+  real state only: working while its request runs; waiting while something
+  waits for a person (a request in `decide` or `needs_human`, an
+  invitation, an overdue reminder); asleep when it cannot answer now
+  (`responder.ready` false, turned off, or its device offline in the
+  directory); neutral otherwise, finished requests included. Comic uses
+  done only for a settled good state (a ready responder, the chosen
+  harness, nothing left to approve) and as decoration on About. The
   request states are listed in
   [HOST_API_ROUTES.md](HOST_API_ROUTES.md#request-states). Never show an
   agent as working or done from delivery receipts or timers.
@@ -752,34 +845,65 @@ the views already carry:
   guesses it from the device's name, and an avatar's look never grants
   anything or says who someone is. Guests keep a distinct mark.
 
-Comic's own avatars are in `internal/ui/web/src/ui/Avatar.tsx`; a skin may
+Comic's own avatars are in `internal/ui/web/src/skin/Avatar.tsx`; a skin may
 restyle them completely (a character-styled robot, a costume) as long as
 the moods above stay recognizable.
 
 ## Storage and shared helpers
 
 A skin may keep its own preferences and drafts in this browser's
-`localStorage` under keys that start with its own name (Comic uses
+`localStorage` under keys that start with its own package id (for example
+`notebook.`); never `agentnet.`, which holds the host's skin choice and
+trust records (`agentnet.skin`, `agentnet.skin.package`,
+`agentnet.skin.trusted.<id>`). Comic, built in, uses
 `agentnet.messenger.*` for drafts, main-flow choices, emoji skin tone and
-reaction usage, `agentnet.theme`, and on Android
+reaction usage (the main-flow choices and reaction usage are shared with
+Classic and Zoom), `agentnet.theme`, and on Android
 `agentnet.android.send-journal.v1.<workspace>` for sends saved across the
 app being closed; its bundled emoji picker caches its data under
-`frimousse/`), and per-workspace state in `host.workspaces.state(id)`. Never store keys, invitation codes or tokens;
+`frimousse/` in `localStorage` and `sessionStorage`. Per-workspace state
+goes in `host.workspaces.state(id)`. Never store keys, invitation codes or tokens;
 browser storage can be cleared at any time, so treat it as a convenience.
 
 Only `/assets/typing.mjs` may be imported from the host at run time. Other
 helpers the built-in skins use are copied into the package at build time:
 `internal/ui/static/pictures.mjs` (profile pictures: `avatarPicture`, the
-picture editor, paste), `optimistic.mjs` (pending-send previews that agree
-across skins), `vendor/qr.mjs`, the Drive and Connect-an-agent panels
-(`drivespace*.mjs`, `assistant-setup*.mjs`) and the topic, mention and
-reaction modules in `internal/ui/skins/shared/`. Keep their licenses and
-take them from the AgentNet release named in `agentnet`.
+picture editor, paste), `internal/ui/static/optimistic.mjs` (pending-send
+previews that agree across skins), the presentation-only Drive and
+Connect-an-agent panels and QR encoder in `internal/ui/skins/classic/src/`
+(`drivespace*.mjs`, `assistant-setup*.mjs`, `qr.mjs`) and the topic,
+mention and reaction modules in `internal/ui/skins/shared/`. Keep their
+licenses and take them from the AgentNet release named in `agentnet`.
+`internal/ui/static/drivespace*.mjs` and `assistant-setup.mjs` are the
+host's own modules: never copy them into a skin.
 
 ## Build your own skin
 
-1. Start from `examples/skins/notebook/` (plain modules and CSS, no build
-   step) or any toolchain whose output is ES modules and CSS. Comic is built
+There are three ways to make a skin, from the least work to the most:
+
+- **A theme**: Comic with only its colours, fonts and corners changed. An
+  overlay that ships just `theme.css` (and fonts). The contract calls a
+  colours-only change a theme variant: fine to share, listed as such.
+- **An overlay skin**: Comic's whole interface with its skin layer replaced
+  (theme, fonts, brand, avatars, send button, topic intro, request frame, and
+  styles for the documented parts of the screen). It keeps every Comic
+  feature and gets Comic's fixes on its next build, because it is built from
+  the AgentNet release it names, never a copy of Comic's code. The skin
+  layer, its slots, its parts and the build are documented in
+  [internal/ui/web/src/skin/README.md](../internal/ui/web/src/skin/README.md)
+  (the Comic kit); `build.sh` builds an overlay with `SKIN_OVERLAY` and
+  related variables. Pulp in the agentnet-skins collection is one.
+- **A standalone skin**: your own interface on the host API, in any toolchain
+  whose output is ES modules and CSS. `examples/skins/notebook/` is a plain
+  starting point with no build step; Holonet, Classic and Zoom in the
+  collection are larger ones.
+
+The [agentnet-skins](https://github.com/misunders2d/agentnet-skins)
+collection scaffolds all three (`npm run new-skin`), builds, tests and
+publishes them to the gallery; its contributing guide says how to submit
+one. For a standalone skin:
+
+1. Start from `examples/skins/notebook/` or a collection skin. Comic is built
    with React, Base UI and Tailwind (`internal/ui/web/build.sh`); its package
    is the reference for a bundled skin.
 2. Write `skin.json` listing every file. Register `host.onOpen` in `mount`,
@@ -801,14 +925,19 @@ packages from copied package bytes at an unrelated path, with only a public
 host the check implements itself (no loader, no workspace shell, no page
 globals), over the demo daemon. It fails on a read of a private page global,
 a direct `/api` or `/events` request, a request for an undeclared file (the
-documented `/assets/typing.mjs` excepted), any DOM write outside the root
-(including the page's adopted style sheets and font set), a `window` or
-`document` listener left after `unmount`, errors, or a root left non-empty
-after `unmount` (mount/unmount A/B/A). Comic's journey also sends a message
-through the host and requires its sheets and confirmations to be modal
-inside the root (aria-modal, the app behind them inert, focus kept inside
-through 10 Tabs and 10 Shift+Tabs). It runs Comic and the Notebook example
-at 1440 and 390 pixels:
+host's `/assets/typing.mjs`, `core.css` and `skin-base.css` excepted), any
+DOM write to the page's document outside the skin's shadow tree after the
+entry is imported, any change to the page's adopted style sheets or font
+set, a `window` or `document` listener left after `unmount`, errors, or a
+root left non-empty after `unmount` (mount/unmount A/B/A). DOM writes made
+while the entry module itself is evaluated, and writes inside the skin's
+shadow tree next to `root`, are not caught. Comic's journey also sends a
+message through the host and requires one sheet (the trust sheet) and one
+confirmation (deleting a conversation or topic) to be modal inside the root
+(aria-modal, the app behind them inert, focus kept inside through 10 Tabs
+and 10 Shift+Tabs). It runs Comic, Classic, Zoom and the Notebook example
+at 1440 and 390 pixels, and needs `node` and Chromium (`AGENTNET_CHROMIUM`
+or `/usr/bin/chromium`):
 
 ```sh
 AGENTNET_PLAYWRIGHT=/absolute/path/to/playwright-core go test ./internal/ui -run TestSkinPackagesContractOnly -v
