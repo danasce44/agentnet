@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -266,5 +267,28 @@ func TestRelayManifest(t *testing.T) {
 		if c := at(.5, .56); c[3] != 255 || c[0] > 40 || c[1] > 90 || c[2] > 100 { // the ant's middle
 			t.Errorf("%d: ant: %v", size, c)
 		}
+	}
+}
+
+// The page may read only the skin gallery's two fixed sources beyond its own
+// origin: exactly what skin-gallery.mjs fetches, on the relay and (through
+// GalleryConnectSources) the program's page.
+func TestGalleryConnectSourcesMatchModule(t *testing.T) {
+	src, err := os.ReadFile("skin-gallery.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := string(src)
+	repo := regexp.MustCompile(`export const REPOSITORY = '([^']+)';`).FindStringSubmatch(module)
+	if repo == nil || !strings.Contains(module, "export const LATEST = 'https://api.github.com/repos/' + REPOSITORY + '/releases/latest';") ||
+		!strings.Contains(module, "export const RAW = 'https://raw.githubusercontent.com/' + REPOSITORY + '/';") {
+		t.Fatal("skin-gallery.mjs no longer names its sources as expected")
+	}
+	want := "https://api.github.com/repos/" + repo[1] + "/releases/latest https://raw.githubusercontent.com/" + repo[1] + "/"
+	if GalleryConnectSources != want {
+		t.Fatalf("GalleryConnectSources %q, module fetches %q", GalleryConnectSources, want)
+	}
+	if !strings.Contains(relayCSP, "connect-src 'self' "+GalleryConnectSources+";") || strings.Contains(relayCSP, "*") {
+		t.Fatalf("relay CSP %s", relayCSP)
 	}
 }

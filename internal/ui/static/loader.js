@@ -176,6 +176,14 @@
     for (const fn of [...skinsListeners]) { try { fn(); } catch (_) { /* one listener's failure is its own */ } }
   };
   if (localSkins) common.manageLocalSkins = (root) => localSkins.manager(root, { changed: refreshSkins });
+  // The skin gallery (skin-gallery.mjs): published packages from one fixed
+  // repository, verified, stored like an import; choosing one asks for trust.
+  // The running version comes from the overviews this page has read.
+  let runningVersion = "";
+  try {
+    const { gallery } = await import("/assets/skin-gallery.mjs");
+    common.gallery = gallery({ running: () => runningVersion, changed: refreshSkins });
+  } catch (_) { /* a program without it: import still works */ }
 
   // ---- workspaces: one shell, immutable bound transports
   //
@@ -233,6 +241,7 @@
       // Any overview read (with or without query) proves this membership's
       // identity for reconnect and names it in the switcher.
       if (body === undefined && path.split("?")[0] === "/api/overview" && r) {
+        if (typeof r.version === "string") runningVersion = r.version;
         if (r.me && r.me.fingerprint) known.set(wid, { address: r.me.address, fingerprint: r.me.fingerprint });
         for (const fn of [...overviewSeen]) { try { fn(wid, r); } catch (_) { /* the bar's own */ } }
       }

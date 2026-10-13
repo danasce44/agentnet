@@ -28,7 +28,7 @@ func TestWorkspaceOriginsValidationAndCSP(t *testing.T) {
 	response := httptest.NewRecorder()
 	wrapped.ServeHTTP(response, httptest.NewRequest("GET", "https://relay.example/", nil))
 	csp := response.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "connect-src 'self' https://shell.example https://other.example:8443;") || !strings.Contains(csp, "script-src 'self';") || strings.Contains(csp, "*") {
+	if !strings.Contains(csp, "connect-src 'self' https://shell.example https://other.example:8443 "+GalleryConnectSources+";") || !strings.Contains(csp, "script-src 'self';") || strings.Contains(csp, "*") {
 		t.Fatalf("CSP %s", csp)
 	}
 }

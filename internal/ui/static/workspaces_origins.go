@@ -41,7 +41,7 @@ func WithConnectOrigins(next http.Handler, origins []string) (http.Handler, erro
 	if len(approved) == 0 {
 		return next, nil
 	}
-	replacement := "connect-src 'self' " + strings.Join(approved, " ") + ";"
+	replacement := "connect-src 'self' " + strings.Join(approved, " ")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(&workspaceCSPWriter{ResponseWriter: w, replacement: replacement}, r)
 	}), nil
@@ -59,7 +59,7 @@ func (w *workspaceCSPWriter) apply() {
 	}
 	w.wrote = true
 	h := w.Header()
-	h.Set("Content-Security-Policy", strings.Replace(h.Get("Content-Security-Policy"), "connect-src 'self';", w.replacement, 1))
+	h.Set("Content-Security-Policy", strings.Replace(h.Get("Content-Security-Policy"), "connect-src 'self'", w.replacement, 1))
 }
 func (w *workspaceCSPWriter) WriteHeader(status int) { w.apply(); w.ResponseWriter.WriteHeader(status) }
 func (w *workspaceCSPWriter) Write(p []byte) (int, error) {

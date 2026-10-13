@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-//go:embed android.js pictures.mjs index.html loader.js core.css skin-base.css skinbar.mjs skinbar.css skin-choice.mjs skins device.mjs engine.mjs chatprojection.mjs devicehistory.mjs historyarchive.mjs historywindow.mjs historycontribution.mjs wire.mjs optimistic.mjs vendor/age.mjs vendor/qr.mjs vendor/idb.mjs vendor/sse.mjs manifest.webmanifest sw.js workspaces-sw.js ant.png drivespace.mjs drivespace.css drivespace-setup.mjs assistant-setup.mjs assistant-setup.css typing.mjs local-skins.mjs teams.mjs workspaces.mjs workspaces.css setup.mjs getapp.json getapp.mjs landing.mjs landing.css google-signin.mjs
+//go:embed android.js pictures.mjs index.html loader.js core.css skin-base.css skinbar.mjs skinbar.css skin-choice.mjs skins device.mjs engine.mjs chatprojection.mjs devicehistory.mjs historyarchive.mjs historywindow.mjs historycontribution.mjs wire.mjs optimistic.mjs vendor/age.mjs vendor/qr.mjs vendor/idb.mjs vendor/sse.mjs manifest.webmanifest sw.js workspaces-sw.js ant.png drivespace.mjs drivespace.css drivespace-setup.mjs assistant-setup.mjs assistant-setup.css typing.mjs local-skins.mjs skin-gallery.mjs teams.mjs workspaces.mjs workspaces.css setup.mjs getapp.json getapp.mjs landing.mjs landing.css google-signin.mjs
 var files embed.FS
 
 // Files is the bundle: the daemon's page (index.html and its assets) and the
@@ -64,6 +64,7 @@ var relayFiles = map[string]string{
 	"/assets/assistant-setup.mjs":     "assistant-setup.mjs",
 	"/assets/assistant-setup.css":     "assistant-setup.css",
 	"/assets/local-skins.mjs":         "local-skins.mjs",
+	"/assets/skin-gallery.mjs":        "skin-gallery.mjs",
 	"/assets/typing.mjs":              "typing.mjs",
 	"/assets/teams.mjs":               "teams.mjs",
 	"/assets/workspaces.mjs":          "workspaces.mjs",
@@ -252,9 +253,14 @@ var relayContent = sync.OnceValue(func() map[string][2]string {
 	return out
 })
 
+// GalleryConnectSources are the only other places a page may read: the skin
+// gallery's latest published release and that release's files, in one fixed
+// repository (skin-gallery.mjs LATEST and RAW). Nothing is sent there.
+const GalleryConnectSources = "https://api.github.com/repos/misunders2d/agentnet-skins/releases/latest https://raw.githubusercontent.com/misunders2d/agentnet-skins/"
+
 // relayCSP lets the page run only its own origin's files and talk only to
-// its own origin.
-const relayCSP = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; " +
+// its own origin and the skin gallery's fixed sources.
+const relayCSP = "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self' " + GalleryConnectSources + "; manifest-src 'self'; worker-src 'self'; " +
 	"base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 // Relay serves the browser page and its files on a relay's origin, for GET
@@ -276,7 +282,7 @@ func RelayBuild(build string, skinsDirectory ...string) http.Handler {
 	if len(skinsDirectory) > 0 {
 		dir = skinsDirectory[0]
 	}
-	skins := Skins(dir)
+	skins := SkinsFor(dir, build)
 	content, etags := maps.Clone(relayContent()), map[string]string{}
 	if build != "" {
 		engine := content["/assets/engine.mjs"]

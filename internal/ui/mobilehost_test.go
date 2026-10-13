@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/misunders2d/agentnet/internal/ui/static"
 )
 
 func TestMobilePageKeepsAuthenticatedComicHost(t *testing.T) {
@@ -72,7 +74,7 @@ func TestMobileBlobFetchPolicyLeavesDesktopStrict(t *testing.T) {
 				t.Fatal(response.Code)
 			}
 			policy := response.Header().Get("Content-Security-Policy")
-			want := "connect-src 'self'"
+			want := "connect-src 'self' " + static.GalleryConnectSources
 			if tc.blob {
 				want += " blob:"
 			}

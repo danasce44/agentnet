@@ -19,7 +19,7 @@ func TestGoogleCSPPreservesWorkspaceOrigins(t *testing.T) {
 	r := httptest.NewRecorder()
 	WithGoogleSignIn(workspace).ServeHTTP(r, httptest.NewRequest("GET", "https://relay.example/", nil))
 	csp := r.Header().Get("Content-Security-Policy")
-	for _, want := range []string{"script-src 'self' https://accounts.google.com/gsi/client;", "connect-src 'self' https://accounts.google.com/gsi/ https://shell.example;", "frame-src https://accounts.google.com/gsi/;", "frame-ancestors 'none'"} {
+	for _, want := range []string{"script-src 'self' https://accounts.google.com/gsi/client;", "connect-src 'self' https://accounts.google.com/gsi/ https://shell.example " + GalleryConnectSources + ";", "frame-src https://accounts.google.com/gsi/;", "frame-ancestors 'none'"} {
 		if !strings.Contains(csp, want) {
 			t.Fatalf("missing %s in %s", want, csp)
 		}

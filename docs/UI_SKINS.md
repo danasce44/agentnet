@@ -44,8 +44,10 @@ labels. Passing compatibility tests does not establish a successful design.
 - Installed skins: packages placed next to the program (below), and
   browser-local skins imported into one browser.
 
-This is the trusted package boundary for a future skin marketplace. It does
-not implement marketplace discovery, downloads, signing, sandboxing or
+This is the trusted package boundary for skins. The [skin
+gallery](#skin-gallery) discovers and downloads the published packages of one
+fixed collection and verifies them against its catalog; there is no other
+marketplace, no signing beyond that catalog's hashes, no sandboxing and no
 billing. Distribution is client-owned: a person can install, choose and share
 a skin without changing their relay or other clients.
 
@@ -165,6 +167,57 @@ Choosing a local skin explicitly activates the asset worker; importing alone
 does not take over tabs. No marketplace or package download service is
 involved.
 
+### Skin gallery
+
+The gallery offers the skins of the
+[agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection
+inside AgentNet, so nobody needs GitHub to find, preview or install one.
+Comic shows it under **Settings → Appearance → Skin gallery**; any skin may
+draw its own through `host.gallery`.
+
+- **One fixed source.** The host reads only
+  `https://api.github.com/repos/misunders2d/agentnet-skins/releases/latest`
+  (the latest *published* release: drafts and pre-releases are ignored) and
+  files under
+  `https://raw.githubusercontent.com/misunders2d/agentnet-skins/<that tag>/published/`.
+  The page's content security policy allows exactly these two besides its
+  own origin (`static.GalleryConnectSources`), on this computer's program,
+  Android and the relay page. Requests carry no credentials or referrer and
+  refuse redirects. Work in progress on the repository's `main` never
+  reaches the gallery: only a published release does.
+- **Verified bytes.** `published/catalog.json` names, for every skin, each
+  file's path, size and SHA-256, its previews (PNG or WebP, at most six of
+  1 MiB) and the package's consent digest (as computed under
+  [Trust](#trust)). The host checks every file and preview against the
+  catalog and the whole package against its digest before anything is
+  stored; a mismatch stores nothing.
+- **Compatibility.** A skin whose `api` is not 1, or whose `agentnet` names
+  a release newer than the one serving this page (`overview.version`),
+  is listed as incompatible and cannot be installed. An unstamped
+  development build never counts as older.
+- **Stored like an import.** Installing uses the browser-local package
+  manager: the same limits, `local:` ids and per-browser, per-origin
+  storage. Choosing the skin asks for trust with its exact digest; an
+  update stores a new digest, so it asks again. Nothing is uploaded.
+
+Catalog format (`published/catalog.json`, written by the collection's
+publish step, never by hand):
+
+```json
+{
+  "catalog": 1,
+  "skins": [{
+    "id": "pulp", "name": "Pulp", "description": "…", "version": "1.0.0",
+    "api": 1, "agentnet": "v0.8.25", "digest": "<64 hex>",
+    "files": [{"path": "skin.json", "sha256": "<64 hex>", "size": 412}, …],
+    "previews": [{"path": "previews/desktop-light.png", "sha256": "<64 hex>", "size": 81234, "alt": "Pulp on a desktop, light"}]
+  }]
+}
+```
+
+Package files live at `published/<id>/<path>`. A malformed entry is left out
+without hiding the others; a malformed catalog fails as a whole.
+
 ## Manifest
 
 `skin.json`:
@@ -279,6 +332,7 @@ still runs with the page's full trust.
 | `host.onSkinsChange(fn)` | Calls `fn()` when `host.skins` changes (a browser-local skin imported or removed). Returns an unsubscribe function. |
 | `host.selectSkin(id)` | Reloads into a skin from `host.skins`. The current skin must preserve or explicitly resolve unsent drafts first. |
 | `host.manageLocalSkins(root)` | Present on every host; where the browser cannot store skins it draws only that sentence. Draws the host's browser-local skin manager (import files or a folder, the stored skins, Remove) into an element the skin owns; returns its teardown, which empties that element. Consent stays the host's: a stored skin asks for trust when chosen. |
+| `host.gallery` | The [skin gallery](#skin-gallery), present wherever the host has it: `list({fresh?})` resolves `{release, skins[{id, name, description, version, api, agentnet?, state, installed, previews, alts}]}` (`state`: `install`, `installed`, `update` (a newer digest is published) or `incompatible` (it needs another Host API or a newer AgentNet than the one serving this page); `installed`: this browser's catalog id for a stored version, else `""`); `preview(id, index)` resolves one verified preview as a `Blob` (show it with an object URL and revoke it); `install(id)` downloads, verifies and stores the package in this browser and resolves its catalog id (`local:<id>`), which the skin passes to `host.selectSkin` (trust is then asked as for any stored skin). Every method rejects with a sentence to show: unreachable, busy, no published release, a file that did not match, a skin that needs a newer AgentNet, or a browser that cannot store skins. It never selects a skin or grants trust. |
 | `host.reconnect()` | Optional, present on this computer's program with workspaces and on Android. It works once the skin has read `/api/overview` (with or without a query) through this host, which proves the membership's identity; otherwise it rejects. After the program restarted and retired this membership's handle, binds the same membership again (only when the program still names it with the endpoint, realm, address and key it proved in its own overview) and mounts the skin again over the new binding. Resolves without remounting when the binding still holds. Nothing under way is retargeted or replayed: staged files and sends stay with the old binding, so a skin keeps text drafts and asks for files again. |
 | `host.workspace` | The membership this host is bound to: `{id, handle, name, endpoint, address, realm?, state, hub_name?}` (`realm` may be absent; a browser's never has `hub_name`, read `overview.workspace.name` instead). `name` is this device's own label for it (`""` for none); `hub_name` is the workspace's own name its admin set, as last listed. A host never changes membership: what a skin holds when an operation starts (a send, a staged file, a file open) stays bound to it. |
 | `host.workspaces` | `null` on a program without workspaces. Otherwise `{list(), active(), has(id), select(id), state(id), onChange(fn), join({name, invite, agent, id?}), disconnect(id)}`. `onChange(fn)` calls `fn({id, previous, host, state})` and returns an unsubscribe function; the host then mounts the skin again, so a skin need not use the event's `host` (a bound transport, not a full host). `join` resolves the new membership's bound transport; a rejection may carry `retryID`: offer Retry, which calls `join` again with the same fields and `id: retryID`. A browser cannot disconnect the workspace it was enrolled from (`disconnect` rejects). `has(id)` is by local registration only, never by anything a message or notification says. Optional, present only on this computer's program (never in a browser enrollment), so check before use: `disconnected()` resolves the memberships disconnected here, each `{id, name, endpoint, address, realm, state}` (`list()` leaves them out); `reconnect(id)` routes one of them again, as the same membership with the same keys and history under a new handle, and refuses one whose identity changed. It does not select it. Optional, present where the host can keep it (this computer's program, or a browser with its enrollments): `rename(id, name)` sets this device's own label of a connected membership and resolves its updated entry; `name` `""` clears it, and 1–120 readable characters (no control character) are refused otherwise. It renames nothing on the server and fires no `onChange`. |

@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/misunders2d/agentnet/internal/protocol"
 	"github.com/misunders2d/agentnet/internal/ui/static"
 )
 
@@ -52,7 +53,7 @@ func New(p Provider, host, token string, skinsDirectory ...string) *Server {
 	if len(skinsDirectory) > 0 {
 		dir = skinsDirectory[0]
 	}
-	return &Server{p: p, host: host, token: token, restarting: make(chan struct{}), skins: static.Skins(dir)}
+	return &Server{p: p, host: host, token: token, restarting: make(chan struct{}), skins: static.SkinsFor(dir, protocol.Version)}
 }
 
 // Restarting tells open pages, with a content-free event, that the daemon is
@@ -156,7 +157,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		connect := "connect-src 'self'"
+		connect := "connect-src 'self' " + static.GalleryConnectSources
 		if s.mobile {
 			// Android's document export reads an owned same-origin blob URL.
 			// The native bootstrap checks ownership before fetching it.
@@ -248,7 +249,7 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 		"drivespace-setup.mjs": "text/javascript; charset=utf-8",
 		"assistant-setup.mjs":  "text/javascript; charset=utf-8",
 		"assistant-setup.css":  "text/css; charset=utf-8",
-		"drivespace.mjs":       "text/javascript; charset=utf-8", "drivespace.css": "text/css; charset=utf-8", "workspaces.mjs": "text/javascript; charset=utf-8", "workspaces.css": "text/css; charset=utf-8", "teams.mjs": "text/javascript; charset=utf-8", "typing.mjs": "text/javascript; charset=utf-8", "local-skins.mjs": "text/javascript; charset=utf-8", "optimistic.mjs": "text/javascript; charset=utf-8", "pictures.mjs": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8"}
+		"drivespace.mjs":       "text/javascript; charset=utf-8", "drivespace.css": "text/css; charset=utf-8", "workspaces.mjs": "text/javascript; charset=utf-8", "workspaces.css": "text/css; charset=utf-8", "teams.mjs": "text/javascript; charset=utf-8", "typing.mjs": "text/javascript; charset=utf-8", "local-skins.mjs": "text/javascript; charset=utf-8", "skin-gallery.mjs": "text/javascript; charset=utf-8", "optimistic.mjs": "text/javascript; charset=utf-8", "pictures.mjs": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8"}
 	ct, ok := types[name]
 	if !ok {
 		http.NotFound(w, r)

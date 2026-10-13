@@ -13,6 +13,7 @@ import { paintTheme, type Theme } from "../owned";
 import { Button } from "../ui/Button";
 import { Sheet } from "../ui/Sheet";
 import { Tag } from "../ui/Tag";
+import { SkinGallery } from "./Settings.gallery";
 import { Card, GroupLabel, Hint, PageHead } from "./Settings.parts";
 
 export type { Theme };
@@ -92,6 +93,8 @@ export function AppearanceSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadi
   useEffect(() => host.onSkinsChange(refresh), [host]);
   // Comic is always listed first: it is the skin drawing this page.
   const skins = host.skins.some((s) => s.id === COMIC) ? host.skins : [{ api: 1, id: COMIC, name: "Comic", builtin: true }, ...host.skins];
+  // A gallery skin, once stored, is offered like any other: Use, then trust.
+  const pick = (id: string) => setTarget(host.skins.find((s) => s.id === id) || null);
 
   return (
     <>
@@ -137,6 +140,7 @@ export function AppearanceSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadi
             })}
           </Card>
           <Hint className="mt-2.5 px-1">Anyone can make a skin: a package with its own look that uses the same chats. Skins from other people can read your chats and act as you, so use only ones you trust.</Hint>
+          {host.gallery && <SkinGallery gallery={host.gallery} onInstalled={pick} onUse={pick} />}
           {host.manageLocalSkins && <ImportSkins host={host} />}
         </section>
       </div>

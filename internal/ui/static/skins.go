@@ -12,9 +12,8 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
-
-	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 // A skin is a complete interface package: a manifest (skin.json), its entry
@@ -68,12 +67,39 @@ var skinTypes = map[string]string{
 	".webp": "image/webp", ".svg": "image/svg+xml", ".woff2": "font/woff2",
 }
 
+// Release versions as protocol.Newer reads them (this package depends on
+// nothing else in AgentNet; TestNewerReleaseMatchesProtocol pins the copy).
+var releaseVersion = regexp.MustCompile(`^v(\d{1,6})\.(\d{1,6})\.(\d{1,6})$`)
+var runningVersion = regexp.MustCompile(`^v(\d{1,6})\.(\d{1,6})\.(\d{1,6})(?:-\d{1,9}-g[0-9a-f]{4,40}|\+[0-9A-Za-z.]{1,64})?(?:-dirty)?$`)
+
+// newerRelease reports whether release candidate is newer than running (a
+// release or a development build stamped from one); unknown formats never are.
+func newerRelease(candidate, running string) bool {
+	a, b := releaseVersion.FindStringSubmatch(candidate), runningVersion.FindStringSubmatch(running)
+	if a == nil || b == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		x, _ := strconv.Atoi(a[i])
+		y, _ := strconv.Atoi(b[i])
+		if x != y {
+			return x > y
+		}
+	}
+	return false
+}
+
 // Skins serves the built-in packages and the files declared by valid
 // installed packages under directory, at /assets/skins/<id>/, with the
 // catalog at /assets/skins/index.json. Missing or unsafe installed packages
 // are omitted; the built-in ones are always there. The caller must put this
 // handler behind its normal origin/authentication gate.
-func Skins(directory string) http.Handler {
+func Skins(directory string) http.Handler { return SkinsFor(directory, "") }
+
+// SkinsFor is Skins for a program running AgentNet version running: an
+// installed package that names a newer release as its oldest (agentnet) is
+// omitted. "" (an unknown version) omits none.
+func SkinsFor(directory, running string) http.Handler {
 	var catalog []Skin
 	assets := map[string]skinAsset{}
 	add := func(skin Skin, files map[string]skinAsset) {
@@ -111,7 +137,7 @@ func Skins(directory string) http.Handler {
 					}
 					skin, files, err := readSkin(dir, entry.Name())
 					dir.Close()
-					if err != nil || ReservedSkinName(skin.Name) || protocol.Newer(skin.AgentNet, protocol.Version) {
+					if err != nil || ReservedSkinName(skin.Name) || newerRelease(skin.AgentNet, running) {
 						continue
 					}
 					size := 0
@@ -231,7 +257,7 @@ func parseSkin(read func(name string, limit int64) ([]byte, error), id string) (
 	}
 	if m.API != 1 || m.ID != id || strings.TrimSpace(m.Name) == "" || len(m.Name) > 80 || len(m.Files) == 0 || len(m.Files) > 32 ||
 		!slices.Contains(m.Files, m.Entry) || (path.Ext(m.Entry) != ".js" && path.Ext(m.Entry) != ".mjs") || !css(m.Style) || !css(m.Document) ||
-		(m.AgentNet != "" && !protocol.IsRelease(m.AgentNet)) {
+		(m.AgentNet != "" && !releaseVersion.MatchString(m.AgentNet)) {
 		return m, nil, errors.New("invalid manifest")
 	}
 	files := map[string]skinAsset{}

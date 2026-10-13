@@ -158,20 +158,18 @@ func TestBrowserLocalSkinDigest(t *testing.T) {
 // A package may name the oldest AgentNet release it supports. An older
 // program omits it rather than run it; a malformed version is invalid.
 func TestSkinMinimumAgentNet(t *testing.T) {
-	saved := protocol.Version
-	t.Cleanup(func() { protocol.Version = saved })
 	for _, test := range []struct {
 		running, needs string
 		listed         bool
 	}{
 		{"v0.8.25", "v0.8.25", true},
 		{"v0.8.26-3-gabcdef1", "v0.8.25", true},
-		{"dev", "v9.0.0", true}, // an unstamped build never refuses
+		{"", "v9.0.0", true},    // an unknown version never refuses
+		{"dev", "v9.0.0", true}, // nor does an unstamped build
 		{"v0.8.24", "v0.8.25", false},
 		{"v0.8.25", "0.8.25", false},
 		{"v0.8.25", "v0.8", false},
 	} {
-		protocol.Version = test.running
 		home := skinFixture(t)
 		manifest := filepath.Join(home, "notebook", "skin.json")
 		raw, _ := os.ReadFile(manifest)
@@ -180,12 +178,25 @@ func TestSkinMinimumAgentNet(t *testing.T) {
 			t.Fatal(err)
 		}
 		w := httptest.NewRecorder()
-		Skins(home).ServeHTTP(w, httptest.NewRequest("GET", "/assets/skins/index.json", nil))
+		SkinsFor(home, test.running).ServeHTTP(w, httptest.NewRequest("GET", "/assets/skins/index.json", nil))
 		var list []Skin
 		json.Unmarshal(w.Body.Bytes(), &list)
 		listed := len(list) == len(BuiltinSkins)+1 && list[len(list)-1].AgentNet == test.needs
 		if listed != test.listed {
-			t.Fatalf("running %s, package needs %s: listed=%v: %s", test.running, test.needs, listed, w.Body)
+			t.Fatalf("running %q, package needs %s: listed=%v: %s", test.running, test.needs, listed, w.Body)
+		}
+	}
+}
+
+// static keeps its own copy of the release comparison (it imports nothing
+// else from AgentNet); it must agree with protocol.Newer.
+func TestNewerReleaseMatchesProtocol(t *testing.T) {
+	versions := []string{"", "dev", "v0.8", "0.8.25", "v0.8.24", "v0.8.25", "v0.8.26", "v0.9.0", "v1.0.0", "v0.8.25-3-gabcdef1", "v0.8.25+local", "v0.8.25-dirty", "v0.8.25-3-gabcdef1-dirty"}
+	for _, a := range versions {
+		for _, b := range versions {
+			if newerRelease(a, b) != protocol.Newer(a, b) {
+				t.Errorf("newerRelease(%q, %q) = %v, protocol.Newer says %v", a, b, newerRelease(a, b), protocol.Newer(a, b))
+			}
 		}
 	}
 }

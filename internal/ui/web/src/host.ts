@@ -20,8 +20,34 @@ export interface SkinEntry {
   id: string;
   name: string;
   digest?: string;
+  agentnet?: string;   // the oldest AgentNet release the package supports
   local?: boolean;     // stored in this browser (id "local:…")
   builtin?: boolean;   // embedded in this program; trusted by the host's own list
+}
+
+/** A skin published in the gallery (host.gallery.list). */
+export interface GallerySkin {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  api: number;
+  agentnet?: string;
+  /** install, installed, update (a newer version is published) or incompatible. */
+  state: "install" | "installed" | "update" | "incompatible";
+  /** The browser-local catalog id when this browser holds a version ("" if not). */
+  installed: string;
+  previews: number;
+  alts: string[];
+}
+
+/** The skin gallery: the latest published skins, verified by the host. */
+export interface Gallery {
+  list(options?: { fresh?: boolean }): Promise<{ release: string; skins: GallerySkin[] }>;
+  /** A preview image, verified; show it with an object URL and revoke it. */
+  preview(id: string, index: number): Promise<Blob>;
+  /** Stores the package in this browser; resolves its catalog id for selectSkin. */
+  install(id: string): Promise<string>;
 }
 
 /** Where a notification or link asks the skin to go (host.onOpen). */
@@ -99,6 +125,8 @@ export interface Host {
   selectSkin(id: string): void;
   /** Mounts the browser-local package manager into root; returns its teardown. */
   manageLocalSkins?(root: HTMLElement): () => void;
+  /** The skin gallery; absent on a program without it. */
+  gallery?: Gallery;
   /** Present only where this computer's program can bind this membership
    *  again after it restarted: identity-checked, then the host mounts the
    *  skin again over the new binding. Never replays a send. */
