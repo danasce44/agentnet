@@ -927,6 +927,23 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   if(skin==='zoom')await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
   const field=skin==='comic'?page.locator('form[aria-label="Write a message"] textarea'):skin==='zoom'?page.locator('#write-body'):page.locator('#body');
   await field.waitFor({state:'visible'});
+  const checkComicMirror=async (labels,selected=false)=>{
+   if(skin!=='comic')return;
+   await settle(page);
+   const mirror=await field.evaluate(el=>({text:el.previousElementSibling.textContent,labels:[...el.previousElementSibling.querySelectorAll('span')].map(s=>s.textContent),color:getComputedStyle(el).color}));
+   assert.equal(mirror.text,(await field.inputValue())+'\u200b','mirror contains exactly one copy of the editable text');
+   assert.deepEqual(mirror.labels,labels,'collective chips remain compact, without recipient metadata or names');
+   assert.equal(mirror.color,'rgba(0, 0, 0, 0)','textarea glyphs stay transparent');
+   if(!selected)return;
+   await field.press('Control+A');
+   const selection=await field.evaluate(el=>({color:getComputedStyle(el,'::selection').color,background:getComputedStyle(el,'::selection').backgroundColor,from:el.selectionStart,to:el.selectionEnd}));
+   assert.equal(selection.color,'rgba(0, 0, 0, 0)','selection must not paint a second, independently wrapped copy behind the mirror');
+   const alpha=/[\/,]\s*([\d.]+)\)$/.exec(selection.background)?.[1];
+   assert(Number(alpha)>0&&Number(alpha)<1,'selection highlight leaves the mirror text readable');
+   assert.equal(selection.from,0);assert.equal(selection.to,(await field.inputValue()).length);
+   const shot=path.join(evidence,'comic-collective-selection-'+labels.length+'-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+   await field.press('Control+End');
+  };
   let firstAgentToken='';
   const pick=async index=>{
    await field.press('Control+End');
@@ -942,8 +959,10 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
    // Removing the only collective must clear the legacy single-agent fallback.
    await field.pressSequentially('@everyone');
+   await checkComicMirror([]);
    const firstTag=skin==='comic'?page.getByRole('option').filter({hasText:'everyone'}):page.locator('.mention-row').filter({hasText:'everyone'});
    await firstTag.click();assert.equal((await field.inputValue()).trimEnd(),'@everyone');
+   await checkComicMirror(['@everyone'],true);
    if(skin==='comic'){
     await page.getByRole('button',{name:'Don’t ask 2 agents',exact:true}).click();
     assert.equal(await page.getByRole('button',{name:/^Don’t ask /}).count(),0,'stopping a collective removes every exact agent target');
@@ -971,6 +990,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    if(skin==='zoom'&&!await field.isVisible())await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
    await field.waitFor({state:'visible'});
    assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','full reload restores both compact frozen tags after list edits');
+   await checkComicMirror(['@everyone','@Reviewers'],true);
   }else{firstAgentToken=await pick(0);await pick(1);}
 
   // Edit the first mention away, preserving the second, then select it again.

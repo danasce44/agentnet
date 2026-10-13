@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Keep Comic composer text transparent during selection, with a translucent
+  highlight so collective tags do not show overlapping textarea glyphs (MEL-613).
 - Correct question approval wording to describe unchanged native tools, skills
   and permissions; remove the false editing-tool exclusion (MEL-597).
 - Required for v0.8.24 (MEL-614): show same-device agent questions once, clear
