@@ -37,6 +37,48 @@ func browserCheck(t *testing.T, script string, args ...string) string {
 	return string(out)
 }
 
+// privateScreenshots gives a rendered check that requires evidence its
+// AGENTNET_SCREENSHOTS directory: the caller's, or else a private one under
+// the test's temporary directory, never inside the repository.
+func privateScreenshots(t *testing.T) string {
+	t.Helper()
+	if dir := os.Getenv("AGENTNET_SCREENSHOTS"); dir != "" {
+		return dir
+	}
+	dir := t.TempDir()
+	t.Setenv("AGENTNET_SCREENSHOTS", dir)
+	return dir
+}
+
+// A plain opt-in run (only AGENTNET_PLAYWRIGHT) gets a private screenshot
+// directory outside the repository; a caller's own choice is kept.
+func TestPrivateScreenshotsOutsideRepository(t *testing.T) {
+	repo, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("unset", func(t *testing.T) {
+		t.Setenv("AGENTNET_SCREENSHOTS", "")
+		dir := privateScreenshots(t)
+		if os.Getenv("AGENTNET_SCREENSHOTS") != dir {
+			t.Fatalf("the script would not see %q", dir)
+		}
+		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+			t.Fatalf("no directory: %v", err)
+		}
+		if rel, err := filepath.Rel(repo, dir); err == nil && !strings.HasPrefix(rel, "..") {
+			t.Fatalf("%s is inside the repository %s", dir, repo)
+		}
+	})
+	t.Run("kept", func(t *testing.T) {
+		own := t.TempDir()
+		t.Setenv("AGENTNET_SCREENSHOTS", own)
+		if dir := privateScreenshots(t); dir != own {
+			t.Fatalf("caller's directory replaced: %q", dir)
+		}
+	})
+}
+
 // Comic, Classic, Zoom and the Notebook example are standalone packages: mounted from
 // copied package bytes at an unrelated path with only the public host,
 // neither reads a private page global, talks to the API or event stream

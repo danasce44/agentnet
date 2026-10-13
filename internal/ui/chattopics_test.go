@@ -168,11 +168,13 @@ func TestBrowserChatTopicJourney(t *testing.T) {
 }
 
 func TestChatTopicsAllSkinsRendered(t *testing.T) {
+	privateScreenshots(t)
 	out := browserCheck(t, "testdata/chattopics_rendered.cjs")
 	t.Log(out)
 }
 
 func TestTopicPendingRequestsComicRendered(t *testing.T) {
+	privateScreenshots(t)
 	t.Setenv("P11_SKINS", "comic")
 	t.Setenv("P11_PENDING_ONLY", "1")
 	t.Log(browserCheck(t, "testdata/chattopics_rendered.cjs"))
