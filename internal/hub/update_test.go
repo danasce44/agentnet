@@ -170,11 +170,13 @@ func TestSuspendedStreamKeepsCustody(t *testing.T) {
 	h := releaseHub(t, filepath.Join(t.TempDir(), "hub"), "v1.2.0", -1, hb)
 	defer h.Close()
 	alice, bob := enroll(t, h, "alice"), enroll(t, h, "bob")
+	// Prepare custody before opening the short-lease test stream. Encrypting
+	// and committing the message must not delay this reader's first ping ack.
+	id := sendAs(t, h, "v1.2.0", alice, bob)
 	old := pushStream(t, h, bob, "v1.1.0") // its first event, release, read
 	if e := <-old; e.name != "update_required" || e.data != `{"latest":"v1.2.0","url":"https://github.com/misunders2d/agentnet/releases/tag/v1.2.0"}` {
 		t.Fatalf("after release: %+v", e)
 	}
-	id := sendAs(t, h, "v1.2.0", alice, bob)
 	for until := time.Now().Add(4 * 2 * hb); time.Now().Before(until); { // several leases
 		e, ok := <-old
 		if !ok {
