@@ -4,6 +4,32 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## MEL-543 fullscreen chat images — candidate for review
+
+The candidate is on `fix/mel-543-images`, in `.worktrees/wt-mel543-images`.
+Comic opens each picture's original object URL in a viewport-filling modal,
+with Fit, 100% natural size, zoom, wheel, pinch and bounded pan. Image state is
+keyed by message, attachment index and direction. Download and Use as my picture
+remain available. A desktop-only action reuses the verified attachment read,
+accepts only raster image bytes, and hands a private temporary copy to the OS
+default app. Copies expire after one hour or are cleaned on daemon restart.
+
+Locked Comic build/typecheck, embedded skin checksum checks and `go vet ./...`
+pass. The focused UI race batch passes in 47.615s, including native attachment
+opening, guarded file routes, desktop/touch viewer checks, all six existing
+Comic/Classic/Zoom profile-picture journeys and text previews. The viewer checks
+1440×900 and 390×844, nonsequential attachment indexes, original dimensions and
+download bytes, wheel/pinch/pan, focus return and emulated Android Back, with
+strict console checks. Desktop CSP is unchanged. The initial small-sheet
+regression failed against the old bundle; portal measurement now follows the
+stage's actual mount. Local review artifacts are under `dist/mel543/` (ignored).
+
+The Linux OS opener was recorded, not an actual image app display. macOS and
+Windows command arguments are checked; native runs and physical-phone tests
+are not claimed. Full release/platform/mixed-version gates have not been run
+for this change. Agy coordinates review; this note authorizes no merge, release
+or live installation.
+
 ## Next release — v0.8.24, not authorized for publication yet
 
 Owner decision, October 12: **MEL-614 must be included in v0.8.24**. Merged

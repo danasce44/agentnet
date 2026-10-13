@@ -8,12 +8,39 @@ import (
 	"image/png"
 	"io"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	"github.com/misunders2d/agentnet/internal/client"
+	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 type imageViewerFixture struct {
 	*imageOpenFixture
 	images [][]byte
+}
+
+// Empty ancillary providers keep fixture startup free of expected 404s, so
+// the browser check can reject every console error, including resource errors.
+func (f *imageViewerFixture) AgentCatalog(_ context.Context, host string) (AgentCatalogView, error) {
+	return AgentCatalogView{Host: host, Local: host == "", Agents: []CatalogAgent{}}, nil
+}
+func (f *imageViewerFixture) ChangeAgent(context.Context, AgentCatalogChange) (AgentCatalogChangeResult, error) {
+	return AgentCatalogChangeResult{}, ErrRefused
+}
+func (f *imageViewerFixture) ResponderStatus() (ResponderView, error) {
+	return ResponderView{Chosen: true, Manual: true, Harnesses: []HarnessView{}}, nil
+}
+func (f *imageViewerFixture) SetResponder(ResponderChange) (string, error) { return "", ErrRefused }
+func (f *imageViewerFixture) Typing(protocol.TypingScope) (client.TypingView, error) {
+	return client.TypingView{Entries: []client.TypingEntry{}}, nil
+}
+func (f *imageViewerFixture) SendTyping(context.Context, protocol.TypingScope, bool) (client.TypingResult, error) {
+	return client.TypingResult{}, ErrRefused
+}
+func (f *imageViewerFixture) SetTypingPreferences(client.TypingPreferences) error { return ErrRefused }
+func (f *imageViewerFixture) Refresh(string) (Presence, error) {
+	return Presence{Text: "Connection unknown"}, nil
 }
 
 func (f *imageViewerFixture) DM(id string) (DMThread, error) {
@@ -39,6 +66,9 @@ func (f *imageViewerFixture) OpenFile(_ context.Context, dir, id string, index i
 }
 
 func TestImageViewerRendered(t *testing.T) {
+	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
+		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT to installed Playwright")
+	}
 	f := &imageViewerFixture{imageOpenFixture: &imageOpenFixture{pictureFixture: newPictureFixture()}}
 	for i, rect := range []image.Rectangle{image.Rect(0, 0, 2400, 1600), image.Rect(0, 0, 1000, 2000)} {
 		img := image.NewNRGBA(rect)
@@ -55,7 +85,7 @@ func TestImageViewerRendered(t *testing.T) {
 	}
 	ts := httptest.NewUnstartedServer(nil)
 	s := New(f, ts.Listener.Addr().String(), testToken)
-	ts.Config.Handler = s.Handler()
+	ts.Config.Handler = s.WorkspaceHandler(NewWorkspaceProviders())
 	ts.Start()
 	defer ts.Close()
 	t.Log(browserCheck(t, "testdata/image_viewer_check.cjs", ts.URL+"/?t="+testToken))

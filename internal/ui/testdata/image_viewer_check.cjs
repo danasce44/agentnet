@@ -16,7 +16,7 @@ const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT);
       const p = await ctx.newPage(), errors = [];
       p.setDefaultTimeout(10000);
       p.on('pageerror', e => errors.push(String(e)));
-      p.on('console', m => { if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) errors.push({ text: m.text(), url: m.location().url }); });
+      p.on('console', m => { if (m.type() === 'error') errors.push({ text: m.text(), url: m.location().url }); });
       await p.goto(process.argv[2]);
       assert.equal(await p.title(), 'AgentNet');
       assert.equal(new URL(p.url()).origin, new URL(process.argv[2]).origin);
@@ -35,6 +35,7 @@ const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT);
         assert.deepEqual(await image.evaluate(im => [im.naturalWidth, im.naturalHeight]), [width, height], 'selected original resolution');
         assert.equal(await image.getAttribute('src'), await thumb.locator('img').getAttribute('src'), 'viewer uses this thumbnail’s original');
         const original = await ctx.request.get(new URL(process.argv[2]).origin + `/api/files/picture-message/${index}?dir=in`);
+        assert(original.ok(), 'guarded original attachment read succeeds');
         const originalBytes = await original.body();
         const stage = dialog.getByRole('region');
         await p.waitForFunction(im => im.clientWidth > 0 && im.clientWidth <= im.parentElement.clientWidth + 1 && im.clientHeight <= im.parentElement.clientHeight + 1, await image.elementHandle(), { timeout: 5000 }).catch(async e => {
