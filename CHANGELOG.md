@@ -20,6 +20,11 @@ This record starts with v0.8.1; earlier releases remain on the
   code, and check the complete skin collection against each release candidate.
   Comic uses the host's public native visibility and message interfaces.
 
+Known limitation found after publication: the v0.8.25 Android APK's existing
+WebView network policy blocks the skin gallery. Desktop and browser galleries
+work. An Android APK correction needs a new patch release; published v0.8.25
+assets remain unchanged.
+
 ## [0.8.24] — 2026-10-13
 
 - Allow active admitted agents to send ordinary proactive turns under their

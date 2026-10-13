@@ -181,8 +181,11 @@ draw its own through `host.gallery`.
   files under
   `https://raw.githubusercontent.com/misunders2d/agentnet-skins/<that tag>/published/`.
   The page's content security policy allows exactly these two besides its
-  own origin (`static.GalleryConnectSources`), on this computer's program,
-  Android and the relay page. Requests carry no credentials or referrer and
+  own origin (`static.GalleryConnectSources`), on this computer's program
+  and the relay page. The v0.8.25 Android APK has an additional WebView
+  interceptor that blocks these sources; its gallery is unavailable until
+  an APK correction ships. The Android browser page is unaffected.
+  Requests carry no credentials or referrer and
   refuse redirects. Work in progress on the repository's `main` never
   reaches the gallery: only a published release does.
 - **Verified bytes.** `published/catalog.json` names, for every skin, each

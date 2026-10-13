@@ -16,6 +16,12 @@ sends, attachment, retained files, draft, identity and saved origin through warm
 and cold starts. Its actual native update check recognizes v0.8.25. Install over
 the existing app; do not uninstall or relink. Physical-phone timing is not claimed.
 
+**Known Android gallery defect:** the APK's existing WebView interceptor blocks
+the new gallery's GitHub requests. This was caught after publication and
+reproduced on the actual released APK; desktop and browser galleries work.
+An isolated Android-only correction compiles and passes 36 JVM tests, but a new
+APK release/runtime pass is pending owner choice. The tag and assets are unchanged.
+
 Claude handed over exact `ccb8a7f6bd3988cbf002a460f03a525452c4ec3f`; main
 fast-forwarded to it. Comic remains built in; Classic and Zoom move to the
 gallery. The public host contract, Comic overlay kit and verified browser-local
@@ -41,10 +47,13 @@ worktree and main branch. Three merged worktrees, their local branches, four
 listed remote branches and Claude's listed scratch are removed. Owned release
 test processes and emulator are stopped. Laptop-only leftovers were not
 reachable and remain unverified; this cleanup claim covers the two local repos.
-The existing relay remains on v0.8.24: the handoff reserves deployment for
-current owner approval. No live identities, history, grants or requests changed.
+With the owner's explicit approval, the existing relay was deployed to v0.8.25
+at **15:58:24 UTC**. Verified full stopped-store backup:
+`/opt/agentnet-revived/backups/pre-v0.8.25-k0ca3fc8`. Realm, store counts,
+configuration and neighboring service are preserved; HTTPS/running binary agree
+and Hub restarts are zero. No live identities, history, grants or requests reset.
 
-## Previous release / current relay — v0.8.24, October 13, 2026
+## Previous release — v0.8.24, October 13, 2026
 
 [Download v0.8.24](https://github.com/misunders2d/agentnet/releases/tag/v0.8.24)
 or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.24/AgentNet-android.apk).
