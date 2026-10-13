@@ -23,14 +23,31 @@ async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;c
         await route.fulfill({response,json:d});
       });
       await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);
-      await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
-      await p.getByText(/A message that couldn.t be accepted/).first().waitFor();
-      assert.ok(await p.getByText(/failed a check and was kept out/).count(),skin+': legacy operation distinction');
+      // Comic keeps these records in Settings → About → Technical details,
+      // not OKs: neither is a decision (a0f3a1c7, e2bebdb2).
+      const nav=p.getByRole('navigation',{name:'Main'});
+      await nav.getByRole('button',{name:process.env.RETRY_MODE==='phone'?'You':'Settings',exact:true}).click();
+      await p.getByRole('button',{name:/^About/}).click();
+      await p.getByRole('button',{name:'Technical details',exact:true}).click();
+      const held=p.getByRole('region',{name:'Sync diagnostics',exact:true});
+      await held.locator('summary').filter({hasText:'Retained sync records'}).click();
+      const rejected=held.locator('li').filter({hasText:/failed a check and was kept out/});
+      await rejected.waitFor();
+      assert.doesNotMatch(await rejected.innerText(),/couldn.t be (verified|checked)/,skin+': legacy operation distinction');
+      await held.locator('li').filter({hasText:/couldn.t be checked/}).waitFor();
       await settle(p);
       if(state==='cancelled'&&process.env.AGENTNET_SCREENSHOTS){fs.mkdirSync(process.env.AGENTNET_SCREENSHOTS,{recursive:true});await p.screenshot({path:process.env.AGENTNET_SCREENSHOTS+'/held-'+process.env.RETRY_MODE+'-'+skin+'.png'});}
+      await nav.getByRole('button',{name:/^OKs/}).click();
+      await p.getByRole('heading',{name:'OKs',exact:true}).first().waitFor();
+      // Settings stays drawn (inert) while it slides away; then OKs is alone.
+      const records=p.getByText(/failed a check and was kept out|couldn.t be (verified|checked)/).filter({visible:true});
+      await records.first().waitFor({state:'hidden'});
+      assert.equal(await records.count(),0,skin+': held records are not OKs');
       if(state==='interrupted'){await p.getByRole('button',{name:'Run it again',exact:true}).waitFor();assert.equal(await p.getByText(/Answered only if you allow it/).count(),0);}await p.getByRole('button',{name:/Open it in the chat/}).first().click();
       const row=p.locator('[data-mid="needs-request"]');
       await row.waitFor();
+      // Comic folds a stopped request into one row that opens on demand (7269ac32).
+      if(stopped){const folded=row.locator('[data-terminal-request]');await folded.waitFor();assert.equal(await folded.getAttribute('open'),null,skin+': a stopped request rests folded');await folded.locator(':scope > summary').click();}
       const expected=state==='running'?'Stop':state==='awaiting'?'Allow once':'Run it again';
       await row.getByRole('button',{name:expected,exact:true}).waitFor();
       if(state==='interrupted'){await row.getByText('Interrupted run needs an explicit retry.',{exact:true}).waitFor();await row.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();}

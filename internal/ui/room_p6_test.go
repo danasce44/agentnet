@@ -66,13 +66,18 @@ func TestP6FixGroupViewWarningsAndLegacy(t *testing.T) {
 		})
 	}
 }
+
+// Group agents as members in Comic over an inert public host
+// (testdata/group_agents_p6_rendered.cjs, its default mode). Opt-in as the
+// other rendered checks: an installed Playwright (AGENTNET_PLAYWRIGHT).
 func TestP6GroupAgentsRendered(t *testing.T) {
-	if os.Getenv("AGENTNET_P6_RENDERED") != "1" {
-		t.Skip("opt-in inert host rendered fixture")
+	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
+		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT to an installed playwright-core")
 	}
-	out, e := exec.Command("node", "testdata/group_agents_p6_rendered.cjs").CombinedOutput()
-	if e != nil {
-		t.Fatalf("P6 rendered: %v\n%s", e, out)
+	privateScreenshots(t)
+	out, err := exec.CommandContext(t.Context(), "node", "testdata/group_agents_p6_rendered.cjs").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), `"ok":true`) {
+		t.Fatalf("P6 rendered: %v\n%s", err, out)
 	}
 	t.Log(string(out))
 }

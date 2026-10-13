@@ -1,4 +1,4 @@
-// A changed identity and the held-back list as Comic renders them over the
+// A changed identity and a held-back record as Comic renders them over the
 // demo installation (comicparity_rendered_test.go, TestComicTrustRendered).
 // PARITY_SIZE: 1440x900-light or 390x844-dark. Needs AGENTNET_PLAYWRIGHT;
 // optional AGENTNET_SCREENSHOTS.
@@ -40,26 +40,34 @@ const address = /\b[a-z0-9._-]+\/[a-z0-9._-]+\b/;
     await sheet.waitFor({ state: 'hidden', ...T });
     await p.getByText('Sending is paused').waitFor({ state: 'detached', ...T });
 
-    // Passive records have no approval action. They stay in explicit technical
-    // diagnostics, with the reason retained and no invented verified author.
+    // OKs holds only decisions this device can make. The demo's unverified
+    // message is no decision (a0f3a1c7, e2bebdb2): it stays out of OKs and is
+    // kept in Settings → About → Technical details, in words, behind that
+    // toggle, the only place an address may appear (web/CONTRACTS.md, Words).
     if (w < 1024) await p.getByRole('button', { name: /^Back to chats/ }).click();
-    await p.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^OKs/ }).click();
-    assert.equal(await p.locator('section[aria-labelledby="oks-heldback"]').count(), 0, name + ': passive records stay out of OKs');
     const nav = p.getByRole('navigation', { name: 'Main' });
-    await nav.getByRole('button', { name: w < 1024 ? 'You' : 'Settings', exact: true }).click();
+    await nav.getByRole('button', { name: /^OKs/ }).click();
+    await p.getByRole('heading', { name: 'OKs', exact: true }).first().waitFor(T);
+    assert.equal(await p.getByRole('region', { name: 'Held back', exact: true }).count(), 0, name + ': no decision is held back after trusting');
+    assert.equal(await p.getByText(/couldn’t be (verified|checked)|claiming to be/).count(), 0, name + ': the unverified message is not an OK');
+    await nav.getByRole('button', { name: w < 700 ? 'You' : 'Settings', exact: true }).click();
     await p.getByRole('button', { name: /^About/ }).click();
-    await p.getByRole('button', { name: 'Technical details', exact: true }).click();
-    const held = p.locator('section[aria-labelledby="sync-diagnostics"]');
+    const technical = p.getByRole('button', { name: 'Technical details', exact: true });
+    await technical.waitFor(T);
+    const held = p.getByRole('region', { name: 'Sync diagnostics', exact: true });
+    assert.equal(await held.isVisible(), false, name + ': the record waits behind Technical details');
+    await technical.click();
     await held.waitFor(T);
     await held.locator('summary').filter({ hasText: 'Retained sync records' }).click();
-    const words = await held.textContent();
+    const unverified = held.locator('li').filter({ hasText: 'claiming to be' });
+    await unverified.waitFor(T);
+    const words = await unverified.textContent();
     assert.match(words, /couldn’t be checked/, name + ': the reason is in words');
-    // The demo's unverified message only claims a sender: it isn't drawn as that person.
-    const unverified = held.locator('li').first();
-    assert.match(await unverified.textContent(), /claiming to be /, name + ': an unverified message only claims a sending device');
+    // It only claims a sender: it says so and isn't drawn as that person.
+    assert.match(words, /says it’s from /, name + ': an unverified message says who it claims to be from');
     assert.equal(await unverified.locator('[data-size]').count(), 0, name + ': an unverified message has no person’s avatar');
-    assert.match(words, /diagnostic records, not approval requests/, name + ': diagnostics explain that nothing awaits consent');
-    await held.scrollIntoViewIfNeeded();
+    assert.equal(await held.getByRole('button', { name: /Trust|Accept|Approve/ }).count(), 0, name + ': an unverified message offers no trust');
+    await unverified.scrollIntoViewIfNeeded();
     await snap('held');
     assert.deepEqual(errors, [], name + ': page errors');
     await ctx.close();

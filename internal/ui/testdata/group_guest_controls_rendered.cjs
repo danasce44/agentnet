@@ -242,6 +242,10 @@ if(variant==='held-flood'){
  // decision, never "re-sent".
  fixture.overview.group_invitations=[];fixture.overview.review=[];fixture.overview.needs_you=[];fixture.batches=[];
  fixture.overview.person.devices.push({address:'aster/bezos',fingerprint:'bezos-key'});
+ // Cora's Windows has a device conversation here, so its changed key is a
+ // decision this computer can make; without one it is only a diagnostic
+ // (heldDecisionPeers, e2bebdb2).
+ fixture.overview.threads=[{id:'9'.repeat(32),peer:'cora/windows',title:'Dock schedule',last:'Dock schedule',last_at:'2026-10-05T06:00:00Z',count:1,unread:0,state:'active'}];
  const hex=i=>(i+1).toString(16).padStart(32,'0'),record=k=>String(k).repeat(32);
  fixture.overview.quarantine=[
   ...Array.from({length:300},(_,i)=>({id:hex(i),peer:'aster/bezos',code:'invalid',detail_code:'participation_binding_mismatch',sender_verified:true,action:'update_sender',logical:record(i%4),size:2840+36*(i%4),detail:'An internal invitation or membership record does not match its sending device or conversation.',recovery:'It stays blocked and grants no access. Older AgentNet versions forward such records under the wrong device. Update AgentNet on the sending device to stop new copies.',at:new Date(Date.UTC(2026,9,5,10,0,i)).toISOString(),can_archive:true})),
@@ -780,7 +784,13 @@ if(process.env.AGENTNET_HELD_FLOOD_REGRESSION==='1'){
   await own.locator('summary').filter({hasText:'Show copies (300)'}).click();await own.locator('li').first().waitFor();assert.equal(await own.locator('li').count(),20,'expanded copies are bounded');
   assert.match(await own.locator('li').first().innerText(),/record 33333333/);
   await own.getByRole('button',{name:'Show more copies (280)',exact:true}).waitFor();
-  assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),0,'background failures do not become individual decision cards');
+  // Each shown copy is one plain line whose only control dismisses that exact
+  // notice (e2bebdb2: every hold class archives individually or as a group);
+  // none becomes a decision card.
+  const copies=own.locator('li');
+  for(let i=0;i<20;i++)assert.deepEqual(await copies.nth(i).getByRole('button').allInnerTexts(),['Archive notice'],'background failures do not become individual decision cards');
+  assert.equal(await held.getByRole('button',{name:/Trust|Accept|Approve|Run/}).count(),0,'no decision is offered for background copies');
+  assert.equal(await own.locator('[data-size]').count(),0,'background copies are not drawn as a person');
   await own.locator('summary').filter({hasText:'Show copies (300)'}).click();
   await held.getByRole('button',{name:'Archive all 326 notices',exact:true}).waitFor(); // the whole count, not a silent 256
   const archive=own.getByRole('button',{name:'Archive these 300 notices',exact:true});await archive.click();

@@ -69,8 +69,8 @@ func (f *p7RenderFixture) Approvals() (ApprovalsView, error) {
 }
 
 func TestP7PersonApprovalsRendered(t *testing.T) {
-	if os.Getenv("AGENTNET_P7_RENDERED") != "1" {
-		t.Skip("opt-in P7 inert rendered fixture")
+	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
+		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT to an installed playwright-core")
 	}
 	node, e := exec.LookPath("node")
 	if e != nil {
