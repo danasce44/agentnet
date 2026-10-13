@@ -79,14 +79,17 @@ if(process.env.AGENTNET_PENDING_RECORDS_ONLY==='1'){
   await page.goto(origin+'/?skin=comic&case=pending-records');await page.waitForFunction(()=>window.ready);await page.evaluate(()=>openGroup());
   const invite=page.getByRole('article',{name:'Vitalii’s Analyst, invited'});
   if(!await invite.isVisible()){const button=page.getByRole('button',{name:'In this chat',exact:true});if(await button.isVisible())await button.click();else await page.getByRole('button',{name:/Who’s in this chat/}).click();}
-  await invite.waitFor();const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Incomplete context'})});await details.waitFor();
-  assert.equal(await details.getAttribute('open'),null,'incomplete context starts collapsed');
+  // Records without a verified invitation are diagnostics behind Troubleshooting (e2bebdb2).
+  await invite.waitFor();const trouble=page.getByRole('button',{name:'Troubleshooting',exact:true});await trouble.waitFor();
+  const details=page.getByRole('dialog',{name:'Chat diagnostics',exact:true});
+  assert.equal(await page.getByText(/nothing counts until it is/).count(),0,'incomplete context starts collapsed');
   const heading=page.getByRole('heading',{name:/^Invited\s+1$/i});await heading.waitFor();
   assert.equal(await page.getByText('Someone’s agent',{exact:true}).count(),0,'no guessed identity');
   assert.equal(await page.getByText('Waiting for Someone’s OK',{exact:true}).count(),0,'no invented approval');
   assert.equal(await page.getByRole('heading',{name:/Waiting on an OK/}).count(),0,'held task does not fabricate approval row');
-  await details.locator('summary').click();assert.match(await details.innerText(),/nothing counts until it is/);assert.equal(await details.locator('button').count(),0,'no pending grant or dismissal action');
+  await trouble.click();await details.waitFor();assert.match(await details.innerText(),/nothing counts until it is/);assert.deepEqual(await details.getByRole('button').evaluateAll(b=>b.map(x=>x.getAttribute('aria-label')||x.textContent.trim())),['Close'],'no pending grant or dismissal action');
   await settle(page);const shot=path.join(evidence,'comic-incomplete-context-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+  await details.getByRole('button',{name:'Close',exact:true}).click();await details.waitFor({state:'hidden'});
   await invite.getByRole('button',{name:'Cancel invite',exact:true}).click();await invite.waitFor({state:'hidden'});
   assert.equal(await page.getByRole('heading',{name:/^Invited\s+\d+$/i}).count(),0,'cancelled real invite no longer counted');
   const actions=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/dismiss'));
