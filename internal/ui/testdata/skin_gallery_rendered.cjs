@@ -115,7 +115,9 @@ function digest(files) {
       await page.getByRole('button', { name: 'Switch to Comic', exact: true }).click();
       await settings();
       await page.getByRole('button', { name: 'Use Pulp' }).first().waitFor({ timeout: 15000 });
-      assert.ok(await page.getByText('In this browser', { exact: true }).count() >= 1, tag + ': installed skin marked');
+      // The switcher's "Use Pulp" can appear before the gallery list has loaded again.
+      await page.getByText('In this browser', { exact: true }).first().waitFor({ timeout: 15000 })
+        .catch(() => assert.fail(tag + ': installed skin marked'));
       if (tag === 'desk-light') {
         // A package imported by hand that needs a newer AgentNet is stored (import checks only the
         // field's form) but cannot be chosen: the host refuses and Comic says why.
