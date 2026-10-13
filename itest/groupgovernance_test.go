@@ -91,15 +91,27 @@ func TestCLIGroupGovernanceOfflineLeave(t *testing.T) {
 	waitCurrent := func(p client.GroupContext, homes ...string) {
 		t.Helper()
 		for _, home := range homes {
-			waitFor(t, "exact current group "+home, func() bool {
+			func() {
+				// A convergence read needs one observer. Reopening the whole
+				// client on every poll repeats startup recovery and competes
+				// with the daemon's writes, especially on Windows.
 				a, e := client.Open(filepath.Join(c.dir, home))
 				if e != nil {
-					return false
+					t.Fatal(e)
 				}
 				defer a.Close()
-				got, e := a.GroupContext(conv)
-				return e == nil && got.State.Hash() == p.State.Hash()
-			})
+				var got client.GroupContext
+				defer func() {
+					if t.Failed() {
+						t.Logf("exact current group %s: wanted seq=%d hash=%s; observed seq=%d hash=%s at %s",
+							home, p.State.Seq, p.State.Hash(), got.State.Seq, got.State.Hash(), time.Now().UTC().Format(time.RFC3339Nano))
+					}
+				}()
+				waitFor(t, "exact current group "+home, func() bool {
+					got, e = a.GroupContext(conv)
+					return e == nil && got.State.Hash() == p.State.Hash()
+				})
+			}()
 		}
 	}
 	inviteMember := func(targetHome, decideHome string) {

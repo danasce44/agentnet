@@ -4,6 +4,24 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Next release — v0.8.25 skins, October 13, 2026
+
+Claude handed over exact `ccb8a7f6bd3988cbf002a460f03a525452c4ec3f`; main
+fast-forwarded to it. Comic remains built in; Classic and Zoom move to the
+gallery. The public host contract, Comic overlay kit and verified browser-local
+gallery ship together. Native harness permissions and messaging authority are
+unchanged. Codex owns release qualification, publication and merged-branch /
+worktree cleanup in both AgentNet and agentnet-skins. Relay deployment requires
+current owner authorization; no live device or relay state is changed by tests.
+
+The published collection `v2026.10.13`, source `6d3ee7e`, pins this exact
+candidate. Its full compatibility CI passes for Classic, Holonet, Pulp and Zoom
+plus standalone/overlay scaffolds. Focused native/browser gallery, version,
+contract, bundle and mobile-host checks pass; final vet passes. Integrated race,
+supported native OS, desktop/container, mixed-version and artifact gates are in
+progress. [V0_8_25.md](plans/V0_8_25.md) records exact evidence and open gates;
+the release is not yet tagged or published.
+
 ## Current release — v0.8.24, October 13, 2026
 
 [Download v0.8.24](https://github.com/misunders2d/agentnet/releases/tag/v0.8.24)

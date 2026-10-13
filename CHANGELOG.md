@@ -4,6 +4,22 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
+## Unreleased — v0.8.25
+
+- Add a skin gallery in Settings → Appearance, with verified pictures and
+  packages from the latest published AgentNet skin collection. Install keeps
+  the skin in this app or browser; using it still requires trusting that exact
+  package. Skins requiring a newer AgentNet are marked incompatible.
+- Keep Comic as the only built-in skin. Classic and Zoom are available in the
+  gallery alongside Holonet and Pulp. A saved Classic or Zoom choice opens
+  Comic until the corresponding package is installed again.
+- Make Comic a skin kit: overlays can replace its theme, fonts, brand,
+  avatars, send button, topic introduction and request frame while retaining
+  Comic's features. Pulp is the first published overlay.
+- Document the skin contract, host routes and presentation parts against the
+  code, and check the complete skin collection against each release candidate.
+  Comic uses the host's public native visibility and message interfaces.
+
 ## [0.8.24] — 2026-10-13
 
 - Allow active admitted agents to send ordinary proactive turns under their

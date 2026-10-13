@@ -211,7 +211,7 @@ func TestDeleteConversationOnAllOwnDevices(t *testing.T) {
 // device that had not been told.
 func TestDeletedConversationNeverComesBack(t *testing.T) {
 	w := newWorld(t, "")
-	runAgent(t, w.alice)
+	stopAlice := runAgent(t, w.alice)
 	runAgent(t, w.bob)
 	persons(t, w.alice, w.bob)
 	conv := newDM(t, w.bob, w.alice)
@@ -232,9 +232,22 @@ func TestDeletedConversationNeverComesBack(t *testing.T) {
 		t.Fatalf("a retried copy came back: %v", b)
 	}
 
-	phone := linked(t, w.alice)
+	// Queue the deletion while its sender is stopped. Otherwise the new
+	// phone can receive it under its current daemon's clr1 announcement
+	// before this fixture publishes the older reader's capabilities.
+	phone, awaited, _ := linkPhone(t, w.alice, "phone")
+	req := pendingLink(t, w.alice)
+	stopAlice()
+	if err := w.alice.DecideLink(tctx(t), req.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if out := <-awaited; out.err != nil {
+		t.Fatal(out.err)
+	}
+	runAgent(t, phone)
 	waitNamedAgentCaps(t, phone)
 	dropCapSuccessor(t, phone, protocol.CapConvClear) // a device that cannot read deletions yet
+	runAgent(t, w.alice)
 	dumpClears(t, w.alice, phone)
 	sendConv(t, w.bob, conv, ConvOutgoing{Body: "after"})
 	eventually(t, "the later turn on the phone", func() bool { return strings.Join(convBodies(t, phone, conv), "|") == "in:after" })
