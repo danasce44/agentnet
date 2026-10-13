@@ -28,6 +28,9 @@ async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;c
     if(skin!=='comic')await root.locator('#nav-chats').click();
     if(skin==='comic'||skin==='zoom')await root.getByRole('button').filter({hasText:/Bob/}).filter({visible:true}).first().click();
     else await root.locator('#conv-list button').filter({hasText:/Bob/}).filter({visible:true}).first().click();
+    // Comic folds a stopped request into one row that opens on demand (7269ac32);
+    // inside, the approved text is again closed at rest.
+    if(skin==='comic'&&state==='interrupted'){const folded=root.locator('[data-mid="approved"] [data-terminal-request]');await folded.waitFor();assert.equal(await folded.getAttribute('open'),null,'stopped request rests folded');await folded.locator(':scope > summary').click();}
     const disclosure=root.locator('[data-approved-task-text]');await disclosure.waitFor();await settle(p);
     assert.equal(await disclosure.getAttribute('open'),null,'closed at rest');
     assert.equal(await disclosure.locator('p').first().isVisible(),false,'instructions hidden at rest');
