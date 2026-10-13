@@ -5,7 +5,8 @@
   const bridge = window.AgentNetAndroid;
   if (!bridge || typeof bridge.postMessage !== 'function') return;
   const waiting = new Map();
-  let next = 0, back = null, exporting = false;
+  let next = 0, back = null, exporting = false, nativeVisible = true;
+  const visibility = new Set();
   const request = (type, fields = {}) => new Promise((resolve, reject) => {
     const id = String(++next);
     waiting.set(id, { resolve, reject });
@@ -42,16 +43,22 @@
     legacyDrafts: () => request('drafts:legacy'),
     acknowledgeLegacyDraft: (key, value) => request('drafts:ack', {key, value}),
     scanQR: () => request('qr:scan'),
+    // Whether the Android app is in the foreground. The WebView's own
+    // document visibility can lag the activity, so skins check both.
+    visible: () => nativeVisible,
+    onVisibility: fn => {
+      visibility.add(fn);
+      return () => { visibility.delete(fn); };
+    },
   });
   window.__agentnetOnBack = fn => {
     back = fn;
     return () => { if (back === fn) back = null; };
   };
   window.agentnetNativeBack = () => back ? !!back() : false;
-  window.__agentnetNativeVisible = true;
   window.agentnetNativeVisibility = visible => {
-    window.__agentnetNativeVisible = !!visible;
-    document.dispatchEvent(new Event('agentnet-native-visibility'));
+    nativeVisible = !!visible;
+    for (const fn of [...visibility]) { try { fn(nativeVisible); } catch (_) { /* the skin's own */ } }
   };
 
   // The shared UI downloads already-decrypted bytes via an owned blob URL.

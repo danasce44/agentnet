@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 // A skin is a complete interface package: a manifest (skin.json), its entry
@@ -31,7 +33,11 @@ type Skin struct {
 	Style    string   `json:"style,omitempty"`
 	Document string   `json:"document,omitempty"` // document-level rules (@font-face, @property), adopted by the host
 	Files    []string `json:"files,omitempty"`
-	Digest   string   `json:"digest,omitempty"`
+	// AgentNet optionally names the oldest release (vX.Y.Z) the package
+	// supports. An older program omits an installed package that needs a
+	// newer one; the gallery offers it only to releases that can run it.
+	AgentNet string `json:"agentnet,omitempty"`
+	Digest   string `json:"digest,omitempty"`
 }
 type skinAsset struct {
 	data       []byte
@@ -105,7 +111,7 @@ func Skins(directory string) http.Handler {
 					}
 					skin, files, err := readSkin(dir, entry.Name())
 					dir.Close()
-					if err != nil || ReservedSkinName(skin.Name) {
+					if err != nil || ReservedSkinName(skin.Name) || protocol.Newer(skin.AgentNet, protocol.Version) {
 						continue
 					}
 					size := 0
@@ -224,7 +230,8 @@ func parseSkin(read func(name string, limit int64) ([]byte, error), id string) (
 		return name == "" || (slices.Contains(m.Files, name) && path.Ext(name) == ".css")
 	}
 	if m.API != 1 || m.ID != id || strings.TrimSpace(m.Name) == "" || len(m.Name) > 80 || len(m.Files) == 0 || len(m.Files) > 32 ||
-		!slices.Contains(m.Files, m.Entry) || (path.Ext(m.Entry) != ".js" && path.Ext(m.Entry) != ".mjs") || !css(m.Style) || !css(m.Document) {
+		!slices.Contains(m.Files, m.Entry) || (path.Ext(m.Entry) != ".js" && path.Ext(m.Entry) != ".mjs") || !css(m.Style) || !css(m.Document) ||
+		(m.AgentNet != "" && !protocol.IsRelease(m.AgentNet)) {
 		return m, nil, errors.New("invalid manifest")
 	}
 	files := map[string]skinAsset{}

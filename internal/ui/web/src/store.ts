@@ -99,7 +99,8 @@ export class Store {
   private chooseMain: ReturnType<typeof mainPreferences>;
   private hiddenChange = false;
   private mobileHidden = () => this.host.platform === "android" &&
-    (document.visibilityState === "hidden" || (window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible === false);
+    (document.visibilityState === "hidden" || this.host.android?.visible() === false);
+  private offNativeVisibility?: () => void;
   private mobileVisible = () => {
     if (!this.alive || this.mobileHidden() || !document.hasFocus()) return;
     // A load admitted before Android paused may already have finished. Retry
@@ -144,7 +145,7 @@ export class Store {
   async start() {
     if (this.host.platform === "android") {
       document.addEventListener("visibilitychange", this.mobileVisible);
-      document.addEventListener("agentnet-native-visibility", this.mobileVisible);
+      this.offNativeVisibility = this.host.android?.onVisibility(this.mobileVisible);
       window.addEventListener("focus", this.mobileVisible);
     }
     try { this.listen(); } catch { /* the first load fails and shows it */ }
@@ -155,7 +156,7 @@ export class Store {
     this.alive = false;
     if (this.host.platform === "android") {
       document.removeEventListener("visibilitychange", this.mobileVisible);
-      document.removeEventListener("agentnet-native-visibility", this.mobileVisible);
+      this.offNativeVisibility?.(); this.offNativeVisibility = undefined;
       window.removeEventListener("focus", this.mobileVisible);
     }
     this.sends.dispose();

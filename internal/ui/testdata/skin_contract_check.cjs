@@ -41,7 +41,11 @@ const harness = `
 const realFetch = window.fetch.bind(window), RealES = window.EventSource;
 const report = (window.__report = { globals: [], direct: [], outside: [], errors: [], listeners: [], api: [] });
 // Private page globals: none exists here; touching one is recorded.
-for (const name of ['agentnet', 'agentnetOpen', 'agentnetEngine', 'agentnetWorkspace', 'agentnetWorkspaces', 'agentnetLens']) {
+// The native shells' bridges are host-private too: a skin reaches them only
+// through host.android, host.onBack and host.clipboardImage.
+for (const name of ['agentnet', 'agentnetOpen', 'agentnetEngine', 'agentnetWorkspace', 'agentnetWorkspaces', 'agentnetLens',
+  '__agentnetPlatform', '__agentnetAndroid', '__agentnetOnBack', '__agentnetNativeVisible', '__agentnetNativeClipboardImage',
+  '__agentnetNativeAppJSON', 'agentnetNativeBack', 'agentnetNativeVisibility', 'AgentNetAndroid']) {
   Object.defineProperty(window, name, { configurable: false, get() { report.globals.push(name); return undefined; }, set() { report.globals.push(name + '='); } });
 }
 const own = (path, init = {}) => realFetch(path, { ...init, headers: { ...(init.headers || {}), 'X-Contract-Host': '${marker}' } });

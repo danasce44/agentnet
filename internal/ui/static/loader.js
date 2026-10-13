@@ -230,7 +230,9 @@
     const wid = bound.workspace.id;
     const api = async (path, body) => {
       const r = await bound.api(path, body);
-      if (body === undefined && path === "/api/overview" && r) {
+      // Any overview read (with or without query) proves this membership's
+      // identity for reconnect and names it in the switcher.
+      if (body === undefined && path.split("?")[0] === "/api/overview" && r) {
         if (r.me && r.me.fingerprint) known.set(wid, { address: r.me.address, fingerprint: r.me.fingerprint });
         for (const fn of [...overviewSeen]) { try { fn(wid, r); } catch (_) { /* the bar's own */ } }
       }

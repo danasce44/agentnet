@@ -48,6 +48,14 @@ assert.equal((await scan).text,'agentnet-link-v2:test','scan returns text withou
 const canceledScan=window.__agentnetAndroid.scanQR();
 bridge.onmessage({data:JSON.stringify({id:sent.at(-1).id,ok:true,canceled:true})});
 assert.equal((await canceledScan).canceled,true);
+// Foreground state reaches skins through host.android only (no page globals or events).
+assert.equal(window.__agentnetAndroid.visible(),true);
+const seenVisible=[];const stopVisible=window.__agentnetAndroid.onVisibility(v=>seenVisible.push(v));
+window.agentnetNativeVisibility(false);assert.equal(window.__agentnetAndroid.visible(),false);
+window.agentnetNativeVisibility(1);assert.equal(window.__agentnetAndroid.visible(),true);
+stopVisible();window.agentnetNativeVisibility(false);
+assert.deepEqual(seenVisible,[false,true],'onVisibility reports each change until unsubscribed');
+assert.equal('__agentnetNativeVisible' in window,false);window.agentnetNativeVisibility(true);
 assert.equal(window.agentnetNativeBack(),false);
 const remove=window.__agentnetOnBack(()=>true);
 assert.equal(window.agentnetNativeBack(),true);remove();assert.equal(window.agentnetNativeBack(),false);

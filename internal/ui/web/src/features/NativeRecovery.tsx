@@ -3,7 +3,7 @@ import { useApp } from "../context";
 import { errorText } from "../api";
 import { isSendPersisted } from "../send-recovery.mjs";
 import { legacyDraft } from "../legacy-drafts.mjs";
-import { readPending, acknowledge, recordFailure, type JournalEntry } from "../send-journal.mjs";
+import { readPending, acknowledge, recordFailure, onJournalChange, type JournalEntry } from "../send-journal.mjs";
 import { Sheet } from "../ui/Sheet";
 import { Button } from "../ui/Button";
 import { copyText } from "./Settings.parts";
@@ -23,8 +23,8 @@ export function NativeRecovery() {
     let alive=true;
     if (workspace === "default") native.legacyDrafts().then(v=>{if(alive)setLegacy(v.drafts);},()=>{if(alive)setProblem("Could not read saved preview drafts. They remain on this device.");});
     const refresh=()=>{try {setPending(readPending(localStorage,workspace).filter(e=>recovered.has(e.id)||e.error));}catch{setProblem("Saved sends could not be read. They remain on this device.");}};
-    refresh(); window.addEventListener("agentnet-send-journal",refresh);
-    return()=>{alive=false;window.removeEventListener("agentnet-send-journal",refresh);};
+    refresh(); const off=onJournalChange(refresh);
+    return()=>{alive=false;off();};
   },[native,workspace,recovered]);
   if (!native || (!legacy.length && !pending.length && !problem)) return null;
   const run = async (key:string, work:()=>Promise<void>) => {
@@ -81,7 +81,7 @@ export function NativeRecovery() {
           try {await submit(entry);acknowledge(localStorage,workspace,entry.id);store.toast("Saved send is in the outbox.","ok");}
           catch(e){recordFailure(localStorage,workspace,entry.id,errorText(e));throw e;}
         })}>{busy===entry.id?"Retrying…":"Retry saved send"}</Button>
-        <Button size="sm" variant="ghost" onClick={()=>void copyText(String(entry.request.body||"")).then(ok=>store.toast(ok?"Copied":"Couldn’t copy here",ok?"ok":"error"))}>Copy text</Button></div>
+        <Button size="sm" variant="ghost" onClick={()=>void copyText(String(entry.request.body||""), store.host.android).then(ok=>store.toast(ok?"Copied":"Couldn’t copy here",ok?"ok":"error"))}>Copy text</Button></div>
         {(errors[entry.id]||entry.error) && <details className="mt-2 min-w-0 text-[13px] text-muted">
           <summary className="min-h-11 cursor-pointer py-3">Why sending wasn’t confirmed</summary>
           <p role="alert" className="[overflow-wrap:anywhere]">{errors[entry.id]||entry.error}</p>

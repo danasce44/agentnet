@@ -38,13 +38,13 @@ export function AppControls({ command = false }: { command?: boolean }) {
       });
     };
     const visible = () => {
-      if ((window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible !== false) refresh();
+      if (host.android?.visible() !== false) refresh();
     };
     refresh();
-    if (android) document.addEventListener("agentnet-native-visibility", visible);
+    const off = android ? host.android?.onVisibility(visible) : undefined;
     return () => {
       alive = false; generation++; checkGeneration.current++;
-      document.removeEventListener("agentnet-native-visibility", visible);
+      off?.();
     };
   }, [host, command]);
   const check = async () => {

@@ -26,14 +26,19 @@ class Events {
   removeEventListener(name, fn) { this.listeners.get(name)?.delete(fn); }
   fire(name) { for (const fn of this.listeners.get(name) || []) fn(); }
 }
+// host.android's foreground signal, as static/android.js provides it.
+class Native {
+  visible = true; listeners = new Set();
+  api() { return { visible: () => this.visible, onVisibility: fn => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; } }; }
+  set(visible) { this.visible = visible; for (const fn of [...this.listeners]) fn(visible); }
+}
 function environment() {
-  const window = new Events(), document = new Events();
-  window.__agentnetNativeVisible = true;
+  const window = new Events(), document = new Events(), native = new Native();
   document.visibilityState = 'visible'; document.focused = true;
   document.hasFocus = () => document.focused;
   const values = new Map();
   const localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
-  return { window, document, localStorage, setTimeout, clearTimeout };
+  return { window, document, localStorage, setTimeout, clearTimeout, native };
 }
 async function storeJourney(platform) {
   const env = environment(), reads = [], messages = [{ id: 'message-one', dir: 'in', unread: true, topic: '' }];
@@ -41,7 +46,7 @@ async function storeJourney(platform) {
   const deferred = new Promise(resolve => { completeLoad = resolve; });
   let firstLoad = true;
   const view = () => ({ id: 'conversation', messages: messages.map(m => ({ ...m })), agents: [] });
-  const host = { platform, workspace: { id: 'default' }, listen: fn => { push = fn; return () => { push = null; }; },
+  const host = { platform, ...(platform === 'android' ? { android: env.native.api() } : {}), workspace: { id: 'default' }, listen: fn => { push = fn; return () => { push = null; }; },
     async api(path, body) {
       if (path.startsWith('/api/overview')) return { version: 'test', me: {}, threads: [], dms: [] };
       if (path.startsWith('/api/agents')) return { agents: [] };
@@ -55,52 +60,54 @@ async function storeJourney(platform) {
       throw Error('Unexpected route: ' + path);
     },
   };
-  const Store = runInNewContext(storeSource + '\nStore', { ...env, api, errorText, pendingSends, messageTarget, mainPreferences, personRoots });
+  const { native, ...globals } = env;
+  const Store = runInNewContext(storeSource + '\nStore', { ...globals, api, errorText, pendingSends, messageTarget, mainPreferences, personRoots });
   const store = new Store(host);
   await store.start();
   const opened = store.open({ kind: 'dm', id: 'conversation' });
-  env.window.__agentnetNativeVisible = false;
+  env.native.visible = false;
   completeLoad(view()); await opened; await tick();
   if (platform === 'daemon') {
     assert.equal(reads.length, 1, 'desktop behavior remains unchanged'); store.stop(); return;
   }
   assert.equal(reads.length, 0, 'an admitted load finishing after native pause leaves messages unread');
-  env.window.__agentnetNativeVisible = true; env.document.focused = false;
-  env.document.fire('agentnet-native-visibility'); await tick();
+  env.document.focused = false;
+  env.native.set(true); await tick();
   assert.equal(reads.length, 0, 'native resume alone cannot read an unfocused page');
   env.document.focused = true; env.document.visibilityState = 'hidden';
   env.window.fire('focus'); await tick();
   assert.equal(reads.length, 0, 'focus alone cannot read a document hidden by WebView');
   env.document.visibilityState = 'visible'; env.document.fire('visibilitychange'); await tick();
   assert.deepEqual(reads, [['message-one']], 'visible focused resume acknowledges the completed load without another push');
-  env.window.__agentnetNativeVisible = false;
+  env.native.set(false);
   messages.push({ id: 'message-two', dir: 'in', unread: true, topic: '' });
   push({ type: 'change', seq: 2 }); await tick();
   assert.equal(reads.length, 1, 'hidden changes do not read new messages');
-  env.window.__agentnetNativeVisible = true; env.document.fire('agentnet-native-visibility'); await tick(); await tick();
+  env.native.set(true); await tick(); await tick();
   assert.deepEqual(reads, [['message-one'], ['message-two']], 'resume refreshes and acknowledges the hidden change once');
   store.stop();
   assert.equal(env.window.listeners.get('focus').size, 0);
-  assert.equal(env.document.listeners.get('agentnet-native-visibility').size, 0);
+  assert.equal(env.native.listeners.size, 0);
 }
 await storeJourney('android');
 await storeJourney('daemon');
 
 const env = environment(), seen = [], cleanups = [];
-env.window.__agentnetNativeVisible = false;
+env.native.visible = false;
 const messages = [{ id: 'one', dir: 'in' }], bottom = { current: true };
-const store = { host: { platform: 'android' }, api: { notify: async (what, request) => { assert.equal(what, 'seen'); seen.push(Array.from(request.ids)); } } };
-const useSeen = runInNewContext(seenSource + '\nuseSeen', { ...env, useApp: () => store, useRef: value => ({ current: value }), useEffect: fn => cleanups.push(fn()), ev: m => !!m.event });
+const store = { host: { platform: 'android', android: env.native.api() }, api: { notify: async (what, request) => { assert.equal(what, 'seen'); seen.push(Array.from(request.ids)); } } };
+const { native: _native, ...seenGlobals } = env;
+const useSeen = runInNewContext(seenSource + '\nuseSeen', { ...seenGlobals, useApp: () => store, useRef: value => ({ current: value }), useEffect: fn => cleanups.push(fn()), ev: m => !!m.event });
 const report = useSeen({ dm: { id: 'conversation' }, overview: { notify: { enabled: true } } }, messages, bottom);
 assert.equal(seen.length, 0, 'native-hidden timeline cannot suppress an alert despite visible focused DOM');
-env.window.__agentnetNativeVisible = true; env.document.focused = false;
-env.document.fire('agentnet-native-visibility'); assert.equal(seen.length, 0);
+env.document.focused = false;
+env.native.set(true); assert.equal(seen.length, 0);
 env.document.focused = true; env.window.fire('focus');
 assert.deepEqual(seen, [['one']], 'focus after native resume reports the presented message');
-env.document.fire('agentnet-native-visibility'); assert.equal(seen.length, 1, 'visibility events cannot duplicate a seen report');
+env.native.set(true); assert.equal(seen.length, 1, 'visibility events cannot duplicate a seen report');
 messages.push({ id: 'two', dir: 'in' }); bottom.current = false; report(); assert.equal(seen.length, 1);
 bottom.current = true; report(); assert.deepEqual(seen, [['one'], ['one', 'two']]);
 for (const cleanup of cleanups) cleanup();
-assert.equal(env.document.listeners.get('agentnet-native-visibility').size, 0);
+assert.equal(env.native.listeners.size, 0);
 assert.equal(env.window.listeners.get('focus').size, 0);
 console.log('PASS Android in-flight unread pause/resume, focus, hidden push, seen suppression and listener cleanup; desktop unchanged');

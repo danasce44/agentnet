@@ -15,9 +15,12 @@ export function readPending(storage, workspace) {
     throw new Error("The saved send journal is damaged. Nothing was retried.");
   return clone(value);
 }
+// Comic's own change notice: listeners in this package, not page events.
+const changed = new Set();
+export function onJournalChange(fn) { changed.add(fn); return () => { changed.delete(fn); }; }
 function write(storage, workspace, entries) {
   storage.setItem(key(workspace), JSON.stringify(entries));
-  if (typeof window !== "undefined") window.dispatchEvent(new Event("agentnet-send-journal"));
+  for (const fn of [...changed]) fn();
 }
 export function saveBatch(storage, workspace, entries) {
   const pending = readPending(storage, workspace);

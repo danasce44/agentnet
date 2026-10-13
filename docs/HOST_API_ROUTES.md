@@ -1,0 +1,420 @@
+# Host API routes
+
+This file lists every route a skin can reach through `host.api(path, body?)`.
+[UI_SKINS.md](UI_SKINS.md) is still the skin contract; this file is its route
+reference. `host.api` sends GET when `body` is omitted and POST JSON
+otherwise. Put query parameters in `path`. For an action without fields, pass
+`{}`, because the daemon refuses an empty body. Comic is the baseline skin: its
+typed calls are in `internal/ui/web/src/api.ts`, and the view types in
+`internal/ui/web/src/api.gen.ts` are generated from the Go structs in
+`internal/ui/*.go`. **Platform codes**:
+
+- `D`: this computer's program. That is the desktop app, `agentnet ui` and the
+  Android app, which all run the same Go server (`internal/ui/server.go`).
+  `agentnet ui --demo` also counts as `D`, but it serves only reads,
+  `refresh`, sends, `act`, people, devices, the workspace name, approvals,
+  `get-app` and `simulate`. Every other route answers 404 there.
+- `B`: a browser on a relay (`internal/ui/static/engine.mjs`, `api()`).
+- `D B†`: the browser refuses the route with a sentence (quoted in Purpose).
+  Android refusals are named in Purpose.
+
+**Errors on D.** `host.api` rejects with an `Error` whose message is the JSON
+`error` field, else the trimmed text body, else the status text. `.status` is
+the HTTP status.
+
+- 400 `bad request`: unknown body field (`DisallowUnknownFields`), malformed
+  JSON, trailing data, empty body, or a body over 64 KiB.
+- 404: a provider sentence such as "… not available here", or
+  `404 page not found` for an unknown path.
+- 405: wrong method.
+- 409: a refusal sentence; show it as written.
+- 409 `stale or disconnected workspace`: the handle was retired. Call
+  `host.reconnect()`.
+- 415 `JSON only`.
+- 500 `internal error`.
+
+The host itself throws before sending:
+
+- `Invalid workspace API path` when the path is not `/api/…` or `/events`.
+- `Stale workspace handle` or `Disconnected workspace`.
+- `File belongs to another workspace`.
+
+The demo program has no workspaces. It accepts only `/api/` paths ("Expected
+an AgentNet API path") and its errors are plain text with no `.status`.
+
+**Errors on B.** The engine switches on the pathname only and **ignores the
+HTTP method**. "GET" and "POST" differ only in whether `body` is passed, so a
+body sent to a read is not refused. An unknown path throws
+`Unknown request.`, and a refused route throws a sentence. Most body fields
+are not checked strictly. An error from a relay call carries `.status`, the
+**relay's** HTTP status (0 when the relay is unreachable), and `.code`.
+`human_unsupported` and `agent_identity_unsupported` become "<name>'s app
+needs an update first." with `.code` kept. Two more refusals apply to every
+route:
+
+- A device removed from its server refuses every call that has a body, except
+  `/api/act`.
+- While a workspace closes, the send routes refuse with "This workspace is
+  closing. Your draft is kept."
+
+**Feature detection.** Use the overview booleans (below), then try the route
+and catch the error. Failures differ by platform.
+
+## Reads and events
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `GET /api/overview` | D B | Everything around the open chat. Read it again on every `change` event. With `topics=1`, archived agent topics are only counted in `topics` and are paged through `/api/topics` (Comic does this). Without it, every thread is listed. A read through `host.api` (with or without a query) records the identity that `host.reconnect()` needs. | `?topics=1` optional | `Overview` (see Overview fields) |
+| `GET /api/thread` | D B | One device thread, which is a chat with an agent's device. | `?id=<any message id in it>` | `{id, peer, key:{pinned?, pending?}, approved, permission_person?, question_target?, task_target?, task_grant, messages:[Message], topic?}` |
+| `GET /api/dm` | D B | One conversation: a direct message or a group. | `?id=<conv>` | `{id, kind?, title?, peer, members?, role?, created, mine, frozen?, messages:[DMMessage], agents:[AgentView], guests?, main_topic?, topics?, audience_pending?}` |
+
+**Events.** `host.listen(fn)` delivers the change counter.
+
+- **D** sends `{type:"change", seq, workspace}` once on connect and then once
+  per change. It also sends `{type:"restart", workspace}` and
+  `{type:"disconnect", workspace}`. The demo program sends the same events
+  without `workspace`.
+- **B** sends only `{type:"change", seq, workspace}`, with no event on
+  subscribe. Stream loss arrives as a `change`, and connectivity is then in
+  `overview.device.online`.
+
+### Overview fields
+
+| Field | Platforms | Meaning |
+|---|---|---|
+| `version` | D B | The build serving the page. D: the program's version (`"demo"` in the demo). B: the page's build, or the server's once the page is stale. A change while the skin runs means an update. Comic keeps the first value. On B it reloads by itself once nothing unsent would be lost. |
+| `release` | D | A recommended build newer than this one, else absent. Always `""` on B. |
+| `update_required` | D B | `{latest, url?, auto?}` while the relay refuses this device until it updates. Show a prominent update banner. |
+| `seq` | D B | The change counter. It matches the `change` events. |
+| `demo` | D B | `true` only on `agentnet ui --demo`. |
+| `app` | D | `true` in the desktop app's or the Android app's window, otherwise absent (never on B). It does not mean the `host.app*` methods are present: they always are. |
+| `topic_list` | D B | Topics are kept here, so use `?topics=1` and `/api/topics`. `false` in the demo. |
+| `remind` | D | Reminders can be set. `false` in the demo and absent on B, so hide "Remind me" there. |
+| `persons` | D B | Conversations between people are available. |
+| `agents` | D B | Agents can be invited into conversations. `false` in the demo. |
+| `groups` | D B | Group operations are available. `false` in the demo. |
+| `files` | D B | Attachment limits `{max_file, max_count, max_message?}`. Absent means no attachments (the demo). B adds `max_message` and has `max_count` 8. |
+| `notify` | D B | `{available, native, enabled, pending, reason?, mutes:[conv], allowed:[address]}`. Absent when the provider has no alerts. On Android, `available` and `native` follow the OS permission. |
+| `reply_receivers` | D | `GET /api/reply-receivers` is served. `true` on a live program, Android included, and `false` in the demo. Absent on B. |
+| `reply_sessions` | D | Native reply sessions are listed. `true` on a live program and `false` in the demo. Absent on B, although `GET /api/reply-sessions` answers there. |
+| `me` | D B | `{address, fingerprint, responder, responder_dir, agent}`. B adds `browser:true` and always has `responder:""` and `agent:false`. |
+| `device` | B | `{online, revoked, persisted}`: the browser's connection to its relay. |
+| `receive_status` | B | `{waiting, failed, more?}` while received messages wait for verification. |
+| `transport_error` | D | Android only: the receive loop stopped for good. |
+| `workspace` | D B | `{name, server}`: the admin's name for the workspace and the relay host. |
+| `role` | D B | `unset`, `person` or `service`. |
+| `person`, `people`, `dms` | D B | This installation's person, the known people, and the conversations (`DMSummary`, with `unread`, `held`, `decide` and `waiting` counts). |
+| `threads`, `topics` | D B | Device threads (`ThreadSummary`), and per-peer topic counts `{peer, total, archived, archived_unread, latest}`. |
+| `needs_you`, `held` | D B | `ConvItem`s that wait for this person: decisions, and held person turns. See Request states. |
+| `review`, `quarantine` | D B | Received device items and review notices, and held envelopes with `code` and `action`. |
+| `directory`, `agent_devices`, `model_reports` | D B | The relay's member list, the devices that say they run an agent (a hint), and private model reports. |
+| `link`, `links`, `history`, `group_invitations` | D B | This device's own join request, new devices asking to join, history copying, and group invitations. |
+| `reminders` | D | Pending reminders, soonest first. |
+| `picture_url` (any `PersonView`) | D B | D: `/workspaces/<id>/<handle>/api/picture/<64 hex>`, already qualified by the host. Use it only as `<img src>`, never through `host.api`. B: `""` until the picture loads, then a `blob:` URL that arrives with a later `change`. |
+
+## Conversations and messages
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/send` | D B | Send a message, question or task in a device thread. B accepts only a `reply_receiver` of `{kind:"human"}` or one with an exact `host`. Android refuses (409) a non-human receiver on itself. | `{to, kind, body, reply_to?, quote?, files?: [staged], id?, agent_id?, reply_receiver?}`, where `kind` is message, question or task | `{id, lid?, state, path?, detail?}` |
+| `POST /api/dm/new` | D B | Start a separate conversation with the person on a device. Nothing is sent until a message is. | `{address}` | `{id}` |
+| `POST /api/dm/send` | D B | Send a message in a conversation. `files` holds `host.stage` results: string ids on D, staged objects on B. | `{conv, body, reply_to?, quote?, topic?, files?: [staged], id?, pid?, reply_receiver?}` | `{id, lid?, state, path?, detail?}` |
+| `POST /api/refresh` | D B | One bounded check when a chat opens: presence and the receipts still in custody. Never poll it. | `{id}`: a thread message id or a conversation id | `{text, at?}` (B: `{text:""}`) |
+| `POST /api/message/react` | D B | Add or remove a reaction. | `{id, dir, conv?, emoji, remove?}` | `{note}` |
+| `POST /api/message/edit` | D B | Edit your own message. A running question or task keeps its original body. | `{id, dir, conv?, text}` | `{note}` |
+| `POST /api/message/delete` | D B | Delete your own message. This hides it and cancels nothing. | `{id, dir, conv?}` | `{note}` |
+| `POST /api/conversation/delete` | D B | Delete a conversation on all of this person's devices, or a device thread on this device. | `{conv}` or `{peer, thread}` | `{note}` |
+| `POST /api/history/contribution/preview` | D B | Review quoting selected messages from one chat into another. | `{source, ids:[id], destination, topic?, new_topic?, title?, files?:[{id, index}]}` | review: the request plus `{operation, token, body, items, audience, imported_at, audience_pending}` |
+| `POST /api/history/contribution/apply` | D B | Send exactly the reviewed contribution. If anything changed, it is refused: review again. | the review, unchanged | D: `{ID, LID, State, Detail, Copies}` (Go field names). B: `{id, lid, state, detail, copies}` |
+
+## Topics
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `GET /api/topics` | D B | One page of topics, most recently active first. | `?conv=` (a people chat) or `?peer=` (agent chats; empty means every peer), plus optional `state` (active, done or archived), `q`, `before` (the previous page's `next`) and `limit` | `{topics:[ThreadSummary], next?, matched}` |
+| `POST /api/topic/create` | D B | Start a topic in a people chat, rooted at one message. Agent threads have no `create`: D answers 404 and B "No such topic change." | `{conv, peer:"", id:<message lid or id>}` | `{note}` |
+| `POST /api/topic/rename` | D B | Rename a topic. An empty `title` restores the automatic name. `root:true` renames the chat's Main flow. | `{peer, id, title}`, `{conv, peer:"", id, title}` or `{conv, root:true, peer:"", id:"", title}` | `{note}` |
+| `POST /api/topic/done` | D B | Mark a topic done. `count` is how many messages the page showed. Batch with `ids` and `counts`. The Main flow (`root`) has no `done`: archive it instead, as Comic does. | `{peer or conv, id, count?}` or `{…, id:"", ids:[id], counts:{id:n}}` | `{note}` |
+| `POST /api/topic/reopen` | D B | Reopen a topic, or the Main flow with `root:true`. | `{peer or conv, id, count?}` or `{conv, root:true, peer:"", id:"", count?}` | `{note}` |
+| `POST /api/topic/archive` | D B | Archive a topic. This deletes nothing. Works in batches and with `root:true`. | `{peer or conv, id}`, `{…, ids, counts?}` or `{conv, root:true, peer:"", id:"", count?}` | `{note}` |
+| `POST /api/topic/delete` | D B | Delete a topic: on this device for an agent thread, on your devices for a chat. Works in batches and with `root:true`. | as for archive | `{note}` |
+| `POST /api/topic/organization/preview` | D B | Review moving selected messages into another topic. | `{conv, ids:[up to 200 ids], topic, merge?, new?, title?}` | review: the request plus `{operation, token, moves:[{lid, author, hash, topic?}], parent?}` |
+| `POST /api/topic/organization/apply` | D B | Apply exactly the reviewed move. If anything changed, it is refused. | the review, unchanged | D: `{ID, LID, State, Detail, Copies}`. B: `{id, lid, state, detail, copies}` |
+
+## Files and Drive
+
+Staging, opening and discarding files are covered by host methods (see
+Host-internal). Google Drive is outside AgentNet end-to-end encryption.
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/file/request` | D B | Ask the device of yours that a history message came from for its file (`availability: "requestable"`). | `{id, index}` | D: `{ok:true}` |
+| `GET /api/drive` | D B | A conversation's Drive project-space status. Usually called through `host.drive.drive({conv, action:"status"})`. | `?conv=` | `{enabled, configured, connected, full, space?, pending?, folder?, page?, file?, permissions?, next?, consent_url?, account?, grants?, notice}` |
+| `POST /api/drive` | D B | A Drive action. `action` is one of status, configure, consent, disconnect-account, create, connect, disconnect-space, publish-pending, list, permissions, share, remove-permission or grant. D also accepts `save-attachment`, which B answers "Unknown Drive action". D errors are text: 401 consent needed, 403 denied, 503 offline, 400 otherwise. | `{conv, action, name?, folder?, page?, full?, confirm_outside_e2ee?, confirm_account?, client_id?, client_secret?, email?, role?, permission?, confirm_access?, pid?, grant?, message?, index?, dir?}` | same view as GET |
+| `POST /api/drive/upload` | D B | Upload plaintext to Drive, after explicit confirmation. On D the body is octet-stream with `?conv&name&size&confirm_outside_e2ee=true` (32 MiB at most), so use `host.drive.driveUpload(conv, file, true)`: `host.api` cannot send it. | B: `{conv, file: File, confirm:true}` | the Drive file `{id, name, mimeType, size?, parents?, capabilities, trashed?}` |
+| `GET /api/drive/setup` | D B | Settings > File storage options (workspace admin). | — | `{settings, draft, steps, notice}` |
+| `POST /api/drive/setup` | D B | Change file storage options. `action` is status, local-secret, save-draft or publish. | `{action, draft?, expect?, confirm?, desktop_client_secret?}` | `{settings, draft, steps, notice}` |
+
+## Agents, requests and decisions
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/act` | D B | A local decision on a received item, or a local permission change. Show only the verbs listed in the item's `actions`. B accepts 7 of the 17 verbs (table below). | `{do, id?, body?, reason?, ids?, key?, attempt?, send_id?, held?}` | `{note}` |
+| `POST /api/operator/decide` | D B | Decide a request that another host reported, as its granted operator. On your own host you can also `continue`, `resolve` or `cancel` it. `check:true` only checks that you may. | `{host, id, key, action, expect, attempt, report, text?, send_id?, check?}`, where `action` is accept, decline, resolve, reply, cancel or continue | `{note}` |
+| `POST /api/request/followup` | D B | Follow up on a request you sent, to its same executor. | `{id, conv?, ref:{id, fingerprint}, body, files?: [staged]}` | `{note}` |
+| `GET /api/approvals` | D B | Standing grants, as `agentnet approvals` lists them. B always answers `{questions:[], tasks:[], participations:[], read_only:true}`, and refuses a body. | — | `{questions, tasks, native_tasks?, own_devices?, participations, read_only, unresolved?}` |
+| `POST /api/approvals/revoke` | D B† | End one standing grant. B: "Nothing runs in this browser: approvals and grants are made and revoked on a computer with AgentNet." | `{kind:"question" or "task", person}`, `{kind, address}` or `{kind:"participation", pid}` | `{note}` |
+| `GET /api/agents` | D B | Without `host`: this computer's agents (`local:true`, with harnesses). With `?host=`: that host's verified public catalog. B needs another device's `host`; without it, it refuses "This browser runs no local agents or responders." | `?host=` optional | `{host, local, agents:[{record:{v, id, host, host_key, label, ts, sig?}, enabled, responder?}], harnesses?}` |
+| `POST /api/agents` | D B† | Configure the agents on this computer. B: "This browser runs no local agents or responders; configure agents on their host computer." Android refuses (409). | `{action, id?, label?, harness?, dir?}`, where `action` is create, update, disable or publish | `{saved, published, agent?, note}` |
+| `GET /api/responder` | D | How this computer handles questions and tasks. B: "Unknown request." | — | `{chosen, manual, harness?, dir?, timeout_seconds?, context?, ready, problem?, harnesses:[{name, found, path?, tested_live?, question_mode?}]}` |
+| `POST /api/responder` | D | Choose manual handling, or a harness and its folder. Android refuses (409). B: "Unknown request." | `{manual, harness, dir}` | the GET view plus `note` |
+| `GET /api/reply-receivers` | D | Local reply-receiver bindings: replies continued in native sessions or by managed agents. B: "Unknown request." | — | `[{id, conv?, request_ref, receiver, label, host, state, detail?, handoff_state?, handoff_label?, inputs?}]` |
+| `GET /api/reply-sessions` | D B | The native sessions a reply can be routed to. Without a query: this host (B: an empty list). With `host` and `host_key` together: a linked host's catalog. | `?host=&host_key=` optional, both or neither | `{host, local, sessions:[{handle, harness, label, active}]}`; a linked host adds `host_key, status` (pending, ready or unavailable), `at?, detail?` |
+| `POST /api/dm/agent/invite` | D B | Invite the agent on a member's device into a conversation. | `{conv, host, share:[message id], tasks_from:[fingerprint], note, agent_id?, topic?}` | `AgentView` |
+| `POST /api/dm/agent/decide` | D B† | Accept or decline an invitation for this device's agent (`needs_you` reason `agent_invite`). B: "This browser runs no agent: an agent is accepted on the computer that runs it." | `{pid, accept}` | `AgentView` |
+| `POST /api/dm/agent/dismiss` | D B | End an agent's part in a conversation. | `{pid}` | `AgentView` |
+| `POST /api/dm/agent/ask` | D B | Ask a question of, or give a task to, an active participant agent. | `{pid, kind, body, topic?, files?: [staged], id?, send_group?, reply_receiver?}` | `{id, lid?, state, path?, detail?}` |
+
+### `/api/act` verbs
+
+| Verb | Fields | Effect | B |
+|---|---|---|---|
+| `reply` | `id, body, send_id?` | Answer a received question or task by hand, which takes it over. | yes |
+| `do_it` | `id, send_id?` | Confirm a stored proposal as a task to the same agent. | yes |
+| `change_proposal` | `id, body, send_id?` | Confirm a revised proposal. | yes |
+| `continue` | `id, body, attempt, key, send_id` | Continue a `needs_human` request with an answer (the item's `continuation`). | no; Android no |
+| `accept` | `id` | Run a task once, let the responder answer a held question, or run again. | no; Android no |
+| `accept_always` | `id` | Accept, and let later tasks from that sender run without asking. | no; Android no |
+| `decline` | `id, reason?` | Decline. The requester is told, and nothing runs. | no |
+| `resolve` | `id` | Close a `needs_human` or interrupted item without a reply. It also dismisses `self_consented` and `device_admin` notices and held turns. | yes |
+| `cancel` | `id` | Stop a running request. | no; Android no |
+| `approve` | `id`: person id or device address | Answer this sender's future questions automatically. | no; Android no |
+| `unapprove` | `id` | Remove that question permission. | no |
+| `trust` | `id` (peer), `key` (the fingerprint compared) | Trust a peer's changed key. | no |
+| `grant_tasks` | `id` | Let this sender's future tasks run without asking. | no; Android no |
+| `revoke_tasks` | `id` | End that task permission. | no |
+| `archive_held` | `id` | Hide one held-envelope notice here. Nothing is accepted. | yes |
+| `archive_held_batch` | `held:[{id, reason, detail_code}]` | Hide several notices. | yes |
+| `read` | `ids:[id]` | Mark messages read. | yes |
+
+The browser refuses the other verbs with "Nothing runs in this browser:
+accept, approve and grants are made on a computer with AgentNet." Android
+refuses its verbs with 409 "This Android device cannot run or configure local
+assistants. Use your linked agent computer." An unknown verb gives 409
+"Unknown action." on D.
+
+## People, devices and guests
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/person` | D B | Create this installation's person, once. | `{label}` | `{person: PersonView, note}` |
+| `POST /api/person/label` | D B | Change your own display label. It is a claim, never checked. | `{label}` | person record `{person, label, email?, picture?, address, fingerprint, state, …}` |
+| `POST /api/person/picture` | D B | Set your picture, or clear it with `""`. The PNG is 64 KiB at most; D caps this body at 90 KiB. | `{png: base64 PNG}` | person record |
+| `GET /api/picture/{hash}` | D | PNG bytes. Use it only as `<img src>` through `picture_url` (see Overview fields), never through `host.api`. B has no route: its `picture_url` is a `blob:` URL. | — | `image/png` |
+| `POST /api/device/service` | D B† | Mark this installation as a service, with no person. B: "A browser is always a person's device: a service joins from a computer with AgentNet." | `{}` | `{note}` |
+| `POST /api/device/link` | D B | Make a one-use link for a new device of this person. | `{}` | `{url, expires, app_url?}` |
+| `POST /api/device/decide` | D B | Approve or refuse a new device asking to join (`overview.links`). `agent_host:true` (accept only) approves it as an agent host; D refuses it (409) where unsupported. | `{id, accept, agent_host?}` | `{note}` |
+| `POST /api/device/remove` | D B | Take a device off this person. The last device cannot be removed. | `{address}` | `{note}` |
+| `POST /api/dm/guest/check` | D B | Check before inviting a person as a guest. | `{conv, host}` | `{ready, needs_update:[{label, me, role}], offline:[label], text}` |
+| `POST /api/dm/guest/invite` | D B | Invite a person as a guest into a conversation. | `{conv, host, share?:[message lid or id], note?, topic?}` | `GuestView` `{pid, state, state_text, host, host_here, inviter, shared, missing, held, can_decide, can_leave, can_end, can_send, audience_pending, topic?, needs_update?}` |
+| `POST /api/dm/guest/decide` | D B | Accept or decline a guest invitation. | `{pid, accept}` | `GuestView` |
+| `POST /api/dm/guest/end` | D B | Leave a guest participation, or end it. | `{pid}` | `GuestView` |
+
+## Groups and teams
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `GET /api/groups/invitations` | D B | Group invitations, sent and received. Comic reads them when `overview.groups` is set. | — | `[{id, conv, direction, status, title, inviter, target, history, can_cancel?, can_refresh?, error?}]` or `null` |
+| `POST /api/groups/new` | D B | Create a group. | `{title}` | `{id}` |
+| `POST /api/groups/invite` | D B | Invite a person, optionally with selected history. | `{conv, person, history:{last?, since?, refs?:[{lid, author, hash}]}}` | group invitation |
+| `POST /api/groups/decide` | D B | Accept or decline a received invitation. `accept` is required. | `{id, accept}` | `{recorded}` |
+| `POST /api/groups/publish` | D B | Publish an accepted invitation. | `{id}` | `{published}` |
+| `POST /api/groups/cancel` | D B | Cancel an invitation you sent (`can_cancel`). | `{id}` | `{cancelled}` |
+| `POST /api/groups/refresh` | D B | Renew an invitation you sent (`can_refresh`). | `{id}` | group invitation |
+| `POST /api/groups/manage` | D B | Rename the group, promote, demote or remove a member, or leave. | `{conv, action, title?, person?}`, where `action` is rename, promote, demote, remove or leave | `{queued}` |
+| `GET /api/teams` | D B | This realm's teams. B answers `status:"unsupported"` when the relay publishes no realm. | — | `{tags, realm_id?, status, current, reason?, at, truncated, teams:[{…TeamState, member, manager, conflict, listed}]}` |
+| `POST /api/team` | D B | Change a team. `op` is create, join, leave, rename, archive, restore, remove, manager-add, manager-remove, add, agent-add or agent-remove. Without a realm, B refuses "Teams are not available on this server." | `{op, team?, name?, target?, agent?:{id, host, host_key}, v?}` | `{realm_id, id, name, seq, hash, managers, members, agents?, archived, version?}` |
+| `POST /api/teams/snapshot` | D B | A reviewable snapshot of the selected teams. It adds no one to a conversation. | `{teams:[id]}` | `{realm_id, sources:[{id, seq, hash}], persons:[{id, seq, hash}], at}` |
+
+## Notifications and typing
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/notify/enable` | D B | Turn alerts on. Android refuses when native notifications are unavailable. B subscribes to Web Push. | `{}` | `{note}` |
+| `POST /api/notify/disable` | D B | Turn alerts off. | `{}` | `{note}` |
+| `POST /api/notify/mute` | D B | Mute one conversation, or unmute it. | `{conv, muted}` | `{note}` |
+| `POST /api/notify/allow` | D B | Let one person's turns alert, or stop them. | `{person: <person id>, allowed}` | `{note}` |
+| `POST /api/notify/seen` | D B | Report the messages this page actually presented. | `{conv, ids:[id]}` | `{note}` |
+| `GET /api/notify/resolve` | B | Turn a browser notification's channel into a conversation (`host.onOpen` kind `"channel"`). D has only `POST /api/notify/{what}`: GET gives 405, and POST gives 404 "no such alert control". | `?chan=` | `{conv}` (`""` when unknown) |
+| `GET /api/typing` | D B | Who is typing in a scope, and this device's preferences. | `?conv=&peer=&thread=` | `{scope, preferences:{send, show}, supported, current, entries:[{person?, address, label, expires}]}` |
+| `POST /api/typing` | D B | Report that this person is typing. It carries no content. | `{scope:{conv?, peer?, thread?}, active}` | `{submitted, skipped, throttled}` |
+| `POST /api/typing/preferences` | D B | This device's own choices: share my typing, show others'. | `{send, show}` | `{send, show}` |
+| `POST /api/remind` | D | Set or move a "remind me later" reminder on a received message. B: "Unknown request." (`overview.remind` is absent there.) | `{id, due: unix seconds}` | `{note}` |
+| `POST /api/remind/done` | D | Mark a reminder done. B: "Unknown request." | `{id}` | `{note}` |
+| `POST /api/remind/cancel` | D | Cancel a reminder. B: "Unknown request." | `{id}` | `{note}` |
+
+## Workspace, storage and setup
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `GET /api/workspace` | D B | The workspace's own name, and whether this device may rename it for everyone. | — | `{name, server, can_rename}` |
+| `POST /api/workspace/name` | D B | Rename the workspace for everyone (admin only). `""` clears the name. | `{name}` | `{name, server, can_rename}` |
+| `GET /api/storage` | D B | Read-only: where this device's files are kept and how much space they use. | — | `{local, remote}` |
+| `GET /api/assistant-setup` | D | Connect coding sessions (hooks): which tools are detected and configured. Android and the demo answer `local:false` with a `note`. B: "Unknown request." | — | `{local, harnesses:[{id, label, detected, configured, registered, supported, state, note, change?, next?, target?}], review_id?, note?}` |
+| `POST /api/assistant-setup` | D | Review a change with `action:"review"`, then apply exactly that review with `action:"apply"`. Any other action gives 409. B: "Unknown request." | `{action, harnesses?:[id], review_id?}` | same view |
+| `GET /api/folders` | D B† | One folder's subfolders, read-only, for Connect an agent's folder picker. Android refuses (409). B: "Folders are chosen in the AgentNet app on a computer: this browser cannot see that computer's folders." | `?path=` optional | `{path, parent?, home, roots?, dirs:[{name, path}], truncated?}` |
+| `GET /api/get-app` | D B | Where to download the AgentNet app for this version. B reports the relay's version and detects the platform from the browser. | — | `{version, detected?, platforms:[{id, label, url}]}` |
+| `POST /api/invite` | D B | Make an invitation link for a new person (admin only). | `{name, admin, days}`, where `days` is 1, 7 or 30 | `{link, label, expires, message}` |
+| `GET /api/invites` | D B | Whether this device may invite, and the unused invitations. | — | `{can_invite, invites:[{id, name, label, admin, by, created?, expires}]}` |
+| `POST /api/invite/revoke` | D B | Withdraw an unused invitation. | `{id}` | `{revoked:true}` |
+| `GET /api/google/access` | D B | Google sign-in membership settings. | — | `{workspace_url, enabled, can_admin, emails:[{domain_member, email, admin, denied}], domains}` |
+| `POST /api/google/access` | D B | Add or remove an email or a domain (admin). | `{email?, domain?, remove, admin?}` | D: `{}`. B: `null` |
+
+## Demo only
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/simulate` | D B† | Demo controls that stand in for events elsewhere. Served only by `agentnet ui --demo` (`overview.demo`); a live program answers `404 page not found`. B: "Not available here." | `{what}`, where `what` is `"arrival"` or `"finish"` | `{}` |
+
+## Host-internal
+
+These routes back host methods. A skin uses the method, not the route. The
+exception is `/api/upload/discard`, which skins call through `host.api`.
+
+| Route | Platforms | Purpose | Request | Response |
+|---|---|---|---|---|
+| `POST /api/upload` | D | Behind `host.stage(file)` on D: the file's bytes as octet-stream. `host.api` cannot send it. | `?name=` (at most 255 bytes, no control characters) | `{id}` |
+| `POST /api/upload/discard` | D | Release staged ids that will not be sent. Called through `host.api` with D's string ids, as Comic's `discard` does. AgentNet also drops them within the hour. B: "Unknown request." (browser staged values need no discard) | `{ids:[up to 64 ids]}` | `{ok:true}` |
+| `GET /api/files/{id}/{i}` | D | Behind `host.file(id, i, dir)` on D. | `?dir=in` or `?dir=out` | bytes; the host resolves `{bytes}` |
+| `GET /api/file` | B | Behind `host.file(id, i, dir)` on B. | `?id=&i=&dir=` | `{name, size, image, bytes}` |
+| `GET /events` | D | Behind `host.listen` on D: server-sent events `change` (seq) and `restart`. B's `host.listen` uses the engine; `/events` there gives "Unknown request." | — | event stream |
+| `GET /api/drive/service` | B | Behind `host.drive` on B: returns the engine's Drive provider object (functions), not JSON. D: `404 page not found` | — | provider object |
+
+## Not through host.api
+
+A bound `host.api` reaches only the workspace's own page API. These routes
+answer 404 on D and "Unknown request." on B; use the host method instead. The
+setup page's `/api/setup*` routes are not a skin surface.
+
+Workspace routes (`internal/ui/workspaces.go`):
+
+- `GET /api/workspaces`: read by the host at boot; use
+  `host.workspaces.list()`.
+- `GET /api/workspaces/all`: `host.workspaces.disconnected()`.
+- `POST /api/workspaces/join`: `host.workspaces.join({name, invite, agent,
+  id?})`. Its errors carry `.status`, and `.retryID` when the join can be
+  retried.
+- `POST /api/workspaces/rename`: `host.workspaces.rename(id, name)`.
+- `POST /api/workspaces/disconnect`: `host.workspaces.disconnect(id)`.
+- `POST /api/workspaces/reconnect`: `host.workspaces.reconnect(id)`.
+
+App routes (`cmd/agentnet/appupdate.go`), served only by the desktop app's
+runner. Android answers the first three methods through its own bridge.
+
+- `GET /api/app/status`: `host.appStatus()`.
+- `GET /api/app/check`: `host.appCheckUpdate()`.
+- `POST /api/app/update`: `host.appUpdate()`.
+- `POST /api/app/cli`: `host.appReplaceCommand()`. Android rejects it.
+
+## Request states
+
+Three sources describe where a request stands. Show `actions` as given; never
+derive decisions from a state word.
+
+**Executor status** (`exec.state` on a request this device sent). This is the
+executing device's own word. `exec.stale` is true when that device is not
+connected now, or when a run is older than the maximum age. Treat a stale
+state as unknown, not as current. A review notice's `report.items[].state` is
+different: it uses the host's local state names (next table), with `blocker`
+and `attempt`, and is what `/api/operator/decide` echoes as `expect`.
+
+| State | Meaning |
+|---|---|
+| `queued` | Queued for the agent there, or waiting there until it may run. |
+| `awaiting` | Waits for the host person's accept (a task or a guest's question) or approval (a held question). |
+| `running` | Running. `detail` says "Stopping…" while a cancel is pending. |
+| `steered` | Accepted into the current native session run. Completion is not proven. |
+| `answered` | The agent replied. |
+| `needs_human` | The agent asked for a person there. |
+| `resolved` | A person there closed it without a reply. |
+| `failed` | The run failed there. |
+| `interrupted` | The program stopped while it ran. |
+| `cancelled` | Stopped there. |
+| `not_run` | It never ran there. |
+| `stopped` | It ran, but its reply was held back and not sent. |
+| `declined` | The host person declined it. |
+
+**Local state of a received request** (`state` of an incoming `Message` or
+`DMMessage`). `actions` come from the state and kind.
+
+| State | Meaning | Typical `actions` |
+|---|---|---|
+| `pending`, `accepted` | Eligible for the responder (an approved sender, or accepted). | — |
+| `held` | A question from a sender not approved for automatic answers. | `reply, accept, approve, decline` |
+| `awaiting` | A task, or a guest's question, waiting for this person's accept. | device thread: `accept, accept_always, reply, decline`; conversation: `accept, decline` |
+| `conv_held` | A question or task held for the person in a conversation. Nothing runs it. | answered in the chat; `resolve` closes it |
+| `part_waiting` | For your agent, not started yet. It runs only while a responder is chosen and the invitation allows it. | — |
+| `running` | The responder is working on it. | `cancel` |
+| `cancel_requested` | Stopping. | — |
+| `steered` | Accepted into a running native session. | — |
+| `answered` | The responder replied. | — |
+| `manual` | Replied by hand. | — |
+| `needs_human` | The responder asked for a person. | `reply, accept, resolve`; plus `continue` when `continuation` is set |
+| `interrupted` | The program stopped while it ran. | `accept, reply, resolve` |
+| `failed`, `cancelled` | The run failed, or was stopped. | `accept, reply` |
+| `declined`, `resolved`, `summarized` | Closed: declined, closed by you, or a follow-up summary stored here. | — |
+| `not_run`, `not_delivered` | Never ran here (its participation ended, or the agent is unavailable); or it ran but the reply was kept here. | — |
+
+**Why an item waits.** `ConvItem.reason` in `needs_you` and `held`:
+
+- `agent_awaiting`: an accept is needed.
+- `agent_needs_human`: the agent asked for you.
+- `agent_interrupted`: the run was interrupted.
+- `agent_running`: the request is running. It is stoppable when `actions` has
+  `cancel`, and it is never an approval.
+- `agent_invite`: an invitation waits; decide it with
+  `/api/dm/agent/decide`.
+- `person_turn`: a held turn, answered in the chat.
+
+`decide_on` names another host where the item is decided. The item is then
+read-only here, and `stale` is set when that host has no current word.
+`ReviewItem.reason` is one of `held`, `agent_running`, `self_consented` or
+`device_admin`; the last two are notices, dismissed with `resolve`.
+
+**Comic's agent status (derived, not API values).** These come from
+`features/Approvals.words.ts` `phaseOf` and `ui/Avatar.tsx` `Mood`.
+
+- **Phase:**
+  - `needs_human` when `continuation` is set.
+  - `running` when `actions` has `cancel`.
+  - `stopped` for interrupted, failed, cancelled, stopped, timeout or
+    not_run.
+  - `needs_human` when `actions` has `resolve`, or the state is
+    `needs_human`.
+  - `decide` otherwise, when `actions` is not empty.
+  - `closing` for a non-request with `resolve`.
+- **Mood:**
+  - `working` when a thread has `running > 0`, or an agent's message has
+    `running` as its state or `exec.state`.
+  - `waiting` when something needs you (`review` or `decide` counts, the
+    `decide` and `needs_human` phases).
+  - `asleep` when the device is not connected (`directory` presence).
+  - `done` for an empty approvals list.
+  - `neutral` otherwise.
+
+**Other state words.**
+
+- Delivery of a sent copy (`state` of an outgoing message, `copies[].state`):
+  - `queued`
+  - `waiting`: kept here because that device cannot read it yet.
+  - `custody`: on the relay.
+  - `delivered`
+  - `expired`
+  - `failed`
+  - `not_delivered`
+  - `quarantined`
+
+  `delivered` is not "read", and `answered` is not "correct".
+- Participation (`AgentView.state` and `GuestView.state`): `pending`,
+  `invited`, `active`, `declined`, `conflict` or `dismissed`.
+- Topic (`ThreadSummary.state`): `active`, `done` or `archived`.

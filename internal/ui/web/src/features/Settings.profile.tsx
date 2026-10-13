@@ -303,7 +303,7 @@ function LinkSheet({ link, onClose }: { link: T.DeviceLink | null; onClose: () =
   const page = !!link && /^https:\/\//.test(link.url);
   const copy = async () => {
     if (!link) return;
-    const ok = await copyText(link.url);
+    const ok = await copyText(link.url, store.host.android);
     setCopied(ok);
     if (!ok) store.toast("Copy didn’t work here. Select the link and copy it by hand.", "error");
   };

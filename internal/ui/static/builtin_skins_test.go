@@ -180,3 +180,18 @@ func TestSkinDocumentRulesDeclared(t *testing.T) {
 		}
 	}
 }
+
+// Comic is the reference skin: it reaches the native shells only through the
+// documented host members (host.android, host.onBack, host.clipboardImage),
+// never their private bridges (android.js, the desktop clipboard bridge).
+func TestComicUsesNoNativeBridgeGlobals(t *testing.T) {
+	entry, err := os.ReadFile("skins/comic/entry.mjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"__agentnet", "agentnetNative", "AgentNetAndroid", "agentnet-native-visibility", "agentnet-send-journal"} {
+		if strings.Contains(string(entry), private) {
+			t.Errorf("Comic's package uses the host-private %q", private)
+		}
+	}
+}

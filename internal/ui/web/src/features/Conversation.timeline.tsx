@@ -251,7 +251,7 @@ function useSeen(ctx: Ctx, messages: AnyMsg[], atBottom: RefObject<boolean>) {
     const t = ctx.dm || ctx.thread;
     if (!t || !ctx.overview?.notify?.enabled) return;
     if (document.visibilityState !== "visible" || !document.hasFocus() || !atBottom.current) return;
-    if (store.host.platform === "android" && (window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible === false) return;
+    if (store.host.platform === "android" && store.host.android?.visible() === false) return;
     const ids = messages.filter((m) => m.dir === "in" && !ev(m)).slice(-32).map((m) => m.id);
     if (!ids.length || done.current === ids[ids.length - 1]) return;
     done.current = ids[ids.length - 1];
@@ -262,11 +262,11 @@ function useSeen(ctx: Ctx, messages: AnyMsg[], atBottom: RefObject<boolean>) {
     now();
     window.addEventListener("focus", now);
     document.addEventListener("visibilitychange", now);
-    if (store.host.platform === "android") document.addEventListener("agentnet-native-visibility", now);
+    const off = store.host.platform === "android" ? store.host.android?.onVisibility(now) : undefined;
     return () => {
       window.removeEventListener("focus", now);
       document.removeEventListener("visibilitychange", now);
-      if (store.host.platform === "android") document.removeEventListener("agentnet-native-visibility", now);
+      off?.();
     };
   }, [messages]);
   return () => report.current();

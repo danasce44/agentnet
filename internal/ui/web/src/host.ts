@@ -72,6 +72,11 @@ export interface Host {
     copyText(text: string): Promise<unknown>;
     legacyDrafts(): Promise<{ drafts: { key: string; value: string }[] }>;
     acknowledgeLegacyDraft(key: string, value: string): Promise<{ removed: boolean }>;
+    scanQR(): Promise<{ text?: string; canceled?: boolean }>;
+    /** Whether the Android app is in the foreground (document visibility can lag). */
+    visible(): boolean;
+    /** Calls fn on every foreground/background change; returns unsubscribe. */
+    onVisibility(fn: (visible: boolean) => void): () => void;
   };
   onBack?(fn: () => boolean): () => void;
   api<T = unknown>(path: string, body?: unknown): Promise<T>;

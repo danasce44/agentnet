@@ -122,7 +122,7 @@ export function openPictureEditor({into, save, src="", current=""}) {
       finally { busy=false;if(!closed){accept.disabled=input.disabled=choose.disabled=cancel.disabled=false;enabled();} }
     };
     cancel.onclick=()=>{if(!busy)dialog.close();};dialog.addEventListener("cancel",e=>{if(busy)e.preventDefault();});
-    const opener=document.activeElement;
+    const opener=into.getRootNode().activeElement||document.activeElement; // focus inside the skin's shadow root
     dialog.addEventListener("close",()=>{closed=true;image=null;if(owned)URL.revokeObjectURL(owned);dialog.remove();resolve(false);if(opener?.isConnected)opener.focus();},{once:true});
     buttons.append(accept,cancel);dialog.append(heading,note,input,choose,canvas,hint,controls,error,buttons);into.append(dialog);dialog.showModal();choose.focus();
     if(src)load(src);else if(current)load(current);

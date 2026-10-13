@@ -26,8 +26,8 @@ function useNativeNotificationPermission() {
     refresh();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
-    document.addEventListener("agentnet-native-visibility", refresh);
-    return () => { alive = false; window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); document.removeEventListener("agentnet-native-visibility", refresh); };
+    const off = android.onVisibility(refresh);
+    return () => { alive = false; window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); off(); };
   }, [android]);
   return [android ? nativeGranted : undefined, setNativeGranted] as const;
 }

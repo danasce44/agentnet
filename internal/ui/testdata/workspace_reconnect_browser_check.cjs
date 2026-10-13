@@ -11,7 +11,7 @@ const fs = require('fs'), http = require('http'), path = require('path'), assert
 const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT || 'playwright-core');
 const base = path.resolve(__dirname, '../static') + '/';
 const other = 'c'.repeat(32), hostOf = (n) => n.toString(16).padStart(32, '0'), digest = 'f'.repeat(64);
-const skin = `export async function mount(root,host){window.mounts=(window.mounts||0)+1;window.skinHost=host;const h=document.createElement('h1');h.textContent='Fixture skin in '+host.workspace.name;root.append(h);host.onOpen(()=>{});host.listen((e)=>{if(e.type==='change')host.api('/api/overview').catch(()=>{});});await host.api('/api/overview');}export function unmount(root){root.replaceChildren();}`;
+const skin = `export async function mount(root,host){window.mounts=(window.mounts||0)+1;window.skinHost=host;const h=document.createElement('h1');h.textContent='Fixture skin in '+host.workspace.name;root.append(h);host.onOpen(()=>{});host.listen((e)=>{if(e.type==='change')host.api('/api/overview?topics=1').catch(()=>{});});await host.api('/api/overview?topics=1');}export function unmount(root){root.replaceChildren();}`;
 
 const world = () => {
   let generation = 1;

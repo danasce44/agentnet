@@ -6,6 +6,8 @@ import { Switch } from "@base-ui/react/switch";
 import { IconChevronDown, IconCopy } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorText } from "../api";
+import { useApp } from "../context";
+import type { Host } from "../host";
 import { Button } from "../ui/Button";
 
 export const input = "w-full min-h-12 rounded-xl stroke bg-surface px-3.5 text-ink placeholder:text-muted outline-none focus-visible:[outline:3px_solid_var(--an-agent-ink)] focus-visible:outline-offset-2";
@@ -81,11 +83,11 @@ export function Fact({ name, children }: { name: string; children: ReactNode }) 
   );
 }
 
-/** copyText puts text on the clipboard; false when the browser refuses. */
-export async function copyText(text: string): Promise<boolean> {
+/** copyText puts text on the clipboard; false when the browser refuses.
+ *  Android's WebView needs the host's native clipboard action. */
+export async function copyText(text: string, android?: Host["android"]): Promise<boolean> {
   try {
-    const native = (window as Window & { __agentnetAndroid?: { copyText(text: string): Promise<unknown> } }).__agentnetAndroid;
-    if (native) await native.copyText(text);
+    if (android) await android.copyText(text);
     else await navigator.clipboard.writeText(text);
     return true;
   } catch { return false; }
@@ -93,13 +95,14 @@ export async function copyText(text: string): Promise<boolean> {
 
 /** Command: a terminal command with a Copy button (in Details only). */
 export function Command({ cmd, what, onCopied }: { cmd: string; what: string; onCopied: (ok: boolean) => void }) {
+  const android = useApp().host.android;
   return (
     <div className="flex items-center gap-2 rounded-xl bg-sunken py-1 pl-3 pr-1">
       <div className="min-w-0 flex-1">
         <code className="block select-text break-all font-mono text-[13px] text-ink">{cmd}</code>
         <span className="text-[13px] text-muted">{what}</span>
       </div>
-      <button type="button" aria-label={"Copy " + cmd} title="Copy" onClick={async () => onCopied(await copyText(cmd))}
+      <button type="button" aria-label={"Copy " + cmd} title="Copy" onClick={async () => onCopied(await copyText(cmd, android))}
         className="grid size-11 shrink-0 place-items-center rounded-full text-ink hover:bg-surface"><IconCopy size={18} /></button>
     </div>
   );

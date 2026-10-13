@@ -10,3 +10,4 @@ export function readPending(storage: Pick<Storage,"getItem">, workspace: string)
 export function saveBatch(storage: Pick<Storage,"getItem"|"setItem">, workspace: string, entries: JournalEntry[]): void;
 export function acknowledge(storage: Pick<Storage,"getItem"|"setItem">, workspace: string, id: string): void;
 export function recordFailure(storage: Pick<Storage,"getItem"|"setItem">, workspace: string, id: string, error: string): void;
+export function onJournalChange(fn: () => void): () => void;

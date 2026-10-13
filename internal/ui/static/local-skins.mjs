@@ -40,7 +40,7 @@ export async function prepare(files) {
   let m;try{m=JSON.parse(decode.decode(raw));}catch(_){fail('The manifest must be UTF-8 JSON.');}
   if(!m || typeof m!=='object' || Array.isArray(m))fail('Invalid AgentNet skin manifest.');
   const css=(name)=>name===undefined||name===''||(typeof name==='string'&&m.files.includes(name)&&name.endsWith('.css'));
-  if(m.api!==1 || typeof m.id!=='string' || !/^[a-z][a-z0-9-]{0,47}$/.test(m.id)||reserved.includes(m.id)||typeof m.name!=='string'||!m.name.trim()||enc.encode(m.name).length>80||!Array.isArray(m.files)||!m.files.length||m.files.length>32||new Set(m.files).size!==m.files.length||!m.files.includes(m.entry)||!/^.+\.m?js$/.test(m.entry)||!css(m.style)||!css(m.document))fail('Invalid AgentNet skin manifest.');
+  if(m.api!==1 || typeof m.id!=='string' || !/^[a-z][a-z0-9-]{0,47}$/.test(m.id)||reserved.includes(m.id)||typeof m.name!=='string'||!m.name.trim()||enc.encode(m.name).length>80||!Array.isArray(m.files)||!m.files.length||m.files.length>32||new Set(m.files).size!==m.files.length||!m.files.includes(m.entry)||!/^.+\.m?js$/.test(m.entry)||!css(m.style)||!css(m.document)||(m.agentnet!==undefined&&(typeof m.agentnet!=='string'||!/^v\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(m.agentnet))))fail('Invalid AgentNet skin manifest.');
   if(takenName(m.name))fail('“'+m.name.trim()+'” is the name of a skin built into AgentNet. A package needs a name of its own.');
   const assets=[], pieces=[raw];let total=raw.length;
   for(const name of m.files){
@@ -52,7 +52,7 @@ export async function prepare(files) {
   }
   const joined=new Uint8Array(pieces.reduce((n,x)=>n+x.length,0));let offset=0;for(const part of pieces){joined.set(part,offset);offset+=part.length;}
   const digest=hex(await hash(joined));
-  return {item:{api:1,id:'local:'+m.id,package_id:m.id,name:m.name,entry:m.entry,style:m.style||'',document:m.document||'',files:m.files,digest,local:true,size:total},assets};
+  return {item:{api:1,id:'local:'+m.id,package_id:m.id,name:m.name,entry:m.entry,style:m.style||'',document:m.document||'',files:m.files,...(m.agentnet?{agentnet:m.agentnet}:{}),digest,local:true,size:total},assets};
 }
 export async function install(files) {
   if(!supported())fail('This browser cannot store skins.');

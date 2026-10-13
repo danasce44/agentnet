@@ -55,7 +55,7 @@ function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateR
     if (host.platform !== "android" || !host.appStatus) return;
     let alive = true, generation = 0;
     const visible = () => {
-      if ((window as Window & { __agentnetNativeVisible?: boolean }).__agentnetNativeVisible === false) return;
+      if (host.android?.visible() === false) return;
       const request = ++generation;
       host.appStatus!().then(result => {
         if (alive && request === generation && store.isActive() && result.update_result) setNote(result.update_result);
@@ -63,8 +63,8 @@ function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateR
         if (alive && request === generation && store.isActive()) setNote(errorText(error));
       });
     };
-    document.addEventListener("agentnet-native-visibility", visible);
-    return () => { alive = false; generation++; document.removeEventListener("agentnet-native-visibility", visible); };
+    const off = host.android?.onVisibility(visible);
+    return () => { alive = false; generation++; off?.(); };
   }, [host, store]);
   const browser = host.platform === "browser";
   const canUpdate = app && !browser && !!host.appUpdate;

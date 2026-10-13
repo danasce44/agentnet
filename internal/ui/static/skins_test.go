@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
 func skinFixture(t *testing.T) string {
@@ -150,5 +152,40 @@ func TestBrowserLocalSkinDigest(t *testing.T) {
 	out, err := exec.Command(node, "../testdata/local_skins_check.mjs", filepath.Join(dir, "notebook"), skin.Digest).CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
+	}
+}
+
+// A package may name the oldest AgentNet release it supports. An older
+// program omits it rather than run it; a malformed version is invalid.
+func TestSkinMinimumAgentNet(t *testing.T) {
+	saved := protocol.Version
+	t.Cleanup(func() { protocol.Version = saved })
+	for _, test := range []struct {
+		running, needs string
+		listed         bool
+	}{
+		{"v0.8.25", "v0.8.25", true},
+		{"v0.8.26-3-gabcdef1", "v0.8.25", true},
+		{"dev", "v9.0.0", true}, // an unstamped build never refuses
+		{"v0.8.24", "v0.8.25", false},
+		{"v0.8.25", "0.8.25", false},
+		{"v0.8.25", "v0.8", false},
+	} {
+		protocol.Version = test.running
+		home := skinFixture(t)
+		manifest := filepath.Join(home, "notebook", "skin.json")
+		raw, _ := os.ReadFile(manifest)
+		raw = []byte(strings.Replace(string(raw), `"api":1`, `"api":1,"agentnet":"`+test.needs+`"`, 1))
+		if err := os.WriteFile(manifest, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		Skins(home).ServeHTTP(w, httptest.NewRequest("GET", "/assets/skins/index.json", nil))
+		var list []Skin
+		json.Unmarshal(w.Body.Bytes(), &list)
+		listed := len(list) == len(BuiltinSkins)+1 && list[len(list)-1].AgentNet == test.needs
+		if listed != test.listed {
+			t.Fatalf("running %s, package needs %s: listed=%v: %s", test.running, test.needs, listed, w.Body)
+		}
 	}
 }
