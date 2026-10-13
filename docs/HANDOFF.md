@@ -18,7 +18,7 @@ required scope, not permission to publish or update installed apps. The same
 requirement is tracked in [MEL-614](https://linear.app/mellanni/issue/MEL-614);
 it does not depend on Zenbook being online.
 
-## Reopened MEL-525 own-invitation fix — awaiting OMP review
+## Reopened MEL-525 own-invitation fix — accepted by OMP
 
 Owner resumed this blocker alone after v0.8.23. Source is on the existing main
 checkout; no extra branch, worktree or helper was created. Notifications and the
