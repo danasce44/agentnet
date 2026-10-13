@@ -4,31 +4,42 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## v0.8.24 — application qualified, packaging pending, October 13, 2026
+## Current release — v0.8.24, October 13, 2026
 
-Codex is the sole release lead; all qualification/review helper panes are
-closed. MEL-597, MEL-613/MEL-502, MEL-582, MEL-605, MEL-543 and MEL-603 are
-integrated, alongside MEL-614 and OMP-accepted MEL-525. Application source is
-frozen at `7d1dd587`; test-only children `3b7d2f75` and `5f287ba9` make offline
-phone removal and the short-lease heartbeat setup deterministic without
-weakening assertions or changing production behavior. Main is clean and
-pushed; completed feature branches/worktrees are removed and evidence retained.
+[Download v0.8.24](https://github.com/misunders2d/agentnet/releases/tag/v0.8.24)
+or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.24/AgentNet-android.apk).
+Published **12:59:40 UTC**, immutable tag
+`1c8305233c25c84badf7b5a31b31990ae7eb8865`. All thirteen assets match GitHub
+digests and SHA256SUMS. The original-key APK installs over v0.8.23 and preserves
+the exact 203-message fixture, three queued sends, attachment, draft, identity
+and saved origin through warm and cold process starts. Native/core versions
+and the actual native update check recognize v0.8.24. Install over the existing
+app; do not uninstall or relink.
 
-All twelve client race partitions and the non-client/UI race job pass. Full
-native Linux/macOS pass; disjoint full Windows A–G/H–Z client selections and
-retained Windows other-package passes complete native coverage. The corrected
-heartbeat passes three repetitions on all three systems. Desktop packaging,
-container, actual IndexedDB, focused rendered/proactive native/browser checks,
-vet and final-source mixed-version qualification against exact v0.8.23 pass.
-Original failures/timeouts remain recorded, and opt-in/platform skips are not
-claimed as executed. See [V0_8_24.md](plans/V0_8_24.md) for exact source, CI
-links, corrections, evidence and limits.
+MEL-597, MEL-613/MEL-502, MEL-582, MEL-605, MEL-543 and MEL-603 ship alongside
+MEL-614 and OMP-accepted MEL-525. Application source is frozen at `7d1dd587`;
+two test-only children make offline removal and short-lease stream setup
+deterministic without weakening assertions. All twelve client race partitions,
+non-client/UI race, actual IndexedDB, full native Linux/macOS/Windows coverage,
+desktop, container, focused rendered/native/browser checks, vet and final-source
+mixed-version qualification against exact v0.8.23 pass. Original failures remain
+recorded; opt-in/platform skips are not counted as executed. See
+[V0_8_24.md](plans/V0_8_24.md) for exact sources, CI links, artifacts and limits.
 
-Tag-built thirteen-asset/checksum verification, original-key APK in-place
-warm/cold data preservation, publication/update recognition and existing-relay
-rollout remain pending. v0.8.23 remains the published release; the last verified
-relay is v0.8.22. No physical-phone timing or incident resolution is inferred
-from isolated qualification. No further optional application work is planned.
+The existing relay is deployed to v0.8.24 at **13:04:44 UTC**, preserving realm
+`4bd7c66953ccf5496fad8eadbab945bd`, existing volume/configuration and neighboring
+service. Full verified stopped-state backup:
+`/opt/agentnet-revived/backups/pre-v0.8.24-2zu4y0z_`. Public HTTPS version and
+running binary agree; zero Hub restarts. No grants, history, live requests or
+client identities are reset/replayed. Physical-phone timing and previously
+reported Windows user incidents are not inferred from isolated qualification.
+
+The documentation tag's skip-CI marker suppressed its push build. A narrow
+workflow-only child supplies explicit existing-tag packaging; every payload
+checkout is the fixed tag, which was not moved. Codex is the sole release lead,
+all other release workers are closed, and the owned test emulator is stopped.
+Completed feature branches/worktrees are removed with evidence retained. Main
+is clean and pushed, and is the only local branch/worktree.
 
 ## MEL-543 fullscreen chat images — integrated into v0.8.24
 
@@ -52,8 +63,8 @@ stage's actual mount. Local review artifacts are under `dist/mel543/` (ignored).
 
 The Linux OS opener was recorded, not an actual image app display. macOS and
 Windows command arguments are checked; native runs and physical-phone tests
-are not claimed. Integrated qualification progress is recorded above; final
-platform and release artifacts remain pending.
+are not claimed. Integrated platform and artifact qualification is complete above; physical
+image-app display is not inferred from those checks.
 
 MEL-614 is integrated through [PR #7](https://github.com/misunders2d/agentnet/pull/7),
 implementation `0fc95aab`: same-device agent questions appear once, delivered
@@ -110,14 +121,14 @@ as a negative control fails all three cases with zero decisions before fanout
 in 0.660s (`fanout-ordering-negative.log`); the application source was restored
 unchanged afterward. All logs use the `/tmp/agentnet-own-invite-` prefix.
 
-The Comic bundle and local CLI are built. This follow-up is now integrated into
-v0.8.24 qualification above; final client/platform and tag-built APK preservation
-gates remain pending. No v0.8.24 publication or installation is claimed.
+The Comic bundle and local CLI are built. This follow-up ships in qualified
+v0.8.24 above, including tag-built APK in-place preservation. The isolated
+installation does not establish the outcome on the owner’s physical device.
 The exact ten-second delay in the owner's ThinkPad attempt remains unmeasured;
 the isolated ordering/recovery defects above are proven, not a complete timing
 trace of that live attempt.
 
-## Current release — v0.8.23, October 12, 2026 (UTC)
+## Previous release — v0.8.23, October 12, 2026 (UTC)
 
 [Download v0.8.23](https://github.com/misunders2d/agentnet/releases/tag/v0.8.23)
 or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.23/AgentNet-android.apk).
