@@ -4,6 +4,29 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Next release — v0.8.26 Android gallery and skin usability
+
+The owner first authorized v0.8.26, then held it and extended its scope:
+Claude must thoroughly review every skin/interaction and fix usability issues,
+including inaccessible Settings in Holonet/Classic and Zoom's unusable message
+mode. Roll out v0.8.26 only after those corrections are verified. Codex owns
+integrated review, qualification and release; Claude owns skin implementation.
+v0.8.25 remains the current published/live release in the meantime.
+
+The bounded fix is on main: `WebPolicy.gallery` allows only GET subresources
+at the gallery's exact GitHub API endpoint and repository file prefix, with
+strict scheme/port/path and no userinfo/query/fragment. MainActivity uses that
+predicate in its existing interceptor. Main-frame navigation and native bridge
+checks are unchanged; CORS, CSP, hash/digest verification and trust still apply.
+The exact three-file candidate compiles and passes all 36 Android JVM tests in
+22 s in an isolated copy. That proves source compilation/policy regression, not
+a corrected released APK's runtime behavior. Before any future publication,
+complete the fresh mixed-version and pinned skin gate, tag-built artifacts,
+actual Android gallery install/use/trust and warm/cold upgrade checks. See
+[V0_8_26.md](plans/V0_8_26.md). The authoritative interaction checklist is
+`.agentnet/v26-skin-usability.md`, edited by Codex; peer reports supply evidence.
+No extra Git branch or worktree was created.
+
 ## Current release — v0.8.25 skins, October 13, 2026
 
 [Download v0.8.25](https://github.com/misunders2d/agentnet/releases/tag/v0.8.25)

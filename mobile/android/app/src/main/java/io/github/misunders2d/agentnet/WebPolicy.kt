@@ -14,6 +14,17 @@ class WebPolicy(val origin: String) {
         val u = URI(url)
         u.scheme == "https" && !u.host.isNullOrBlank() && u.rawUserInfo == null && u.host != "127.0.0.1" && u.host != "localhost"
     }.getOrDefault(false)
+    /** Read-only gallery subresources; navigation and native bridge remain loopback-only. */
+    fun gallery(url: String, method: String, mainFrame: Boolean): Boolean = !mainFrame && method == "GET" && runCatching {
+        val u = URI(url)
+        u.scheme == "https" && u.rawUserInfo == null && u.port in setOf(-1, 443) &&
+            u.rawQuery == null && u.rawFragment == null && when (u.host) {
+                "api.github.com" -> u.rawPath == "/repos/misunders2d/agentnet-skins/releases/latest"
+                "raw.githubusercontent.com" -> u.rawPath.startsWith("/misunders2d/agentnet-skins/") &&
+                    u.rawPath.split('/').drop(1).all { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,99}")) }
+                else -> false
+            }
+    }.getOrDefault(false)
     fun bridge(source: String, mainFrame: Boolean) = mainFrame && internal(source) && runCatching { URI(source).rawPath.isNullOrEmpty() || URI(source).rawPath == "/" }.getOrDefault(false)
     companion object {
         /** Scanner output is untrusted text, never a URL to open or enrollment authority. */

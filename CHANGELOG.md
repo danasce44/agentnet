@@ -4,6 +4,13 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
+## Unreleased
+
+- Allow Android's skin gallery to read its two fixed GitHub sources. Only GET
+  subresources are allowed; navigation, native bridge, other hosts/repositories,
+  credentials, query strings and unsafe paths remain blocked. This corrects the
+  gallery failure in v0.8.25 and requires a new APK release.
+
 ## [0.8.25] — 2026-10-13
 
 - Add a skin gallery in Settings → Appearance, with verified pictures and

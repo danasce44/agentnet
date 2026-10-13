@@ -144,7 +144,8 @@ class MainActivity : Activity() {
                 return true
             }
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                if (guard.internal(request.url.toString())) return null
+                val url = request.url.toString()
+                if (guard.internal(url) || guard.gallery(url, request.method, request.isForMainFrame)) return null
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
             }
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) { handler.cancel() }

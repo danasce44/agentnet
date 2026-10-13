@@ -24,6 +24,27 @@ class WebPolicyTest {
         assertFalse(policy.bridge("https://example.com", true))
         assertFalse(policy.bridge("http://127.0.0.1:41328", true))
     }
+    @Test fun galleryAllowsOnlyFixedRepositoryReadSubresources() {
+        val latest = "https://api.github.com/repos/misunders2d/agentnet-skins/releases/latest"
+        val raw = "https://raw.githubusercontent.com/misunders2d/agentnet-skins/v2026.10.13/published/pulp/theme.css"
+        for (url in listOf(latest, raw, latest.replace("api.github.com", "api.github.com:443"))) {
+            assertTrue(url, policy.gallery(url, "GET", false))
+            assertFalse(url, policy.gallery(url, "GET", true))
+            for (method in listOf("POST", "PUT", "DELETE", "HEAD", "OPTIONS")) assertFalse(method, policy.gallery(url, method, false))
+            assertFalse(url, policy.internal(url))
+            assertFalse(url, policy.bridge(url, true))
+        }
+        for (url in listOf(
+            latest.replace("https:", "http:"), latest.replace("api.github.com", "user@api.github.com"),
+            latest.replace("api.github.com", "api.github.com:8443"), latest + "?private=1", latest + "#fragment",
+            latest + "/", latest.replace("agentnet-skins", "other-repository"),
+            latest.replace("misunders2d", "other-owner"), latest.replace("api.github.com", "api.github.com.evil"),
+            raw.replace("agentnet-skins/", "agentnet-skins-evil/"), raw.replace("published/", "../published/"),
+            raw.replace("published/", "./published/"), raw.replace("published/", "%2e%2e/published/"),
+            raw.replace("pulp/theme", "pulp%2ftheme"), raw.replace("pulp/theme", "pulp%252ftheme"),
+            raw.replace("published/", "published//"), raw + "?private=1", raw + "#fragment", "not a URL"
+        )) assertFalse(url, policy.gallery(url, "GET", false))
+    }
     @Test fun notificationDestinationsKeepExactWorkspaceAndDirection() {
         val workspace = "a".repeat(32); val conv = "b".repeat(64); val msg = "c".repeat(32)
         assertEquals("msg=$msg&conv=$conv&dir=out&workspace=$workspace", WebPolicy.notificationDestination(workspace, "msg=$msg&conv=$conv&dir=out"))
