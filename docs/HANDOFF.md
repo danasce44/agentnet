@@ -4,47 +4,31 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## v0.8.24 — qualification in progress, October 13, 2026
+## v0.8.24 — application qualified, packaging pending, October 13, 2026
 
-The owner assigned Codex full release leadership after dismissing Agy. The
-integrated main base is `f1a92c02`; MEL-597, MEL-613/MEL-502, MEL-582, MEL-605,
-MEL-543 and MEL-603 are merged, alongside MEL-614 and OMP-accepted MEL-525.
-The dated CHANGELOG is prepared; v0.8.23 remains published. See
-[V0_8_24.md](plans/V0_8_24.md) for the root-owned release checklist, exact source
-checkpoints, evidence and limits. No v0.8.24 tag, publication or deployment yet.
+Codex is the sole release lead; all qualification/review helper panes are
+closed. MEL-597, MEL-613/MEL-502, MEL-582, MEL-605, MEL-543 and MEL-603 are
+integrated, alongside MEL-614 and OMP-accepted MEL-525. Application source is
+frozen at `7d1dd587`; test-only children `3b7d2f75` and `5f287ba9` make offline
+phone removal and the short-lease heartbeat setup deterministic without
+weakening assertions or changing production behavior. Main is clean and
+pushed; completed feature branches/worktrees are removed and evidence retained.
 
-Coordinator-reported vet, 15 non-client race packages and both core UI shards
-pass. Original client race runs finished with failures or incomplete coverage;
-these are retained as diagnostics. One duplicate phone-daemon start in a test
-caused a real race and is corrected. Three opt-in rendered failures were stale
-fixture navigation/default assumptions; all now pass without renderer changes.
+All twelve client race partitions and the non-client/UI race job pass. Full
+native Linux/macOS pass; disjoint full Windows A–G/H–Z client selections and
+retained Windows other-package passes complete native coverage. The corrected
+heartbeat passes three repetitions on all three systems. Desktop packaging,
+container, actual IndexedDB, focused rendered/proactive native/browser checks,
+vet and final-source mixed-version qualification against exact v0.8.23 pass.
+Original failures/timeouts remain recorded, and opt-in/platform skips are not
+claimed as executed. See [V0_8_24.md](plans/V0_8_24.md) for exact source, CI
+links, corrections, evidence and limits.
 
-Focused proactive fixes cover ordinary agent messages to admitted group human
-guests, native/browser named-message history and independent archive format/
-message reader capabilities. Required capabilities survive local deletion and
-expired archive repacking. Rootless descriptors wait rather than repeatedly
-retrying an unsupported reader. Cleanly dismissed agents retain inert linked
-history while current live access stays closed. The focused review race batch
-passes in 90.230s; the native-generated browser group fixture passes 806 memory
-checks. Browser human/guest checks pass 590 assertions, and independent final review
-finds no remaining production blocker in these corrections. Final integrated
-platform/race coverage remains required before tagging. The corrected-source mixed-version gate passes
-in 56.599s against exact v0.8.23, with no skip. None of these isolated results
-establishes physical-device delivery or a live-relay deployment.
-
-Application candidate `7d1dd587` is pushed; integrated CI passes client shards
-1–11, native Linux/macOS, desktop packaging and container. Client-0 had one
-fixture failure: blocked POSTs did not make its sender fully offline before
-phone removal. Closing the sender before removal preserves all original
-queue/key/access assertions; three focused race repetitions pass. Only that
-fixture and docs change afterward; retain other application-source gates.
-Windows native, non-client/UI and final affected CI checks remain pending.
-Completed feature worktrees and branches are removed, with evidence retained.
-
-Tag-built asset/checksum, APK in-place warm/cold preservation and publication/
-deployment gates remain pending. All existing qualification/review helper results are saved and their panes
-are closed. Codex is the
-sole source writer and release lead.
+Tag-built thirteen-asset/checksum verification, original-key APK in-place
+warm/cold data preservation, publication/update recognition and existing-relay
+rollout remain pending. v0.8.23 remains the published release; the last verified
+relay is v0.8.22. No physical-phone timing or incident resolution is inferred
+from isolated qualification. No further optional application work is planned.
 
 ## MEL-543 fullscreen chat images — integrated into v0.8.24
 
