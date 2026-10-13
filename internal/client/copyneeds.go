@@ -20,12 +20,12 @@ import (
 // released. Nothing here grants anything: delivery stays per exact
 // captured key and every authority check still runs at handover.
 type copyNeeds struct {
-	required                                                            string // the stored requirement, or the one its shape derives
-	stored                                                              string // required_cap as stored
-	conv, sub, body, pid, humanRaw, status, agentID, capturedFP         string
-	v                                                                   int
-	progress, receiverCap, room, topicScoped, organizationCap, followup bool
-	proposal, groupedWire                                               bool
+	required                                                                       string // the stored requirement, or the one its shape derives
+	stored                                                                         string // required_cap as stored
+	conv, sub, body, pid, humanRaw, status, agentID, capturedFP                    string
+	v                                                                              int
+	proactive, progress, receiverCap, room, topicScoped, organizationCap, followup bool
+	proposal, groupedWire                                                          bool
 	// A history copy's carried item. A copy kept as ciphertext only (empty
 	// body) carries none: its requirement is the stored column.
 	item               HistoryItem
@@ -36,11 +36,15 @@ type copyNeeds struct {
 // version).
 func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 	n := copyNeeds{v: v}
-	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group FROM outbox WHERE id=?`, id).
-		Scan(&n.stored, &n.conv, &n.sub, &n.body, &n.pid, &n.humanRaw, &n.status, &n.agentID, &n.capturedFP, &n.groupedWire); err != nil {
+	var kind, origin, reply, target string
+	if err := q.QueryRow(`SELECT coalesce(required_cap, ''), coalesce(conv, ''),coalesce(sub,''),coalesce(body,''),coalesce(pid,''),coalesce(human,''),coalesce(status,''),coalesce(agent_id,''),coalesce(recipient_fp,''),wire_send_group,kind,coalesce(origin,''),coalesce(reply_to,''),coalesce(target,'') FROM outbox WHERE id=?`, id).
+		Scan(&n.stored, &n.conv, &n.sub, &n.body, &n.pid, &n.humanRaw, &n.status, &n.agentID, &n.capturedFP, &n.groupedWire, &kind, &origin, &reply, &target); err != nil {
 		return n, err
 	}
 	n.required = n.stored
+	if target == "" {
+		n.proactive = envelope.ProactiveAgent(envelope.Inner{Conv: n.conv, Kind: kind, Origin: origin, ReplyTo: reply, PID: n.pid, Sub: n.sub, Status: n.status})
+	}
 	n.progress = n.status == envelope.StatusProgress
 	if n.progress && n.required == "" {
 		n.required = protocol.CapProgress
@@ -85,6 +89,9 @@ func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 	if n.sub == envelope.SubHistory && n.body != "" {
 		n.historical = json.Unmarshal([]byte(n.body), &n.item) == nil
 		_, n.helper = historyAssistant(n.body, n.conv)
+		if n.historical {
+			n.proactive = envelope.ProactiveAgent(n.item.inner(n.conv))
+		}
 	}
 	return n, nil
 }
@@ -96,7 +103,7 @@ func (n copyNeeds) cacheKey(to string) string {
 	return fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%v%v%v%v%v%v%v%v%v%v%v\x00%s\x00%s\x00%s\x00%s",
 		to, n.v, n.required, n.stored, n.conv, n.sub, n.pid, n.humanRaw, n.status, n.agentID,
 		n.progress, n.receiverCap, n.room, n.topicScoped, n.organizationCap, n.followup, n.proposal, n.groupedWire, n.historical, n.helper, item.GroupHistory != nil,
-		item.Sub, item.Status, item.PID, item.AgentID)
+		item.Sub, item.Status, item.PID, item.AgentID) + fmt.Sprint(n.proactive)
 }
 
 // copyWait is a reason a copy waits that capSupport words itself.
@@ -125,6 +132,11 @@ func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public,
 		return nil
 	}
 	var err error
+	if n.proactive {
+		if err = capWait(protocol.CapProactiveAgent); err != nil {
+			return err
+		}
+	}
 	if required == protocol.CapControl {
 		err = capWait(protocol.CapControl)
 	} else {

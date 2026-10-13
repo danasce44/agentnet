@@ -180,7 +180,7 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 	}
 	member := m.device(sender, fp)
 	host := sender == info.Host.Address && fp == info.Host.Fingerprint
-	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil {
+	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil && !envelope.ProactiveAgent(in) {
 		return errors.New("external participation has incomplete pinned evidence")
 	}
 	switch in.Sub {
@@ -259,6 +259,9 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 				return errors.New("output does not belong to the exact invited agent")
 			}
 		case envelope.KindMessage:
+			if envelope.ProactiveAgent(in) && host && in.AgentID == info.AgentID {
+				return nil
+			}
 			// Nonterminal progress is an output under the same authority.
 			if !isResponderProgress(in) || !host || in.AgentID != info.AgentID {
 				return errors.New("external participation confers no ordinary DM send authority")
@@ -1365,7 +1368,7 @@ func (a *Agent) mayDeliverExternal(env envelope.Envelope) (bool, bool, error) {
 	_, rootMember := m.root.Member(info.Host.Person)
 	// A member-hosted participation's own record to an original member device
 	// is ordinary member traffic: a scope's hgp1 only fences its reader.
-	memberEvent := rootMember && externalDM(m.root) && in.Sub == envelope.SubEvent && m.device(env.To, recipientFP(a.store, env.To))
+	memberEvent := rootMember && externalDM(m.root) && (in.Sub == envelope.SubEvent || envelope.ProactiveAgent(in)) && m.device(env.To, recipientFP(a.store, env.To))
 	allowed := memberEvent || !rootMember && externalDM(m.root) && (m.device(env.To, recipientFP(a.store, env.To)) || env.To == info.Host.Address && a.personSendable(info.Host.Address, ""))
 	if env.To == info.Host.Address {
 		p, ok, _ := a.store.personByID(info.Host.Person)

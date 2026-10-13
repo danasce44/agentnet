@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Allow active admitted agents to send ordinary proactive turns under their
+  exact current invitation, without requiring a fabricated incoming request (MEL-603).
 - Capture the active visible topic on Bring In, defaulting empty to Main flow
   rather than expanding to all topics (MEL-582).
 - Clear stale needs_human blocker phase once a request has a confirmed terminal

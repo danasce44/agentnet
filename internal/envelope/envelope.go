@@ -708,7 +708,7 @@ func checkVersion2(in Inner) error {
 			return errors.New("group: requester admission is only for a PID-addressed group request")
 		}
 	}
-	if in.AgentID != "" && !AssistantReaction(in) && (!validID(in.AgentID) || (in.Kind != KindAnswer && in.Kind != KindResult && in.Status != StatusProgress) || in.ReplyTo == "" || in.Sub != "" || in.V == Version3) {
+	if in.AgentID != "" && !AssistantReaction(in) && (!validID(in.AgentID) || in.V == Version3 || !ProactiveAgent(in) && ((in.Kind != KindAnswer && in.Kind != KindResult && in.Status != StatusProgress) || in.ReplyTo == "" || in.Sub != "")) {
 		return errors.New("a named agent author belongs on a reply answer, result or progress")
 	}
 	if in.Target != nil && in.Target.AgentID != "" && !validID(in.Target.AgentID) {
@@ -861,6 +861,7 @@ func checkVersion2(in Inner) error {
 		case in.Sub == SubGroupProof || in.Sub == SubGroupContext:
 			// The carrier branch above validates the bounded PID discriminator.
 		case in.Sub == SubEvent:
+		case ProactiveAgent(in):
 		case in.Human != nil && in.Sub == "" && in.Kind == KindMessage:
 		case in.Sub == SubExcerpt && in.Kind == KindMessage && in.Replica && in.Target == nil && in.ReplyTo == "":
 		case in.Sub == "" && (in.Kind == KindQuestion || in.Kind == KindTask) && in.Target != nil:

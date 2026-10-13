@@ -3452,6 +3452,11 @@ export class Engine {
         await this.requireHumanSupport(rec.to, gate.pin);
         if(c?.kind==="group")await this.requireGroupHumanSupport(rec.to,gate.pin);
       }
+      const proactiveCopy = rec.sub === "history" ? wire.parseHistory(rec.body) : rec.sub === wire.SubDeviceHistory ? wire.parseDeviceHistory(rec.body).item : rec;
+      if (wire.proactiveAgent(proactiveCopy)) {
+        const pin = await this.pinned(rec.to), profile = await this.profile(rec.to);
+        if (!await wire.profileSupports(profile || {},rec.to,(await this.pubOf(pin)).sign_key,wire.CapProactiveAgent)) throw Object.assign(new Error("Recipient cannot read proactive agent messages yet; update that device."), {code:"agent_identity_unsupported"});
+      }
       if(await this.topicCopy(rec))await this.requireTopicSupport(rec.to,await this.pinned(rec.to));
       if (await this.roomCopy(rec)) { // a room shape needs rm1 besides its own requirement (ROOM_V1 §2.5)
         const pin = await this.store.get("pins", rec.to);
@@ -7307,7 +7312,7 @@ export class Engine {
       if (teams) teams.connected(f.includes("teams1"));
       // This device reads conversations and the attention hint (it never
       // alerts from the stream: its service worker shows the relay's pushes).
-      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSync, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; explicit own3/topic/follow-up scopes fit the 23-cap advertisement bound
+      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapProactiveAgent, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSync, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; explicit own3/topic/follow-up scopes fit the 23-cap advertisement bound
       await this.publishPerson().catch(() => {});
       // These existing, coalesced recovery jobs can wait for old proofs or
       // network replies. They must not delay the current user's durable send.
@@ -9780,7 +9785,8 @@ export class Engine {
     // admitted it earlier keeps it (a known limit, ROOM_V1 §4.1).
     if (agent && !historical && (info.state === "declined" || info.state === "dismissed")) throw new Hold("invalid", "an agent's turn after its participation ended");
     if (agent && !historical && (info.state !== "active" || info.held)) throw new Hold("proof_pending", "an agent's turn waits for its participation to be active");
-    if (n.agent_id && (n.agent_id !== info.agent_id || address !== info.host.address || fingerprint !== info.host.fingerprint || !["answer", "result"].includes(n.kind) && !progressOutput(n) || !n.reply_to || n.sub)) throw new Hold("invalid", "named answer differs from its participation host");
+    if (wire.proactiveAgent(n) && (n.agent_id || "") !== (info.agent_id || "")) throw new Hold("invalid", "proactive message differs from its exact admitted agent");
+    if (n.agent_id && (n.agent_id !== info.agent_id || address !== info.host.address || fingerprint !== info.host.fingerprint || !wire.proactiveAgent(n) && (!["answer", "result"].includes(n.kind) && !progressOutput(n) || !n.reply_to || n.sub))) throw new Hold("invalid", "named answer differs from its participation host");
   }
 
   // Outside hosts remain separate pinned proof, never ordinary room members.
@@ -9793,7 +9799,7 @@ export class Engine {
     await this.checkParticipationTopic(info.topic,n,checks);
     const member = [...members.values()].some((p) => p.devices.some((d) => d.address === address && d.fingerprint === fp));
     const host = info.host && address === info.host.address && fp === info.host.fingerprint;
-    if (!info.invite || (!info.external || members.size !== 2) && !members.group || n.pid !== info.pid) throw new Hold("proof_pending", "participation has incomplete pinned evidence");
+    if (!info.invite || (!info.external || members.size !== 2) && !members.group && !wire.proactiveAgent(n) || n.pid !== info.pid) throw new Hold("proof_pending", "participation has incomplete pinned evidence");
     if (n.sub === "event") {
       const ev = wire.parseEvent(n.body);
       if(members.group && member && (ev.author.address!==address || ev.author.fingerprint!==fp) && ev.type==="dismiss" && info.state==="dismissed" && !info.held && info.dismissalEvent===wire.eventJSON(ev))return;
@@ -9829,6 +9835,8 @@ export class Engine {
       if (!member || !n.target || n.target.address !== info.host.address || n.target.fingerprint !== info.host.fingerprint || n.target.agent_id !== info.agent_id || (members.group ? members.epochs.get(fp)!==n.target.group_admission : !!n.target.group_admission)) throw new Hold("invalid", "request does not name the exact invited agent and requester admission");
     } else if (["answer", "result"].includes(n.kind) || progressOutput(n)) {
       if (!host || n.agent_id !== info.agent_id || !n.reply_to) throw new Hold("invalid", "output does not belong to the exact invited agent");
+    } else if (wire.proactiveAgent(n) && host && (n.agent_id || "") === (info.agent_id || "")) {
+      // Ordinary agent message under its current signed participation.
     } else throw new Hold("invalid", "outside traffic is not an addressed participation turn");
   }
 

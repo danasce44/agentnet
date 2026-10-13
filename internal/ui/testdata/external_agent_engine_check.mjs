@@ -270,4 +270,22 @@ async function world() {
   check(!(await c.store.all('outbox')).some((r) => r.conv === w.conv && r.sub === 'history'), 'external-host sibling receives no visitor-room history');
   for (const e of w.users) e.stop();
 }
+// Proactive ordinary agent traffic needs exact active admission, not a reply.
+{
+ const w=await world(),{alice:a,bob:b,charlie:c,mallory:m}=w;
+ const p=await a.inviteAgent({conv:w.conv,host:c.address,agent_id:w.agent.id,grant:[]});await w.drain(c);await w.drain(b);await w.accept(p.pid);
+ const fields={pid:p.pid,agent_id:w.agent.id,origin:'agent:proactive',emotion:'neutral',body:'Unsolicited ordinary agent update'};
+ const raw=await w.from(c,a,fields),id=await w.receive(raw,a);await w.receive(raw,a);
+ const message=(await a.dm(w.conv)).messages.find(row=>row.id===id);
+ check(message?.verified_agent&&message.agent_id===w.agent.id&&!message.reply_to,'proactive message keeps exact agent attribution without a fabricated request');
+ check((await a.store.get('inbox',id)).kind==='message'&&!await a.store.get('held',id),'ordinary proactive message is admitted once');
+ for(const [sender,delta] of [[m,{}],[c,{agent_id:wire.newID()}],[c,{agent_id:''}]]){
+  const bad=await w.receive(await w.from(sender,a,{...fields,...delta}),a);
+  check((await a.store.get('held',bad))?.reason==='invalid','wrong host or selected agent cannot impersonate admitted proactive author');
+ }
+ await a.dismissAgent(p.pid);await w.drain(c);
+ const late=await w.receive(await w.from(c,a,fields),a);
+ check((await a.store.get('held',late))?.reason==='invalid','removed agent cannot initiate future ordinary traffic');
+ for(const e of w.users)e.stop();
+}
 console.log('external-agent engine checks passed: ' + checks);

@@ -65,6 +65,10 @@ const RoleHuman = "human"
 // capability RoomImplies names, so later programs may stop listing those.
 const CapRoom = "rm1"
 
+// CapProactiveAgent reads ordinary agent messages under current admission,
+// without an incoming request. Older readers keep their independent copies.
+const CapProactiveAgent = "ams1"
+
 // CapTopicParticipation enforces signed ongoing topic bounds; rm1 does not imply it.
 const CapTopicParticipation = "tps1"
 

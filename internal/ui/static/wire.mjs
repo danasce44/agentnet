@@ -686,7 +686,8 @@ async function checkV2(n) {
     const ordinary = n.kind === "message" && !n.status && !n.target && !n.agent_id && !agentOrigin(n.origin) && !n.emotion && n.pid === author && !agent;
     const request = ["question", "task"].includes(n.kind) && n.target && n.pid && n.pid !== author && !n.agent_id && agentOrigin(n.origin) === agent && !n.status && (!n.receiver_route || !agent && !author && n.receiver_route.op === "request");
     const output = (["answer", "result"].includes(n.kind) || n.kind === "message" && n.status === StatusProgress) && !n.target && n.pid && !author && !n.receiver_route;
-    if (!ordinary && !request && !output) throw new Error("human: ordinary turn, addressed request or assistant output only");
+    const proactive = proactiveAgent(n) && agent && n.pid === author;
+    if (!ordinary && !request && !output && !proactive) throw new Error("human: ordinary turn, addressed request or assistant output only");
     await validateHumanTurn(n.human, n.conv);
   }
   await validateReceiverRoute(n);
@@ -694,7 +695,7 @@ async function checkV2(n) {
     const root = parseGroupRoot(n.root);
     if (root.kind !== "group" || !n.pid || !validHash(n.target.group_admission) || !["question", "task"].includes(n.kind)) throw new Error("group: requester admission is only for a PID-addressed group request");
   }
-  if (n.agent_id && !assistantReaction(n) && (!validID(n.agent_id) || !["answer", "result"].includes(n.kind) && n.status !== StatusProgress || !n.reply_to || n.sub || n.v === Version3)) throw new Error("a named agent author belongs on a reply answer, result or progress");
+  if (n.agent_id && !assistantReaction(n) && (!validID(n.agent_id) || n.v === Version3 || !proactiveAgent(n) && (!["answer", "result"].includes(n.kind) && n.status !== StatusProgress || !n.reply_to || n.sub))) throw new Error("a named agent author belongs on a reply answer, result or progress");
   if (n.target?.agent_id && !validID(n.target.agent_id)) throw new Error("invalid named agent target");
   if (n.v === Version3) { checkV3(n); return; }
   if (n.ref) throw new Error("a control ref belongs to a version 3 message");
@@ -753,7 +754,7 @@ async function checkV2(n) {
     if (!validID(n.pid)) throw new Error("invalid participation id");
     const request = n.sub === "" && (n.kind === "question" || n.kind === "task") && n.target;
     const output = n.sub === "" && (n.kind === "answer" || n.kind === "result" || n.kind === "message" && n.status === StatusProgress);
-    if (n.sub !== "event" && n.sub !== "excerpt" && ![SubGroupProof, SubGroupContext].includes(n.sub) && !request && !output && !(n.human && !n.sub && n.kind === "message")) throw new Error("a participation id is not allowed on this message");
+    if (n.sub !== "event" && n.sub !== "excerpt" && ![SubGroupProof, SubGroupContext].includes(n.sub) && !request && !output && !proactiveAgent(n) && !(n.human && !n.sub && n.kind === "message")) throw new Error("a participation id is not allowed on this message");
   }
 }
 
@@ -989,7 +990,9 @@ export const MaxGroupHistory = 64, MaxGroupState = 256 << 10, MaxGroupCiphertext
 const groupRootDomain = "agentnet-conv-root-v3\n";
 export const convRootVersionLimit = (v) => v === GroupRootVersion ? MaxGroupRoot : MaxConvRoot;
 const convRootSizeLimit = (json) => { try { return convRootVersionLimit(JSON.parse(json).v); } catch (_) { return MaxConvRoot; } };
-export const MaxCaps = 32, MaxAdvertisedCaps = 23; // older readers already parse up to 32 names
+export const CapProactiveAgent = "ams1";
+export const proactiveAgent = n => n.kind === "message" && !n.sub && !n.status && !n.reply_to && !n.target && !!n.conv && !!n.pid && n.origin === "agent:proactive" && !n.receiver_route;
+export const MaxCaps = 32, MaxAdvertisedCaps = 24; // older readers already parse up to 32 names
 export const MaxCapsRecord = 1024;
 export const CapEnv2 = "env2";
 export const CapPerson = "person2"; // reads person roster chains, roots v2, fan-out and history

@@ -151,7 +151,7 @@ func (a *Agent) requireParticipationCaps(ctx context.Context, key identity.Publi
 		}
 		return nil
 	}
-	if required != protocol.CapModelSync && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom {
+	if required != protocol.CapModelSync && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent {
 		return errors.New("unknown queued capability requirement")
 	}
 	label, device, err := protocol.SplitAddress(key.Address)
@@ -260,6 +260,9 @@ func (a *Agent) checkConversationAgent(in envelope.Inner, sender identity.Public
 	if agent && (p.Role == protocol.RoleHuman || sender.Address != p.Host.Address || sender.Fingerprint() != p.Host.Fingerprint) {
 		return reasonInvalid, errors.New("an agent's turn is not from its participation's exact host")
 	}
+	if envelope.ProactiveAgent(in) && in.AgentID != p.AgentID {
+		return reasonInvalid, errors.New("proactive message differs from its exact admitted agent")
+	}
 	if agent && !historical {
 		// Ended is final, failing closed: an output still in flight when
 		// its participation was declined or dismissed is refused for good
@@ -274,7 +277,7 @@ func (a *Agent) checkConversationAgent(in envelope.Inner, sender identity.Public
 			return reasonProof, errors.New("an agent's turn waits for its participation to be active")
 		}
 	}
-	if in.AgentID != "" && (!protocol.ValidID(in.AgentID) || in.AgentID != p.AgentID || sender.Address != p.Host.Address || sender.Fingerprint() != p.Host.Fingerprint || in.Kind != envelope.KindAnswer && in.Kind != envelope.KindResult && !isResponderProgress(in) || in.ReplyTo == "" || in.Sub != "") {
+	if in.AgentID != "" && (!protocol.ValidID(in.AgentID) || in.AgentID != p.AgentID || sender.Address != p.Host.Address || sender.Fingerprint() != p.Host.Fingerprint || !envelope.ProactiveAgent(in) && (in.Kind != envelope.KindAnswer && in.Kind != envelope.KindResult && !isResponderProgress(in) || in.ReplyTo == "" || in.Sub != "")) {
 		return reasonInvalid, errors.New("named answer differs from its participation host")
 	}
 	if p.External && in.AgentID != "" {
