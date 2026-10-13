@@ -9,8 +9,10 @@ section at release; keep detailed verification and remaining work here.
 The owner assigned the existing tab-3 Codex worker to the agreed V1–V9 scope,
 with Codex release lead supervising/reviewing for minimal design. Its only
 worktree is `.worktrees/v0.8.27`, branch `feat/v0.8.27`; it is actively assigned,
-not a stray. The worker owns bounded source/tests, the lead owns integration,
-Git, full qualification and release. Shared checklist:
+not a stray. The worker returned a frozen110-file candidate, now integrated at b5850fae.
+The lead owns Git, full qualification and release. Native callback race and
+original-key Android build checks pass; runtime and integrated release gates
+remain pending. See [V0_8_27.md](plans/V0_8_27.md) for evidence and limits. Shared checklist:
 `.agentnet/v27-release-checklist.md`. Do not publish v27 before candidate review,
 required integrated gates, exact artifacts and upgrade preservation checks.
 Native harness permissions, signed identity, current admission and audience

@@ -4,7 +4,7 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
-## [0.8.26] — 2026-10-14
+## Unreleased
 
 - Restore validated profile pictures along with Hub backups.
 - Show locally decrypted Android message previews with truthful agent/device
@@ -20,6 +20,8 @@ This record starts with v0.8.1; earlier releases remain on the
 - Let an admitted agent organize exact messages on a verified human request,
   including explicit Main and a grouped Undo that refuses later changes.
   Let agents react to ordinary canonical mentions without a fabricated question.
+
+## [0.8.26] — 2026-10-14
 
 - Allow Android's skin gallery to read its two fixed GitHub sources. Only GET
   subresources are allowed; navigation, native bridge, other hosts/repositories,
