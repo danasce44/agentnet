@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Correct question approval wording to describe unchanged native tools, skills
+  and permissions; remove the false editing-tool exclusion (MEL-597).
 - Required for v0.8.24 (MEL-614): show same-device agent questions once, clear
   stale “Sending…” previews after delivery, and retain the selected agent for
   new follow-ups. Correct retained history without replaying completed work.

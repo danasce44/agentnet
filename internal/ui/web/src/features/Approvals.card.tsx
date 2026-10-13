@@ -308,7 +308,7 @@ function seesWords(a: T.AgentView) {
 function effectWords(kind: string, phase: Phase, agent: string) {
   if (phase === "stopped") return "Running it again starts fresh; it doesn’t pick up where it stopped.";
   if (kind === "task") return "Runs once here, with " + agent + "’s usual permissions. It can change files.";
-  return capital(agent) + " answers with your setup, minus editing tools. Tools you already allow keep their effects.";
+  return capital(agent) + " answers with your native tools, skills and permissions unchanged. Tools you already allow keep their effects.";
 }
 
 // ---- pieces -------------------------------------------------------------------

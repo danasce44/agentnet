@@ -3464,7 +3464,7 @@ function decide(a, m, t) {
         el("dl", {}, el("dt", {}, "Runs"), el("dd", m.target && m.target.agent_id ? { title: "agent " + m.target.agent_id + " · " + m.target.address } : {}, runs),
           el("dt", {}, "Permissions"), el("dd", {}, m.kind === "task"
             ? "Its normal permissions. It is not sandboxed and can change files."
-            : "Question mode: your harness's own setup without editing tools or anything needing a new approval. Tools you already allow keep their effects."),
+            : "Questions use your native tools, skills and permissions unchanged. Tools you already allow keep their effects."),
           always && [el("dt", {}, "From now on"), el("dd", {}, "Later tasks from " + m.from + "'s current key also run without asking, until you revoke it.")]),
         el("label", { class: "check" }, check, el("span", {}, always ? "I want this and later tasks from this key to run." : "I have read this and want it to run.")),
         el("p", { class: "hint" }, "In a terminal: agentnet accept " + (always ? "--always " : "") + m.id)],
@@ -3503,7 +3503,7 @@ function approvalDialog(t) {
       ok: "Stop automatic answers", run: () => act({ do: "unapprove", id: t.peer }) });
   }
   return dialog({ title: "Answer " + t.peer + "'s questions automatically?",
-    body: [el("p", {}, "From now on your responder answers questions from " + t.peer + " without asking you, with your harness's own setup minus editing tools and anything needing a new approval; tools you already allow keep their effects. " +
+    body: [el("p", {}, "From now on your responder answers questions from " + t.peer + " without asking you, with your native tools, skills and permissions unchanged. Tools you already allow keep their effects. " +
       (t.task_grant === "active" ? "Tasks are not affected: those from this key already run without asking, under the standing permission you gave." : "Tasks still wait for you.")),
       el("p", {}, "Questions already waiting stay waiting: answer them or let your responder answer each one."),
       el("p", { class: "hint" }, "In a terminal: agentnet approve " + t.peer)],
