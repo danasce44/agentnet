@@ -39,7 +39,11 @@ export function projectDeviceThreads({ inbox, outbox }, { address, fingerprint, 
   const groups = new Map();
   // Self-delivery retains both transport copies. Present the sent row once,
   // as the native client does; its ID also reconciles optimistic send previews.
-  for (const m of byID.values()) {
+  const selfDelivered = m => m.stored_in && outbox.some(o => o.id === m.id && (m.author_fp === o.author_fp || m.from === (o.from || address) || m.fp === fingerprint));
+  // Self-delivery retains both transport copies. Present the sent row once,
+  // as the native client does; its ID also reconciles optimistic send previews.
+  for (const m of msgs) {
+    if (selfDelivered(m)) continue;
     const root = find(m.id);
     let group = groups.get(root);
     if (!group) groups.set(root, group = []);
