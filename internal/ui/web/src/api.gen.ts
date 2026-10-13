@@ -100,6 +100,7 @@ export interface AgentView {
   can_decide: boolean;
   can_dismiss: boolean;
   can_ask: boolean;
+  owner_invited?: boolean;
 }
 
 export interface ApprovalRevoke {

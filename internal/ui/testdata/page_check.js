@@ -2306,6 +2306,12 @@ const ev = { preventDefault() {} };
   overview.me.responder = ''; await run('loadOverview()');
   run('decide')('accept', { ...audienceRequest, kind: 'task', from: 'alice/phone' }, audienceThread);
   check(textOf($('dialog-body')).includes('outside/host') && textOf($('dialog-body')).includes(', using its local configuration') && !textOf($('dialog-body')).includes(namedC.slice(0, 8)) && !!find($('dialog-body'), n => (n.attrs?.title || '').includes(namedC)) && !textOf($('dialog-body')).includes('no responder is set') && $('dialog-ok').disabled, 'named task decision names its exact local executor (ID in the title) without default fallback and keeps acceptance gate: ' + textOf($('dialog-body')));
+  $('dialog').close();
+  run('decide')('accept', { ...audienceRequest, kind: 'question' }, audienceThread);
+  check(textOf($('dialog-body')).includes('native tools, skills and permissions unchanged') && !/minus editing tools|without editing tools/.test(textOf($('dialog-body'))) && $('dialog-ok').disabled, 'question approval explains unchanged native permissions and preserves the consent gate');
+  $('dialog').close();
+  run('approvalDialog')({ ...audienceThread, approved: false });
+  check(textOf($('dialog-body')).includes('native tools, skills and permissions unchanged') && !/minus editing tools|without editing tools/.test(textOf($('dialog-body'))), 'standing question approval claims no editing-tool exclusion');
   $('dialog').close(); overview.me.responder = savedDefaultResponder; await run('loadOverview()');
 
   // Native receiver delegation stays distinct from addressed executor and workspace.

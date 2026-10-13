@@ -4,7 +4,131 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Current release — v0.8.23, October 12, 2026 (UTC)
+## Current release — v0.8.24, October 13, 2026
+
+[Download v0.8.24](https://github.com/misunders2d/agentnet/releases/tag/v0.8.24)
+or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.24/AgentNet-android.apk).
+Published **12:59:40 UTC**, immutable tag
+`1c8305233c25c84badf7b5a31b31990ae7eb8865`. All thirteen assets match GitHub
+digests and SHA256SUMS. The original-key APK installs over v0.8.23 and preserves
+the exact 203-message fixture, three queued sends, attachment, draft, identity
+and saved origin through warm and cold process starts. Native/core versions
+and the actual native update check recognize v0.8.24. Install over the existing
+app; do not uninstall or relink.
+
+MEL-597, MEL-613/MEL-502, MEL-582, MEL-605, MEL-543 and MEL-603 ship alongside
+MEL-614 and OMP-accepted MEL-525. Application source is frozen at `7d1dd587`;
+two test-only children make offline removal and short-lease stream setup
+deterministic without weakening assertions. All twelve client race partitions,
+non-client/UI race, actual IndexedDB, full native Linux/macOS/Windows coverage,
+desktop, container, focused rendered/native/browser checks, vet and final-source
+mixed-version qualification against exact v0.8.23 pass. Original failures remain
+recorded; opt-in/platform skips are not counted as executed. See
+[V0_8_24.md](plans/V0_8_24.md) for exact sources, CI links, artifacts and limits.
+
+The existing relay is deployed to v0.8.24 at **13:04:44 UTC**, preserving realm
+`4bd7c66953ccf5496fad8eadbab945bd`, existing volume/configuration and neighboring
+service. Full verified stopped-state backup:
+`/opt/agentnet-revived/backups/pre-v0.8.24-2zu4y0z_`. Public HTTPS version and
+running binary agree; zero Hub restarts. No grants, history, live requests or
+client identities are reset/replayed. Physical-phone timing and previously
+reported Windows user incidents are not inferred from isolated qualification.
+
+The documentation tag's skip-CI marker suppressed its push build. A narrow
+workflow-only child supplies explicit existing-tag packaging; every payload
+checkout is the fixed tag, which was not moved. Codex is the sole release lead,
+all other release workers are closed, and the owned test emulator is stopped.
+Completed feature branches/worktrees are removed with evidence retained. Main
+is clean and pushed, and is the only local branch/worktree.
+
+## MEL-543 fullscreen chat images — integrated into v0.8.24
+
+The reviewed implementation is merged into main. Comic opens each picture's
+original object URL in a viewport-filling modal,
+with Fit, 100% natural size, zoom, wheel, pinch and bounded pan. Image state is
+keyed by message, attachment index and direction. Download and Use as my picture
+remain available. A desktop-only action reuses the verified attachment read,
+accepts only raster image bytes, and hands a private temporary copy to the OS
+default app. Copies expire after one hour or are cleaned on daemon restart.
+
+Locked Comic build/typecheck, embedded skin checksum checks and `go vet ./...`
+pass. The focused UI race batch passes in 47.615s, including native attachment
+opening, guarded file routes, desktop/touch viewer checks, all six existing
+Comic/Classic/Zoom profile-picture journeys and text previews. The viewer checks
+1440×900 and 390×844, nonsequential attachment indexes, original dimensions and
+download bytes, wheel/pinch/pan, focus return and emulated Android Back, with
+strict console checks. Desktop CSP is unchanged. The initial small-sheet
+regression failed against the old bundle; portal measurement now follows the
+stage's actual mount. Local review artifacts are under `dist/mel543/` (ignored).
+
+The Linux OS opener was recorded, not an actual image app display. macOS and
+Windows command arguments are checked; native runs and physical-phone tests
+are not claimed. Integrated platform and artifact qualification is complete above; physical
+image-app display is not inferred from those checks.
+
+MEL-614 is integrated through [PR #7](https://github.com/misunders2d/agentnet/pull/7),
+implementation `0fc95aab`: same-device agent questions appear once, delivered
+previews settle, and new follow-ups keep the selected agent. The October 12
+hold for further work is superseded by the October 13 qualification assignment;
+the owner has since authorized release leadership; tagging still requires final qualification.
+
+## Reopened MEL-525 own-invitation fix — accepted by OMP
+
+Owner resumed this blocker alone after v0.8.23. Source is on the existing main
+checkout; no extra branch, worktree or helper was created. Notifications and the
+new skin remain deferred. OMP owns the I1–I4 checklist and exact-candidate review.
+
+Isolated regressions established three causes: same-host consent ran after
+network fanout; the duplicate group invitation path missed that call; stored
+accept recovery selected only direct conversations, excluding group_context.
+The fix records the ordinary signed decision immediately after the invitation
+or share is stored, before fanout. Existing restart recovery now includes groups
+and sends an exact unsent own invitation before its stored acceptance. Existing
+current roster, human-role, pin, revocation and decision-race checks still govern
+consent. No task or historical work is replayed.
+
+Native and browser views expose owner-supplied consent separately from host
+acceptance. Pending own invitations say joining (or enable the local agent),
+never supply a second consent control/count. They remain invited while the host
+is offline; active still requires its signed acceptance. Comic header, RoomPanel,
+chat-list/OKs projections and the existing Classic/Zoom views are exercised.
+
+Evidence: the pre-fix slow-fanout test failed with zero local decisions. A second
+regression reproduced missed group acceptance recovery after restart. DM, group
+and duplicate-pending retries now store exactly one decision before blocked
+transport, survive failed fanout/reopen, and converge at the peer without a
+manual accept. Focused client authority/consent tests passed under race in
+114.187s; other-person native/browser approval checks passed in 3.341s. The
+final focused UI race batch, including the real journey and bundle/API checks,
+passed in 33.245s; go vet passed. The real linked-browser/native-host fixture records pending/active UTC
+timestamps and renders its actual projected views (PASS16.773s) in Comic/Classic/Zoom at
+1280/390, including offline and disabled-host states and Comic OKs. Logs and
+screenshots are `/tmp/agentnet-own-invite-*`; no physical-phone run is claimed.
+The fixture uses the existing short test relay session grace so its pre-link
+session cannot hold initial group setup behind stale capabilities.
+
+OMP's independent group race run exposed a defect in the fanout regression:
+its any-request barrier could fire before the invitation was stored. A forced
+unrelated signed version lookup reproduces that false boundary deterministically
+(`fanout-boundary-before.log`, FAIL0.262s). The corrected barrier follows only
+the exact InviteAgent call's context, permits unrelated traffic, and records the
+blocked request. The decision-before-fanout, group/duplicate and restart checks
+remain unchanged. This correction changes tests and this evidence only; the
+passing linked-browser, UI and authority evidence above is retained.
+The corrected regression passed five race runs (all 15 DM/group/retry cases)
+in 78.212s (`fanout-boundary-race.log`). Restoring the old late-consent ordering
+as a negative control fails all three cases with zero decisions before fanout
+in 0.660s (`fanout-ordering-negative.log`); the application source was restored
+unchanged afterward. All logs use the `/tmp/agentnet-own-invite-` prefix.
+
+The Comic bundle and local CLI are built. This follow-up ships in qualified
+v0.8.24 above, including tag-built APK in-place preservation. The isolated
+installation does not establish the outcome on the owner’s physical device.
+The exact ten-second delay in the owner's ThinkPad attempt remains unmeasured;
+the isolated ordering/recovery defects above are proven, not a complete timing
+trace of that live attempt.
+
+## Previous release — v0.8.23, October 12, 2026 (UTC)
 
 [Download v0.8.23](https://github.com/misunders2d/agentnet/releases/tag/v0.8.23)
 or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.23/AgentNet-android.apk).

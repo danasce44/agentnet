@@ -206,8 +206,10 @@ func deviceHistoryHuman(q dbq, person, address, fp string) (bool, error) {
 
 // Requests follow the original sender relative to the retained peer, not the
 // direction of the answer they continue. This also corrects old saved views.
-func deviceHistoryRequestDirection(from, peer string) string {
-	if from == peer {
+// A human asking their agent on the same device shares its address: the
+// original recipient distinguishes that outgoing request from a peer's ask.
+func deviceHistoryRequestDirection(from, to, peer string) string {
+	if from == peer && from != to {
 		return "in"
 	}
 	return "out"
@@ -246,7 +248,7 @@ func (a *Agent) deviceHistoryProjection(q dbq, r *deviceHistoryRow, person strin
 		if err == nil {
 			r.peer = peer
 			if r.item.Kind == envelope.KindQuestion || r.item.Kind == envelope.KindTask {
-				r.dir = deviceHistoryRequestDirection(r.item.From, peer)
+				r.dir = deviceHistoryRequestDirection(r.item.From, r.to, peer)
 			}
 			if r.item.Kind == envelope.KindAnswer || r.item.Kind == envelope.KindResult || r.item.Status == envelope.StatusProgress {
 				if r.item.From == peer {

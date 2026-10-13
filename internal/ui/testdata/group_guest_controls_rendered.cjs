@@ -29,13 +29,36 @@ const seed=${JSON.stringify({overview,thread})};window.fixture={...seed,requests
 const variant=new URL(location.href).searchParams.get('case')||'admin';
 if(variant==='completion')fixture.overview.group_invitations=[];
 if(variant==='member')fixture.thread.members[0].admin=false;
-if(variant==='topic-invite'){
+if(variant==='topic-invite'||variant==='topic-invite-dm'){
  fixture.overview.group_invitations=[];fixture.thread.guests=[{pid:'broad-human',host:fixture.overview.people.find(p=>p.label==='Cora'),inviter:fixture.overview.person,state:'active',invited:'2026-10-05T10:00:00Z',shared:[],can_end:true}];
  fixture.overview.agent_devices=['brin/desktop'];
  fixture.thread.topics=[{id:'1'.repeat(32),title:'Warehouse',state:'active',count:1,last_at:'2026-10-05T10:01:00Z'},{id:'2'.repeat(32),title:'Private plans',state:'active',count:1,last_at:'2026-10-05T10:02:00Z'}];
  fixture.thread.messages[0].attachments=[];
  fixture.thread.messages.push({id:'topic-message',lid:'topic-message',topic:'1'.repeat(32),from:'brin/desktop',dir:'in',kind:'message',body:'Warehouse topic context',at:'2026-10-05T10:01:00Z',group_ref:{lid:'topic-message',author:'brin-key',hash:'c'.repeat(64)}},{id:'other-topic-message',lid:'other-topic-message',topic:'2'.repeat(32),from:'brin/desktop',dir:'in',kind:'message',body:'Unrelated private plans',at:'2026-10-05T10:02:00Z',group_ref:{lid:'other-topic-message',author:'brin-key',hash:'d'.repeat(64)}});
  fixture.thread.agents=[{pid:'broad-agent',host:fixture.thread.members[1],agent_id:'a'.repeat(32),state:'active',state_text:'Active',invited:'2026-10-05T10:00:00Z',host_here:false,shared:[],can_ask:true,can_dismiss:true,inviter:fixture.overview.person}];
+ fixture.thread.messages.at(-1).attachments=[{name:'other-topic-private.txt',id:'private-file',size:12}];
+ if(variant==='topic-invite-dm'){
+  fixture.thread.kind='dm';fixture.thread.peer=fixture.thread.members[1];fixture.thread.members=[];
+  Object.assign(fixture.overview.dms[0],{kind:'dm',peer:fixture.thread.peer});
+ }
+}
+
+if(variant==='report-history'){
+ const host='aster/other-laptop',id='3'.repeat(32),key='exact-request-key';
+ fixture.overview.group_invitations=[];
+ fixture.overview.person.devices=[{address:'aster/laptop',human:true},{address:host}];
+ const original={id,lid:id,from:'aster/laptop',dir:'out',kind:'task',body:'Finish the README edits',at:'2026-10-05T10:00:00Z',continuation:{id,key,host,attempt:2},exec:{host,state:'needs_human',attempt:2},actions:['continue']};
+ fixture.thread.messages.push(original,{id:'4'.repeat(32),lid:'4'.repeat(32),from:'aster/laptop',dir:'out',kind:'task',body:'Finish the README edits in this follow-up',reply_to:id,at:'2026-10-05T10:01:00Z',exec:{host,state:'done',attempt:1},actions:[]},{id:'5'.repeat(32),from:host,dir:'in',kind:'result',body:'README edits committed in the follow-up',reply_to:'4'.repeat(32),status:'done',at:'2026-10-05T10:02:00Z'});
+ window.setReportHistory=mode=>{
+  const item={id,key,from:'aster/laptop',kind:'task',state:'needs_human',attempt:2,since:100,excerpt:'OLD_BLOCKER_DETAIL: choose the repository',actionable:false};
+  if(mode==='confirmed')item.result={decision:'decision',state:'resolved',at:101};
+  if(mode==='refused')item.result={decision:'decision',state:'needs_human',refused:'Request changed',at:101};
+  if(mode==='new-attempt')item.attempt=3;
+  const report=(items,time,received)=>({id:'notice-'+time,peer:host,notice:true,kind:'message',at:received,report:{v:2,host,at:time,items}});
+  fixture.overview.review=[report([item],100,'2026-10-05T10:02:00Z')];
+  if(mode==='empty-iso'||mode==='empty-tie')fixture.overview.review.push(report([],mode==='empty-iso'?'1970-01-01T00:01:41Z':100,'2026-10-05T10:01:00Z'));
+ };
+ setReportHistory('active');
 }
 
 if(variant==='followup'){
@@ -476,28 +499,90 @@ if(process.env.AGENTNET_DIRECT_FILES_REGRESSION==='1'){
  }finally{await context.close();}
  continue;
 }
+if(process.env.AGENTNET_REPORT_HISTORY_REGRESSION==='1'){
+ assert.equal(skin,'comic');
+ const {page,context}=await openCase('report-history');
+ try{
+  const original=page.locator('[data-mid="'+'3'.repeat(32)+'"]');
+  await original.getByText(/A separate follow-up does not close it/).waitFor();
+  await original.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>fixture.thread.messages.find(m=>m.id==='3'.repeat(32)).exec.state),'needs_human','same-outcome follow-up success cannot invent an exact resolution');
+  if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();
+  const reports=page.locator('div').filter({has:page.getByRole('button',{name:/^Reports from other computers/})}).last();
+  await page.getByRole('button',{name:/^Reports from other computers/}).click();
+  for(const mode of ['active','confirmed','refused','new-attempt','empty-iso','empty-tie']){
+   await page.evaluate(mode=>{setReportHistory(mode);reloadFixture();},mode);
+   if(mode.startsWith('empty')){
+    await reports.getByText(/nothing waits any more/).waitFor();
+    assert.doesNotMatch(await reports.innerText(),/OLD_BLOCKER_DETAIL|something waits for a person/,'Newest empty snapshot never revives old blockers');
+    assert.equal(await reports.getByRole('button',{name:'Mark as handled',exact:true}).count(),0);
+   }else{
+    const row=reports.locator('li li').filter({hasText:'OLD_BLOCKER_DETAIL'});
+    await row.waitFor();
+    if(mode==='confirmed'){
+     await row.getByText(/was closed/).first().waitFor();
+     assert.doesNotMatch(await row.innerText(),/needs a person|Open it on/,'Confirmed resolution is history, with no live blocker claim');
+     assert.equal(await row.getByRole('button',{name:'Mark as handled',exact:true}).count(),0);
+     await row.getByText('Earlier blocker',{exact:true}).click();
+     assert.match(await row.innerText(),/OLD_BLOCKER_DETAIL/,'Original evidence stays readable');
+    }else{
+     await row.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();
+     assert.match(await row.innerText(),/needs a person/,'Current or refused/new-attempt blocker keeps its explicit action');
+    }
+   }
+   await settle(page);const shot=path.join(evidence,'comic-report-history-'+mode+'-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+  }
+  assert.equal(await page.evaluate(()=>fixture.requests.some(r=>['/api/act','/api/operator/decide','/api/dm/send','/api/dm/agent/ask','/api/topic'].includes(r.path))),false,'Presentation never resolves, reruns or closes a topic');
+ }finally{await context.close();}
+ continue;
+}
 if(process.env.AGENTNET_TOPIC_INVITE_REGRESSION==='1'){
  assert.equal(skin,'comic');
- for(const kind of ['person','agent','main']){
-  const {page,context}=await openCase('topic-invite');
+ for(const room of ['group','dm'])for(const kind of ['main','person','agent'])for(const mode of ['recent','selected','since']){
+  const {page,context}=await openCase(room==='dm'?'topic-invite-dm':'topic-invite');
   try{
-   if(kind!=='main'){await page.getByRole('button',{name:'Warehouse',exact:true}).click();await page.locator('[data-mid="topic-message"]').waitFor();}
+   if(kind!=='main'){
+    if(room==='dm'){
+     await page.getByRole('navigation',{name:'Topics',exact:true}).getByRole('button',{name:/^All/}).click();
+     await page.getByRole('dialog',{name:'All topics',exact:true}).getByRole('button',{name:/Warehouse/}).click();
+    }else await page.getByRole('button',{name:'Warehouse',exact:true}).click();
+    await page.locator('[data-mid="topic-message"]').waitFor();
+   }
    await page.getByRole('button',{name:width===1280?'Bring in':'Bring someone in',exact:true}).first().click();
    const dialog=page.getByRole('dialog',{name:'Bring someone in',exact:true});
    const scope=dialog.getByRole('radio',{name:kind==='main'?'Only this topic: Main flow Chosen history and future messages stay within this topic, even if it is renamed.':/Only this topic: Warehouse/});
-   if(kind==='main')await scope.check();else assert(await scope.isChecked(),'Selected topic is captured before opening the invite');
+   assert(await scope.isChecked(),'The visible topic, including Main, is captured before opening the invite');
    assert.equal(await dialog.locator('input[name=human-invite-mode]').count(),0,'Topic scope does not offer permanent full group membership');
    await dialog.getByRole('radio',{name:kind==='agent'?/Analyst/:/Cora/}).first().locator('..').click();
    await dialog.getByText(/already has a whole-chat invitation/).waitFor();
    const action=dialog.getByRole('button',{name:kind==='agent'?'Bring Analyst in':'Invite Cora as a guest',exact:true});
    await action.waitFor();
-   const shot=path.join(evidence,'comic-topic-invite-'+kind+'-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);
+   if(mode==='selected'){
+    await dialog.getByText('Selected messages',{exact:true}).click();
+    await dialog.getByRole('checkbox',{name:kind==='main'?/Selected warehouse context/:/Warehouse topic context/}).locator('..').click();
+   }else if(mode==='since'){
+    await dialog.getByLabel('Share messages since',{exact:true}).fill('2026-10-05T00:00');
+   }
+   const expected=kind==='main'?mode==='selected'?['context']:['context','private']:['topic-message'];
+   const preview=dialog.getByRole('region',{name:/ will see$/});
+   assert.equal(await preview.locator('li').count(),expected.length,'Preview names exactly the messages sent');
+   assert.doesNotMatch(await dialog.innerText(),/Unrelated private plans/,'Other-topic text never enters the chooser or preview');
+   assert.equal(await dialog.getByRole('checkbox',{name:/Also share/}).count(),0,'Other-topic attachments never enter the shared file count');
+   if(kind!=='main')assert.doesNotMatch(await dialog.innerText(),/Selected warehouse context|Unselected earlier history/,'Main history stays out of a named-topic invitation');
+   if(kind==='person'&&mode==='since'){
+    await page.evaluate(()=>{fixture.thread.topics[0].title='Renamed warehouse';fixture.thread.topics[0].state='archived';fixture.thread.messages.push({...fixture.thread.messages.at(-1),id:'new-other',lid:'new-other',body:'NEW_OTHER_TOPIC_PRIVATE'});reloadFixture();});
+    await dialog.getByRole('radio',{name:/Only this topic: Renamed warehouse/}).waitFor();
+    assert.equal(await preview.locator('li').count(),expected.length,'Renaming/archiving and concurrent other-topic arrival preserve the captured scope');
+    assert.doesNotMatch(await dialog.innerText(),/NEW_OTHER_TOPIC_PRIVATE/);
+   }
+   const shot=path.join(evidence,'comic-topic-invite-'+room+'-'+kind+'-'+mode+'-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);
    await action.click();
    const endpoint=kind==='agent'?'/api/dm/agent/invite':'/api/dm/guest/invite';
    await page.waitForFunction(p=>fixture.requests.some(r=>r.path===p),endpoint);
    const sent=await page.evaluate(p=>fixture.requests.find(r=>r.path===p).body,endpoint);
    assert.equal(sent.topic,kind==='main'?'':'1'.repeat(32));
-   assert.deepEqual(sent.share,kind==='main'?['context','private']:['topic-message'],'Only selected-topic history crosses the API boundary');
+   assert.deepEqual(sent.share,expected,'Recent, selected and since share only reviewed visible-topic history');
    assert(!await page.evaluate(()=>fixture.requests.some(r=>r.path==='/api/groups/invite'||r.path==='/api/dm/agent/ask')),'Invite changes no group membership and runs no agent');
    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'Topic choices fit phone width');
   }finally{await context.close();}
@@ -899,6 +984,23 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
  try{
   const field=page.locator('form[aria-label="Write a message"] textarea');
   await field.waitFor({state:'visible'});
+  const checkComicMirror=async (labels,selected=false)=>{
+   if(skin!=='comic')return;
+   await settle(page);
+   const mirror=await field.evaluate(el=>({text:el.previousElementSibling.textContent,labels:[...el.previousElementSibling.querySelectorAll('span')].map(s=>s.textContent),color:getComputedStyle(el).color}));
+   assert.equal(mirror.text,(await field.inputValue())+'\u200b','mirror contains exactly one copy of the editable text');
+   assert.deepEqual(mirror.labels,labels,'collective chips remain compact, without recipient metadata or names');
+   assert.equal(mirror.color,'rgba(0, 0, 0, 0)','textarea glyphs stay transparent');
+   if(!selected)return;
+   await field.press('Control+A');
+   const selection=await field.evaluate(el=>({color:getComputedStyle(el,'::selection').color,background:getComputedStyle(el,'::selection').backgroundColor,from:el.selectionStart,to:el.selectionEnd}));
+   assert.equal(selection.color,'rgba(0, 0, 0, 0)','selection must not paint a second, independently wrapped copy behind the mirror');
+   const alpha=/[\/,]\s*([\d.]+)\)$/.exec(selection.background)?.[1];
+   assert(Number(alpha)>0&&Number(alpha)<1,'selection highlight leaves the mirror text readable');
+   assert.equal(selection.from,0);assert.equal(selection.to,(await field.inputValue()).length);
+   const shot=path.join(evidence,'comic-collective-selection-'+labels.length+'-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+   await field.press('Control+End');
+  };
   let firstAgentToken='';
   const pick=async index=>{
    await field.press('Control+End');
@@ -914,8 +1016,10 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
    // Removing the only collective must clear the legacy single-agent fallback.
    await field.pressSequentially('@everyone');
+   await checkComicMirror([]);
    const firstTag=page.getByRole('option').filter({hasText:'everyone'});
    await firstTag.click();assert.equal((await field.inputValue()).trimEnd(),'@everyone');
+   await checkComicMirror(['@everyone'],true);
    if(skin==='comic'){
     await page.getByRole('button',{name:'Don’t ask 2 agents',exact:true}).click();
     assert.equal(await page.getByRole('button',{name:/^Don’t ask /}).count(),0,'stopping a collective removes every exact agent target');
@@ -941,6 +1045,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    await page.getByText('Selected warehouse context',{exact:false}).first().waitFor();
    await field.waitFor({state:'visible'});
    assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','full reload restores both compact frozen tags after list edits');
+   await checkComicMirror(['@everyone','@Reviewers'],true);
   }else{firstAgentToken=await pick(0);await pick(1);}
 
   // Edit the first mention away, preserving the second, then select it again.
@@ -1197,7 +1302,12 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     await settle(page);const shot=path.join(evidence,'comic-oks-working-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);assert(!await page.evaluate(()=>fixture.requests.some(r=>r.path==='/api/dm/send')),'Navigation preserves unsent draft');await context.close();continue;
    }
    if(skin==='comic'){
-    const bring=page=>page.getByRole('button',{name:width===1280?'Bring in':'Bring someone in',exact:true}).first().click();
+    const bring=async page=>{
+     await page.getByRole('button',{name:width===1280?'Bring in':'Bring someone in',exact:true}).first().click();
+     const dialog=page.getByRole('dialog',{name:'Bring someone in',exact:true});
+     assert(await dialog.getByRole('radio',{name:/Only this topic: Main flow/}).isChecked(),'Main is the initial scope');
+     await dialog.getByRole('radio',{name:/^Whole chat/}).locator('..').click();
+    };
     const room=async page=>{if(!await page.getByRole('list',{name:'Invited people',exact:true}).isVisible())await page.getByRole('button',{name:'orchard_dispatch. Who’s in this chat',exact:true}).click();};
     for(const variant of ['admin','member']){
      const {page,context}=await openCase(variant);await bring(page);
@@ -1228,6 +1338,6 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
    }
   }
   if(process.env.AGENTNET_RENDERED_RETAIN){const keep=path.resolve(process.env.AGENTNET_RENDERED_RETAIN);assert(keep.startsWith('/tmp/'),'retained synthetic evidence must stay in /tmp');fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_TOPIC_INVITE_REGRESSION==="1"?"Comic DM/group Main/named topic: Recent/Selected/Since, private files excluded, stable scope after rename/archive/arrival, broad grant disclosure; desktop/mobile":process.env.AGENTNET_REPORT_HISTORY_REGRESSION==="1"?"Comic exact blocker history: arbitrary follow-up success stays separate; confirmed/refused/new attempt and newest empty snapshots; desktop/mobile":completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
  }finally{await browser?.close();server.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

@@ -16,6 +16,31 @@ func runRoom(ctx context.Context, a *client.Agent, args []string, out io.Writer)
 	if len(args) == 0 {
 		return errors.New("usage: room ask --pid PID [--kind question|task] TEXT | room wait REQUEST_ID")
 	}
+	if args[0] == "send" {
+		if err := receiverGuard(a, "room send", "a proactive message", ""); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("room send", flag.ContinueOnError)
+		pid := fs.String("pid", "", "this device's active agent participation")
+		topic := fs.String("topic", "", "existing topic ID; defaults to the invited scope or Main")
+		var files []client.OutgoingFile
+		fs.Func("file", "attach a file (repeatable)", func(path string) error { files = append(files, client.OutgoingFile{Path: path}); return nil })
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *pid == "" || len(fs.Args()) == 0 && len(files) == 0 {
+			return errors.New("usage: room send --pid PID [--topic ID] [--file PATH]... [TEXT]")
+		}
+		sent, err := a.SendAgentMessage(ctx, *pid, *topic, strings.Join(fs.Args(), " "), files...)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, sent.ID, sent.State)
+		if sent.Detail != "" {
+			fmt.Fprintln(out, sent.Detail)
+		}
+		return nil
+	}
 	cause := os.Getenv(client.RoomRequestEnv)
 	if cause == "" {
 		return errors.New("room asks and waits belong to a running group agent request")

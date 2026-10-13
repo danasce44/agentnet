@@ -4,7 +4,33 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
-## Unreleased
+## [0.8.24] — 2026-10-13
+
+- Allow active admitted agents to send ordinary proactive turns under their
+  exact current invitation, without requiring a fabricated incoming request (MEL-603).
+  Admitted human guests receive ordinary agent messages; linked history retains
+  their attribution after dismissal. Bootstrap archives keep all required reader
+  capabilities across retries, deletion and expiry without blocking other devices.
+- Capture the active visible topic on Bring In, defaulting empty to Main flow
+  rather than expanding to all topics (MEL-582).
+- Clear stale needs_human blocker phase once a request has a confirmed terminal
+  outcome; display settled host snapshots as nothing waiting any more (MEL-605).
+- Open chat pictures in a fullscreen viewer with zoom, pinch and pan,
+  including a 100% original-size view. On desktop, open the exact image in the
+  OS default image app; Download and Use as my picture remain available (MEL-543).
+- Keep Comic composer text transparent during selection, with a translucent
+  highlight so collective tags do not show overlapping textarea glyphs (MEL-613).
+- Correct question approval wording to describe unchanged native tools, skills
+  and permissions; remove the false editing-tool exclusion (MEL-597).
+- Show same-device agent questions once, clear
+  stale “Sending…” previews after delivery, and retain the selected agent for
+  new follow-ups. Correct retained history without replaying completed work (MEL-614).
+- Record own-agent consent before unrelated invitation fanout. Recover stored
+  group acceptances and their exact unsent invitation after restart, without
+  another click or another decision.
+- Show own-agent invitations as joining, with an explicit setup blocker when
+  the local agent is disabled. Keep them out of approval counts and controls;
+  show active only after the host's signed acceptance arrives (MEL-525).
 
 ## [0.8.23] — 2026-10-12
 

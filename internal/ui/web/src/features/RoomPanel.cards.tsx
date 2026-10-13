@@ -75,7 +75,7 @@ export function PendingCard({ g, t, busy, onAct }: { g: Guest; t: T.DMThread; bu
   const mine = g.can.decide;
   const store = useApp(), me = useStore(store, s => s.overview?.person?.label);
   const waiting=(t.guests||[]).find(x=>x.pid===g.pid)?.needs_update||[];
-  const waitFor = waiting.length?"Waiting for "+waiting.map(label => label === me ? "your other device" : label).join(", ")+" to update AgentNet":g.kind === "agent" ? (g.hostHere ? "Waiting for your OK" : "Waiting for " + g.hostName + "’s OK") : g.hostHere ? "You’re invited to help" : "Waiting for " + g.name + " to join";
+  const waitFor = waiting.length?"Waiting for "+waiting.map(label => label === me ? "your other device" : label).join(", ")+" to update AgentNet":g.ownerInvited ? g.stateText : g.kind === "agent" ? (g.hostHere ? "Waiting for your OK" : "Waiting for " + g.hostName + "’s OK") : g.hostHere ? "You’re invited to help" : "Waiting for " + g.name + " to join";
   return (
     <article aria-label={g.name + ", invited"} className={"pop-in rounded-2xl p-3 " + (mine ? "stroke bg-surface shadow-pop" : "border-2 border-dashed border-outline/40")}>
       <div className="flex items-center gap-3">

@@ -630,6 +630,9 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 			}
 		}
 	}
+	if info.HostHere && info.Claimable() {
+		fmt.Fprintf(&b, "To send an ordinary proactive message as this exact admitted agent, use agentnet room send --pid %s [--topic ID] TEXT. It requires no incoming request; current admission/topic/audience still apply. This sends now, not on a timer.\n", info.PID)
+	}
 	if j.Kind == envelope.KindTask {
 		if p, err := a.ProposalOf(j.ID); err == nil && p != nil {
 			b.WriteString(proposalPrompt(p))
@@ -832,7 +835,7 @@ func splitEmotion(out string) (text, emotion string, ok bool) {
 func (a *Agent) holdEndedOutputs(only string) (int, error) {
 	// Agent-to-agent questions/tasks are requests, not completed outputs. Their
 	// captured authority and running origin are checked just before delivery.
-	const outputs = `o.state IN (?, ?) AND o.pid IS NOT NULL AND o.origin LIKE 'agent:%' AND o.kind NOT IN ('question','task') AND (? = '' OR o.id = ?)`
+	const outputs = `o.state IN (?, ?) AND o.pid IS NOT NULL AND o.origin LIKE 'agent:%' AND o.kind NOT IN ('question','task') AND NOT (o.kind='message' AND o.origin='agent:proactive' AND o.sub IS NULL AND o.status IS NULL AND o.reply_to IS NULL AND o.target IS NULL) AND (? = '' OR o.id = ?)`
 	var n int
 	if err := a.store.db.QueryRow(`SELECT count(*) FROM outbox o WHERE `+outputs,
 		stateQueued, stateConvWaiting, only, only).Scan(&n); err != nil || n == 0 {
@@ -927,6 +930,9 @@ func (a *Agent) holdEndedOutputs(only string) (int, error) {
 // hand-over already started is not stopped. A version 1 envelope is not
 // looked at.
 func (a *Agent) mayDeliver(env envelope.Envelope) (bool, error) {
+	if allowed, err := a.proactiveDeliveryGate(env); err != nil || !allowed {
+		return false, err
+	}
 	if env.V == envelope.Version2 {
 		var sub, fp, state string
 		if err := a.store.db.QueryRow(`SELECT coalesce(sub,''),coalesce(recipient_fp,''),state FROM outbox WHERE id=?`, env.ID).Scan(&sub, &fp, &state); err != nil {

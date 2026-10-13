@@ -2,7 +2,7 @@
 // you allow it. Everything is read from the server's views; the phase of a
 // request comes from its actions[] (what may be done now) and stored state.
 import type { T } from "../api";
-import { agentName, agentWhere, askerWords, chatName, deviceWho, firstLine, isMine, nameOf, niceDevice, personName, personOf, plain, whoName } from "../model";
+import { agentName, agentWhere, askerWords, chatName, deviceWho, firstLine, isMine, latestReviewReport, nameOf, niceDevice, personName, personOf, plain, whoName } from "../model";
 
 // The words shared with the chat list live in model.ts; re-exported for this screen's files.
 export { Reason, chatName, chatOf, convTitle, decidable, isMine, nameOf, personOf, senderOf } from "../model";
@@ -58,10 +58,7 @@ export function remoteNeedsHumanDetail(m: Req, o: T.Overview | null): string {
   const c = m.continuation;
   if (!c?.host || !m.exec || m.exec.host !== c.host || m.exec.state !== "needs_human" || m.exec.attempt !== c.attempt) return "";
   const reports = (o?.review || []).filter(r => r.notice && r.peer === c.host && r.report?.host === c.host);
-  const settled = (r: T.ReviewItem) => !(r.report?.items || []).length && !r.report?.count;
-  const reportTime = (at: number | string) => typeof at === "number" ? at * 1000 : Date.parse(at);
-  reports.sort((a, b) => (reportTime(b.report!.at) - reportTime(a.report!.at)) || Number(settled(b)) - Number(settled(a)) || Date.parse(b.at) - Date.parse(a.at));
-  const item = reports[0]?.report?.items?.find(x => x.id === c.id && x.key === c.key && x.attempt === c.attempt && x.kind === m.kind && x.state === "needs_human" && !x.conv);
+  const item = latestReviewReport(reports)?.report?.items?.find(x => x.id === c.id && x.key === c.key && x.attempt === c.attempt && x.kind === m.kind && x.state === "needs_human" && !x.conv);
   return item?.excerpt || "";
 }
 
@@ -117,6 +114,8 @@ export type Phase = "decide" | "running" | "needs_human" | "stopped" | "closing"
 
 export function phaseOf(m: Req): Phase | null {
   const acts = m.actions || [];
+  const outcome = m.dir === "in" ? m.state : m.exec?.state;
+  if (isRequest(m) && ["done", "answered", "manual", "resolved", "declined", "proposal", "unavailable"].includes(outcome || "")) return null;
   if (m.continuation) return "needs_human";
   if (acts.includes("cancel")) return "running";
   const terminal = m.dir === "in" ? m.state : m.exec?.stale ? "" : m.exec?.state;

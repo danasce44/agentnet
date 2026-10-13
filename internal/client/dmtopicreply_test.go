@@ -43,7 +43,6 @@ func TestDMAgentReplyUsesLogicalRequest(t *testing.T) {
 func TestDMAgentOldAnsweredStatusRecovery(t *testing.T) {
 	w, conv, lids, stop := agentWorld(t)
 	phone := linkedVia(t, w.bob, "phone", func(ctx context.Context, id string) error { return w.bob.DecideLink(ctx, id, true) })
-	runAgent(t, phone)
 	pid := participate(t, w, conv, lids[:1], nil)
 	eventually(t, "sibling participation", func() bool { return stateAt(t, phone, pid).Claimable() })
 	stop() // construct an old successful job; no responder is launched

@@ -3452,6 +3452,11 @@ export class Engine {
         await this.requireHumanSupport(rec.to, gate.pin);
         if(c?.kind==="group")await this.requireGroupHumanSupport(rec.to,gate.pin);
       }
+      const proactiveCopy = rec.sub === "history" ? {...wire.parseHistory(rec.body),conv:rec.conv} : rec.sub === wire.SubDeviceHistory ? wire.parseDeviceHistory(rec.body).item : rec;
+      if (wire.proactiveAgent(proactiveCopy) || rec.required_cap === wire.CapProactiveAgent) {
+        const pin = await this.pinned(rec.to), profile = await this.profile(rec.to);
+        if (!await wire.profileSupports(profile || {},rec.to,(await this.pubOf(pin)).sign_key,wire.CapProactiveAgent)) throw Object.assign(new Error("Recipient cannot read proactive agent messages yet; update that device."), {code:rec.sub===wire.SubHistoryArchive?"history_archive_unsupported":"agent_identity_unsupported"});
+      }
       if(await this.topicCopy(rec))await this.requireTopicSupport(rec.to,await this.pinned(rec.to));
       if (await this.roomCopy(rec)) { // a room shape needs rm1 besides its own requirement (ROOM_V1 §2.5)
         const pin = await this.store.get("pins", rec.to);
@@ -5024,10 +5029,10 @@ export class Engine {
   }
 
   async admitGroupTurn(n,env,pin,base, admission = null) {
-    const room=!!n.human&&!n.sub&&!!n.pid&&n.pid===n.human.author_pid; // a person guest's turn (client roomGroupTurn): its PID is its author's
+    const room=!!n.human&&!n.sub&&!!n.pid&&n.pid===n.human.author_pid&&(!n.origin||n.origin==="ui"); // a person guest's turn (client roomGroupTurn): its PID is its author's
     if(n.pid&&!room) {
       if(n.human) {
-        if(n.human.proof.some(e=>e.role==="human"))throw new Hold("invalid","Group human guest execution audience is not enabled.");
+        if(n.human.proof.some(e=>e.role==="human")&&!wire.proactiveAgent(n))throw new Hold("invalid","Group human guest execution audience is not enabled.");
         const c=await this.groupRecord(n.conv);const sender=await this.personOf(env.from,pin, admission);
         return this.admitHumanTurn(n,env,pin,base,wire.parseGroupRoot(n.root),sender,c, admission);
       } // the group participation path does not read it (client admitConv; ROOM_V1 P3/P4)
@@ -5445,7 +5450,7 @@ export class Engine {
     }
     // Retained own-member history is inert; only its lifecycle gate differs
     // from live delivery. Exact targets, author keys and requests still bind it.
-    const retained=(h.sub==="excerpt"||!h.sub&&(["question","task","answer","result"].includes(h.kind)||progressOutput(h)))&&this.retainedAssistant(info,events);
+    const retained=(h.sub==="excerpt"||!h.sub&&(["question","task","answer","result"].includes(h.kind)||progressOutput(h)||wire.proactiveAgent({...h,conv})))&&this.retainedAssistant(info,events);
     if(!retiredEnd)await this.externalRole({...h,conv,replica:h.sub==="excerpt"},retained?{...info,state:"active"}:info,current,h.from,h.from_key,checks);
     await this.checkExternalReply({...h,conv},info,current,checks,true);
     return info;
@@ -5470,7 +5475,7 @@ export class Engine {
     if(!sender || !n.replica || n.attachments.length)throw new Hold("invalid","Group history is not from a current device or carries unexpected bytes.");
     let h;try{h=wire.parseHistory(n.body);}catch(e){throw new Hold("invalid",e.message);}
     if((JSON.parse(n.body).attachments||[]).some(a=>a.blob?.id||a.blob?.size||a.blob?.sha256))throw new Hold("invalid","Historical group file is not a manifest.");
-    if(h.pid&&h.human?.proof.some(e=>e.role==="human"))throw new Hold("invalid","Group human guest execution audience is not enabled.");
+    if(h.pid&&h.human?.proof.some(e=>e.role==="human")&&!wire.proactiveAgent({...h,conv:n.conv}))throw new Hold("invalid","Group human guest execution audience is not enabled.");
     if(h.pid||h.ref)return this.admitGroupParticipationHistory(n,env,pin,h,checks,packet,members, admission);
     if(h.kind!=="message"||h.sub||h.target||h.pid||h.agent_id||h.status||h.ref||h.origin&&h.origin!=="ui"||h.ts<=0||h.reply_to&&!wire.validID(h.reply_to))throw new Hold("invalid","Group history contains nonordinary input.");
     wire.checkTopic({...h,v:wire.Version2});
@@ -7307,7 +7312,7 @@ export class Engine {
       if (teams) teams.connected(f.includes("teams1"));
       // This device reads conversations and the attention hint (it never
       // alerts from the stream: its service worker shows the relay's pushes).
-      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSync, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; explicit own3/topic/follow-up scopes fit the 23-cap advertisement bound
+      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapProactiveAgent, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSync, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; explicit own3/topic/follow-up scopes fit the 23-cap advertisement bound
       await this.publishPerson().catch(() => {});
       // These existing, coalesced recovery jobs can wait for old proofs or
       // network replies. They must not delay the current user's durable send.
@@ -9780,7 +9785,8 @@ export class Engine {
     // admitted it earlier keeps it (a known limit, ROOM_V1 §4.1).
     if (agent && !historical && (info.state === "declined" || info.state === "dismissed")) throw new Hold("invalid", "an agent's turn after its participation ended");
     if (agent && !historical && (info.state !== "active" || info.held)) throw new Hold("proof_pending", "an agent's turn waits for its participation to be active");
-    if (n.agent_id && (n.agent_id !== info.agent_id || address !== info.host.address || fingerprint !== info.host.fingerprint || !["answer", "result"].includes(n.kind) && !progressOutput(n) || !n.reply_to || n.sub)) throw new Hold("invalid", "named answer differs from its participation host");
+    if (wire.proactiveAgent(n) && (n.agent_id || "") !== (info.agent_id || "")) throw new Hold("invalid", "proactive message differs from its exact admitted agent");
+    if (n.agent_id && (n.agent_id !== info.agent_id || address !== info.host.address || fingerprint !== info.host.fingerprint || !wire.proactiveAgent(n) && (!["answer", "result"].includes(n.kind) && !progressOutput(n) || !n.reply_to || n.sub))) throw new Hold("invalid", "named answer differs from its participation host");
   }
 
   // Outside hosts remain separate pinned proof, never ordinary room members.
@@ -9793,7 +9799,7 @@ export class Engine {
     await this.checkParticipationTopic(info.topic,n,checks);
     const member = [...members.values()].some((p) => p.devices.some((d) => d.address === address && d.fingerprint === fp));
     const host = info.host && address === info.host.address && fp === info.host.fingerprint;
-    if (!info.invite || (!info.external || members.size !== 2) && !members.group || n.pid !== info.pid) throw new Hold("proof_pending", "participation has incomplete pinned evidence");
+    if (!info.invite || (!info.external || members.size !== 2) && !members.group && !wire.proactiveAgent(n) || n.pid !== info.pid) throw new Hold("proof_pending", "participation has incomplete pinned evidence");
     if (n.sub === "event") {
       const ev = wire.parseEvent(n.body);
       if(members.group && member && (ev.author.address!==address || ev.author.fingerprint!==fp) && ev.type==="dismiss" && info.state==="dismissed" && !info.held && info.dismissalEvent===wire.eventJSON(ev))return;
@@ -9829,6 +9835,8 @@ export class Engine {
       if (!member || !n.target || n.target.address !== info.host.address || n.target.fingerprint !== info.host.fingerprint || n.target.agent_id !== info.agent_id || (members.group ? members.epochs.get(fp)!==n.target.group_admission : !!n.target.group_admission)) throw new Hold("invalid", "request does not name the exact invited agent and requester admission");
     } else if (["answer", "result"].includes(n.kind) || progressOutput(n)) {
       if (!host || n.agent_id !== info.agent_id || !n.reply_to) throw new Hold("invalid", "output does not belong to the exact invited agent");
+    } else if (wire.proactiveAgent(n) && host && (n.agent_id || "") === (info.agent_id || "")) {
+      // Ordinary agent message under its current signed participation.
     } else throw new Hold("invalid", "outside traffic is not an addressed participation turn");
   }
 
@@ -10383,7 +10391,8 @@ export class Engine {
       Object.assign(info, { role: inv.e.role || "", ...(inv.e.topic!=null?{topic:inv.e.topic}:{}), host: host(inv.e.host), inviter: author(inv.e.author)||priorAuthor(inv), grant: [...(inv.e.grant || [])], taskKeys: m.group && m.roomEvents?.has(inv.hash) ? (inv.e.task_keys||[]).filter((fp,i)=>m.epochs.get(fp)===inv.e.group.task_admissions?.[i]) : (inv.e.task_keys || []).filter((fp) => !departed(inv, fp)), audience: inv.e.audience || "", until: inv.e.until || 0,
         external: m.group ? inv.e.group.host_role === "visitor" : !m.has(inv.e.host.person),
         ...(m.group ? {group:inv.e.group} : {}),
-        ...(inv.e.host.agent_id ? { agent_id: inv.e.host.agent_id } : {}), note: inv.e.note, invited: inv.e.ts, state: "invited" });
+        ...(inv.e.host.agent_id ? { agent_id: inv.e.host.agent_id } : {}), note: inv.e.note, invited: inv.e.ts, state: "invited",
+        owner_invited: !inv.e.role && inv.e.author.person===inv.e.host.person && !!author(inv.e.author)?.human_keys?.includes(inv.e.author.fingerprint) });
     } else if (invites.size > 1) {
       Object.assign(info, { state: "conflict", conflict: "different invites share this participation id" });
     }
@@ -10466,7 +10475,7 @@ export class Engine {
         needsYou.push({reason:"agent_invite",role:"human",conv,pid:info.pid,peer:info.inviter?.address||"",why:(info.inviter?.label||"Someone")+" invited you to join this conversation as a guest.",excerpt:firstLine(info.note),at:first?iso(first.at):isoClaim(info.invited)||iso(this.now()),...(here?{actions:["accept","decline"]}:{decide_on:info.host.address})});
         continue;
       }
-      if (info.role === "human" || info.state !== "invited" || !mine(info.host)) continue;
+      if (info.role === "human" || info.state !== "invited" || info.owner_invited || !mine(info.host)) continue;
       // Listed when its first record reached this browser (msgs are oldest
       // first); the inviter's own time is only its claim.
       const first = msgs.find((m) => m.sub === "event" && m.pid === info.pid);
@@ -10520,7 +10529,7 @@ export class Engine {
     }
     const whose = hostHere ? "your" : label(info.host) + "'s";
     const v = { member:!!info.member || !!groupPeople && !info.external,pids:[info.pid],inviters:(info.inviters||[]).map(p=>this.personView(p)),pid: info.pid, state: info.state, host: this.personView(info.host), host_here: hostHere, inviter: this.personView(info.inviter),
-      ...(info.external ? { external: true } : {}),
+      ...(info.external ? { external: true } : {}), owner_invited: !!info.owner_invited,
       ...(info.agent_id ? { agent_id: info.agent_id } : {}),
       note: info.note, shared, missing, tasks_from: info.taskKeys.map((fp) => {
         const p = people.find((x) => x.devices.some((d) => d.fingerprint === fp));
@@ -10530,7 +10539,8 @@ export class Engine {
     switch (info.state) {
     case "pending": v.state_text = "Participation is waiting for verified invitation context."; break;
     case "invited":
-      v.state_text = hostHere ? "It names this browser to run an agent, but this browser runs none: it cannot accept."
+      v.state_text = info.owner_invited && !hostHere ? (info.held ? "Waiting for this invitation to verify on " : "Joining on ") + info.host.address + ". Waiting for that device to confirm. No further approval is needed."
+        : hostHere ? "It names this browser to run an agent, but this browser runs none: it cannot accept."
         : "Invited. " + label(info.host) + " accepts or declines it on " + info.host.address + ".";
       v.can_dismiss = true;
       break;

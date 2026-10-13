@@ -87,6 +87,7 @@ export { SendButton } from "../skin/SendButton";
 /** Field: a textarea over a mirror that draws the same text, with exact
  *  mentions as chips. The textarea keeps the caret, selection, IME and
  *  spelling; its own glyphs are transparent, so what shows is the mirror.
+ *  Selection tints the mirror without painting a second copy of the text.
  *  Both take their type metrics from one inline style, so no sheet can
  *  pull them apart. */
 export const Field = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & {
@@ -109,7 +110,7 @@ export const Field = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTML
     <div data-part="composer-field" className={"relative min-w-0 flex-1 overflow-hidden rounded-[23px] bg-canvas stroke transition-shadow duration-200 focus-within:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--an-agent-ink)_30%,transparent)] lg:rounded-2xl " + className}>
       <div ref={mirror} aria-hidden="true" className={"pointer-events-none absolute inset-0 overflow-hidden text-ink " + box} style={metrics}>{parts}</div>
       <textarea ref={ref} rows={1} {...rest} style={{ ...metrics, color: "transparent", outline: "none" }}
-        className={"relative block w-full resize-none bg-transparent caret-ink [scrollbar-width:none] placeholder:text-muted selection:bg-act selection:text-act-ink disabled:cursor-not-allowed " + box} />
+        className={"relative block w-full resize-none bg-transparent caret-ink [scrollbar-width:none] placeholder:text-muted selection:bg-act/40 selection:text-transparent disabled:cursor-not-allowed " + box} />
     </div>
   );
 });

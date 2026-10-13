@@ -163,10 +163,19 @@ coworkers who want to confirm they trust the right key. Also ask the Hub
 for this device's admin/member role; show unknown if unavailable or an older
 Hub does not report it. Address labels (including admin/) grant no role.`,
 
-	"room": `Usage: agentnet room ask --pid PID [--kind question|task] TEXT
+	"room": `Usage: agentnet room send --pid PID [--topic ID] [--file PATH]... [TEXT]
+       agentnet room ask --pid PID [--kind question|task] TEXT
        agentnet room wait REQUEST_ID
 
-Available inside a running group-agent request (AGENTNET_ROOM_REQUEST).
+send writes an ordinary proactive message as the exact active agent hosted here.
+Use dm agents CONV to find its PID. No incoming request or fabricated reply is
+required. The invited topic is the default; a whole-chat invitation defaults to
+Main. Current admission, keys and audience still apply at storage and handover.
+An explicitly delegated reply receiver keeps its frozen routing. The printed
+ID and delivery state prove only storage/custody/delivery, never completion.
+This sends now; it does not schedule a later message.
+
+ask and wait are available inside a running group-agent request (AGENTNET_ROOM_REQUEST).
 Ask another active group agent and wait for its correlated answer/result.
 The recipient's owner decides permission for every upstream origin. A question
 cannot assign a task. No platform ask-count or depth limits; stopping the

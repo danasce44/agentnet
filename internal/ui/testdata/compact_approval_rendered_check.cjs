@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
 const text='Review the synthetic launch checklist.\n\nKeep account permissions unchanged. Report concrete findings and remaining checks.\n'+('LongReferenceWithoutSpaces'.repeat(18));
-async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;const r=document.querySelector('#skin')?.shadowRoot;await Promise.all((r?.getAnimations({subtree:true})||[]).filter(a=>a.effect.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});}
+async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);});}
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
  try {
@@ -25,7 +25,12 @@ async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;c
     await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);
     const root=p.locator('#skin');
     await root.getByRole('button').filter({hasText:/Bob/}).filter({visible:true}).first().click();
-    const disclosure=root.locator('[data-approved-task-text]');await disclosure.waitFor();await settle(p);
+    // Terminal request cards deliberately start folded. Open the actual
+    // user-facing card before asserting its independent approved-text control.
+    const disclosure=root.locator('[data-approved-task-text]');await disclosure.waitFor({state:'attached'});
+    const request=disclosure.locator('xpath=ancestor::details[@data-request-disclosure]');
+    if(await request.count()){assert.equal(await request.getAttribute('open'),null,'terminal request folded at rest');await request.locator('summary').first().click();}
+    await disclosure.waitFor();await settle(p);
     assert.equal(await disclosure.getAttribute('open'),null,'closed at rest');
     assert.equal(await disclosure.locator('p').first().isVisible(),false,'instructions hidden at rest');
     assert.match(await root.locator('[data-proposal-provenance]').innerText(),revised?(incoming?/^Edited and sent this task/:/^You edited and sent this task/):(incoming?/^Approved this task/:/^You approved this task/));

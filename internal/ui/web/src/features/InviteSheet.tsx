@@ -173,7 +173,7 @@ function InviteFlow({ invite, open }: { invite: Invite; open: boolean }) {
       // "Bring Ledger in now" is the owner's own OK: let it join unless the
       // invitation already made it active.
       let joined = v.state === "active";
-      if (!joined && v.can_decide) {
+      if (!joined && !v.owner_invited && v.can_decide) {
         try { joined = (await store.api.decideAgent(v.pid, true)).state === "active"; } catch (e) {
           store.toast(upper(shownName) + " is invited but didn’t join: " + errorText(e) + " Let it join from “In this chat”.", "error");
           store.setPanel(true);

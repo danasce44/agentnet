@@ -21,6 +21,8 @@ const assert=require('node:assert/strict'),path=require('node:path');
    await page.locator('section[aria-label="Chats"]').waitFor();
    await page.getByRole('button',{name:/P7 person permission question/}).first().click();
   }
+  if(skin==='comic')await page.getByText(/answers with your native tools, skills and permissions unchanged/).filter({visible:true}).waitFor();
+  assert.equal(await page.getByText(/minus editing tools|without editing tools/).filter({visible:true}).count(),0,skin+width+': question card claims no tool exclusion');
   const open=page.getByRole('button',{name:/Approve Sergey/}).first();await open.waitFor();await open.click();
   const confirm=page.getByRole('button',{name:'Approve Sergey',exact:true});await confirm.waitFor();
   assert(await page.getByText(/all current and future verified devices/).count(),skin+width+': person scope explained');

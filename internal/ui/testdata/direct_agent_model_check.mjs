@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import * as model from '../web/src/model.ts';
+import { pendingSends } from '../static/optimistic.mjs';
+import { deviceHistoryDirection } from '../static/devicehistory.mjs';
 import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
@@ -20,6 +22,22 @@ assert.equal(who.name,'Selected agent');
 assert.equal(who.agent,true);
 assert.equal(who.mine,false,'own agent answer appears opposite the human request');
 assert.equal(threadAuthor(request,o,{},host,[request,answer]).mine,true);
+// A retained self-question must reconcile its outgoing preview before an
+// answer arrives, preserving both human authorship and the next agent target.
+const pending = pendingSends({});
+const files = [{name:'pasted-picture.png',size:391379,openable:true}];
+pending.begin('self-thread',{...request,files});
+pending.finish(request.id,{id:request.id,state:'queued'});
+const retained = {...request,files,history:true,device_history:{peer:host,recipient:host,direction:'in'}};
+const actual = {...retained,dir:deviceHistoryDirection(retained,'in'),state:'delivered'};
+const merged = pending.merge('self-thread',[actual]);
+assert.equal(merged.length,1,'stored self-question clears the Sending preview');
+assert.equal(pending.has(request.id),false);
+assert.equal(merged[0].files[0].openable,true,'actual attachment remains accessible');
+assert.equal(threadAuthor(merged[0],o,{},host,merged).mine,true,'self-question stays a human message');
+assert.equal(threadAgentID({peer:host,messages:merged}),agent,'follow-up before first answer keeps selected Codex');
+pending.begin('self-thread',{...request,id:'another'});
+assert.equal(pending.merge('self-thread',[{...request,id:'another',dir:'in'}]).length,2,'an incoming row alone cannot acknowledge a send');
 assert.equal(threadAuthor(answer,o,{},host,[{...request,state:'manual'},answer]).mine,true,'manual answer remains human');
 const remote = {...o.person,address:'owner/bezos',fingerprint:'owner-key',label:'Sergey'};
 const roomThread = {kind:'group',messages:[],members:[o.person],agents:[{pid:'remote',host:remote,inviter:o.person,state:'active',member:true,host_here:false},{pid:'local',host:o.person,inviter:o.person,state:'active',member:true,host_here:true}]};

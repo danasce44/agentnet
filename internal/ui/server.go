@@ -101,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/upload/discard", s.discard)
 	mux.HandleFunc("GET /api/files/{id}/{i}", s.file)
 	mux.HandleFunc("POST /api/file/request", s.requestFile)
+	mux.HandleFunc("POST /api/file/open-image", s.openImage)
 	mux.HandleFunc("POST /api/message/{what}", s.control)
 	mux.HandleFunc("POST /api/conversation/delete", s.deleteConversation) // livedelete.go
 	mux.HandleFunc("GET /api/topics", s.topics)                           // livetopics.go: one page of topics

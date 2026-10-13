@@ -14,7 +14,7 @@ async function world() {
   const fetch = async (url, o = {}) => {
     if (offline) throw new TypeError('Failed to fetch');
     const p = new URL(url).pathname;
-    if (p === '/v1/version') return json({ features: ['env2', 'person2', 'caps', 'notify1'], realm_id: 'test-realm' });
+    if (p === '/v1/version') return json({ features: ['env2', 'env3', 'person2', 'caps', 'notify1'], realm_id: 'test-realm' });
     if (p.endsWith('/profile')) return json(profiles.get(p.slice(11, -8)));
     if (p.endsWith('/agent-catalog')) return json(catalogs.get(p.slice(11, -14)) || []);
     if (p.startsWith('/v1/persons/') && p.endsWith('/chain')) {
@@ -66,11 +66,11 @@ async function world() {
     return wire.signEvent(sender.keys, { conv, pid, type, prev: prev || info.invite, ts: Math.floor(now / 1000), author: sender.author() });
   };
   const accept = async (pid) => { const ev = await decision(charlie, pid); for (const e of [alice, bob, charlie]) await receive(await from(charlie, e, { sub: 'event', pid, body: wire.eventJSON(ev) }), e); return ev; };
-  const sibling = async (owner, address) => {
+  const sibling = async (owner, address, human = false) => {
     const e = new Engine({ store: memoryStore(), now: () => now, base: owner.base, fetch });
     e.keys = await wire.newKeys(); e.address = address; e.pub = await wire.publicEntry(e.keys, address); e.fp = await wire.fingerprint(e.pub);
     const join = await wire.joinConsent(e.keys, address, owner.me.person, owner.me.seq + 1, owner.me.hash);
-    const next = await wire.nextRoster(owner.keys, owner.address, owner.roster, [...owner.me.devices.map((d) => pubs.get(d.address)), e.pub], join);
+    const next = await wire.nextRoster(owner.keys, owner.address, owner.roster, [...owner.me.devices.map((d) => pubs.get(d.address)), e.pub], join, owner.roster.label, human ? [...await wire.rosterHumans(owner.roster),e.fp] : null);
     await wire.verifyNext(next, owner.roster);
     const steps = [...await Promise.all(rosters.get(owner.me.person).map((r) => wire.parseRoster(r))), next];
     owner.me = await owner.personRecord(steps, 'self', owner.me); owner.roster = next;
@@ -269,5 +269,42 @@ async function world() {
   await c.historyStep(c.me.devices.find((d) => d.address === hostSibling.address), job);
   check(!(await c.store.all('outbox')).some((r) => r.conv === w.conv && r.sub === 'history'), 'external-host sibling receives no visitor-room history');
   for (const e of w.users) e.stop();
+}
+// Proactive ordinary agent traffic needs exact active admission, not a reply.
+{
+ const w=await world(),{alice:a,bob:b,charlie:c,mallory:m}=w;
+ const p=await a.inviteAgent({conv:w.conv,host:c.address,agent_id:w.agent.id,grant:[]});await w.drain(c);await w.drain(b);await w.accept(p.pid);
+ const fields={pid:p.pid,agent_id:w.agent.id,origin:'agent:proactive',emotion:'neutral',body:'Unsolicited ordinary agent update'};
+ const raw=await w.from(c,a,fields),id=await w.receive(raw,a);await w.receive(raw,a);
+ const message=(await a.dm(w.conv)).messages.find(row=>row.id===id);
+ check(message?.verified_agent&&message.agent_id===w.agent.id&&!message.reply_to,'proactive message keeps exact agent attribution without a fabricated request');
+ check((await a.store.get('inbox',id)).kind==='message'&&!await a.store.get('held',id),'ordinary proactive message is admitted once');
+ // Bootstrap and ordinary history retain the same named agent shape and
+ // require ams1 separately from archive-format support.
+ const later=await w.sibling(a,'alice/proactive-history',true),dev=a.me.devices.find(d=>d.address===later.address);
+ const item=a.itemOf(await a.store.get('inbox',id),false),parsed=wire.parseHistory(wire.historyJSON(item));
+ check(wire.proactiveAgent({...parsed,conv:w.conv})&&parsed.agent_id===w.agent.id,'named proactive history uses the live shape without a reply');
+ const copy=await a.historyCopy(dev,w.c,item);
+ const legacy=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapHistoryArchive];
+ await w.caps(later,legacy);
+ await a.store.write(await a.archives().prepare([copy],[],[],dev));
+ check((await a.store.get('outbox',copy.id)).state==='archive_staged','current signed human reader enters archive staging');
+ await a.archives().wake();if(a.archiveRun)await a.archiveRun;
+ await a.flushOutboxLane(true);
+ const descriptor=(await a.store.outboxSub(wire.SubHistoryArchive)).find(r=>r.to===later.address);
+ check(descriptor?.required_cap===wire.CapProactiveAgent&&descriptor.state==='waiting','archive descriptor waits independently for proactive reader support: '+JSON.stringify(descriptor?{required:descriptor.required_cap,state:descriptor.state,detail:descriptor.detail,error:descriptor.error}:(await a.store.prefix('kv','history-archive/')).map(r=>({state:r.state,error:r.error}))));
+ const ciphertext=descriptor.envelope;
+ await a.store.write([{s:'outbox',k:copy.id,v:{...(await a.store.get('outbox',copy.id)),body:''}}]);
+ await w.caps(later,[...legacy,wire.CapProactiveAgent]);await a.flushOutboxLane(true);
+ const resumed=await a.store.get('outbox',descriptor.id);
+ check(resumed.state==='custody'&&resumed.envelope===ciphertext,'upgraded archive reader receives unchanged descriptor despite erased local child body');
+ for(const [sender,delta] of [[m,{}],[c,{agent_id:wire.newID()}],[c,{agent_id:''}]]){
+  const bad=await w.receive(await w.from(sender,a,{...fields,...delta}),a);
+  check((await a.store.get('held',bad))?.reason==='invalid','wrong host or selected agent cannot impersonate admitted proactive author');
+ }
+ await a.dismissAgent(p.pid);await w.drain(c);
+ const late=await w.receive(await w.from(c,a,fields),a);
+ check((await a.store.get('held',late))?.reason==='invalid','removed agent cannot initiate future ordinary traffic');
+ for(const e of w.users)e.stop();
 }
 console.log('external-agent engine checks passed: ' + checks);

@@ -707,7 +707,7 @@ func (a *Agent) deliver(ctx context.Context, env envelope.Envelope, route *proto
 			}
 			// Waiting copies release when the recipient's signed capabilities
 			// change; progress is never sent unmarked to an older session.
-			if (n.proposal || conv != "" || required == protocol.CapHistoryArchive || required == protocol.CapModelSync || required == protocol.CapOwnSyncV2 || required == protocol.CapOwnSyncV3 || required == protocol.CapReadSync || required == protocol.CapTopicStateSync || required == protocol.CapProgress || required == protocol.CapAgentReaction) && errors.Is(err, errAgentIdentityUnsupported) {
+			if (n.proposal || conv != "" || sub == envelope.SubHistoryArchive || required == protocol.CapHistoryArchive || required == protocol.CapModelSync || required == protocol.CapOwnSyncV2 || required == protocol.CapOwnSyncV3 || required == protocol.CapReadSync || required == protocol.CapTopicStateSync || required == protocol.CapProgress || required == protocol.CapAgentReaction) && errors.Is(err, errAgentIdentityUnsupported) {
 				return SendResult{ID: env.ID, State: stateConvWaiting, Detail: WaitPeerUpdate + err.Error()}, a.store.setOutboxState(env.ID, stateConvWaiting, WaitPeerUpdate+err.Error(), "")
 			}
 			if retryable(err) {

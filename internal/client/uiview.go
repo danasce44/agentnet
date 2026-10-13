@@ -444,7 +444,7 @@ func (a *Agent) hostInvites() ([]ConvReview, error) {
 			a.Logf("needs-you: invitation %s of %s left out: %v", n.pid, n.conv, err)
 			continue
 		}
-		if !info.HostHere || info.State != PartInvited || info.Role == protocol.RoleHuman && info.Held != 0 {
+		if !info.HostHere || info.State != PartInvited || info.OwnerInvited || info.Role == protocol.RoleHuman && info.Held != 0 {
 			continue
 		}
 		detail := info.Inviter.Label + " invited your agent. Nothing runs unless you accept."

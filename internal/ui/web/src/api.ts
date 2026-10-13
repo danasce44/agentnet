@@ -98,6 +98,7 @@ export function api(host: Host) {
     stage: (file: File) => host.stage(file),
     discard: (ids: string[]) => post<unknown>("/api/upload/discard", { ids }),
     file: (id: string, index: number, dir?: string) => host.file(id, index, dir),
+    openImage: (id: string, index: number, dir: string) => post<unknown>("/api/file/open-image", { id, index, dir }),
     requestFile: (id: string, index: number) => post<unknown>("/api/file/request", { id, index }),
 
     // Typing (ephemeral; never content)

@@ -249,7 +249,7 @@ func (a *Agent) relayFeatures(ctx context.Context) ([]string, error) {
 // hint (advertisedCaps) it is at most protocol.MaxAdvertisedCaps long;
 // rm1 (protocol.CapRoom) says this program enforces every room reader rule
 // (ROOM_V1 §2.1), so what rm1 implies (rcv1 among them) is not listed.
-var ownCaps = []string{protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSync, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 23 includes agent1
+var ownCaps = []string{protocol.CapProactiveAgent, protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSync, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 23 includes agent1
 
 // capsPublisher is the one publisher of this run's capability records:
 // the daemon's and link.go's waiting session share the session id, and the
@@ -1391,7 +1391,7 @@ func (a *Agent) admitConv(ctx context.Context, env envelope.Envelope, in envelop
 	}
 	if root.Kind == protocol.ConvKindGroup && in.PID != "" && in.Human != nil {
 		for _, e := range in.Human.Proof {
-			if e.Role == protocol.RoleHuman {
+			if e.Role == protocol.RoleHuman && !envelope.ProactiveAgent(in) {
 				return hold(reasonInvalid, "group human guest execution audience is not enabled")
 			}
 		}

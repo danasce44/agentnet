@@ -128,6 +128,8 @@ func validateHumanInner(in Inner) error {
 	// An agent author (a room participant) only asks, labelled as an agent
 	// (ROOM_V1 §2.3); a person never carries an agent origin.
 	switch h, agent := in.Human, in.Human.AgentAuthor(); {
+	case ProactiveAgent(in) && agent && in.PID == h.AuthorPID:
+		// An ordinary message under its exact captured agent membership.
 	case in.Kind == KindMessage && in.Status == "" && in.Target == nil && in.AgentID == "" && !AgentOrigin(in.Origin) && in.Emotion == "" && in.PID == h.AuthorPID && !agent:
 		// an ordinary turn of a member or a person guest
 	case (in.Kind == KindQuestion || in.Kind == KindTask) && in.Target != nil && in.PID != "" && in.PID != h.AuthorPID && in.AgentID == "" && AgentOrigin(in.Origin) == agent && in.Status == "" && (in.ReceiverRoute == nil || !agent && h.AuthorPID == "" && in.ReceiverRoute.Op == "request"):

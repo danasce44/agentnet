@@ -125,10 +125,11 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
           const manifest={
             v:1,person:own.person,roster:own.hash,count:entries.length,format:'agentnet-history-v1'
           };
+          const required_cap=chosen.some(row=>row.sub==='history'&&wire.proactiveAgent({...wire.parseHistory(row.body),conv:row.conv}))?wire.CapProactiveAgent:wire.CapHistoryArchive;
           await gate(rows[0],checks);
           await e.store.write([{
             s:'kv',k:outgoing+id,v:{
-              id,to:rows[0].to,recipient_fp:rows[0].recipient_fp,manifest,...sealed,order:chosen[0].send_order??chosen[0].at,state:'prepared',children:chosen.map(r=>r.id)
+              id,to:rows[0].to,recipient_fp:rows[0].recipient_fp,manifest,...sealed,required_cap,order:chosen[0].send_order??chosen[0].at,state:'prepared',children:chosen.map(r=>r.id)
             }
           },...chosen.map(row=>({
             s:'outbox',k:row.id,v:{
@@ -199,7 +200,7 @@ export function historyArchive(e,Hold,StoreConflict,retryable){
         if(previous?.state!=='prepared')continue;
         await e.store.write([{
           s:'outbox',k:row.id,v:{
-            id:row.id,to:row.to,recipient_fp:row.recipient_fp,sub:wire.SubHistoryArchive,body,envelope,at,aside:true,state:'queued',required_cap:wire.CapHistoryArchive,attachments:[row.attachment],files:[{
+            id:row.id,to:row.to,recipient_fp:row.recipient_fp,sub:wire.SubHistoryArchive,body,envelope,at,aside:true,state:'queued',required_cap:row.required_cap||wire.CapHistoryArchive,attachments:[row.attachment],files:[{
               attachment:row.attachment,uploaded:true
             }]
           }

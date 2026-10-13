@@ -232,7 +232,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
             {!can("decline") && <p className="px-1 pt-1 text-[13px] text-muted">If you don’t allow it, nothing runs.</p>}
           </>}
           {phase === "needs_human" && <>
-            <p className="text-[14px] text-text-2">Reply supplies missing information. For a permission or environment problem, review the native agent on its host computer first. Asking again keeps the same permissions.</p>
+            <p className="text-[14px] text-text-2">This exact request still needs attention. A separate follow-up does not close it. If that follow-up finished the work, mark this request as handled. Reply supplies missing information. For a permission or environment problem, review the native agent on its host computer first. Asking again keeps the same permissions.</p>
             {m.continuation && <Button variant="act" size="lg" icon={<IconArrowBackUp size={20} />} disabled={!!busy} onClick={() => setAnswer({request: {...m.continuation!}, send: sendID(), question: said})}>Reply</Button>}
             {m.continuation?.host && <ResolveOwnRequest request={m.continuation} disabled={!!busy} />}
             {can("accept") && <Button variant="outline" size="lg" className="min-h-12!" icon={<IconRefresh size={19} />} disabled={!!busy} onClick={allow}>{busy === "accept" ? "Starting…" : "Ask again"}</Button>}
@@ -309,7 +309,7 @@ function seesWords(a: T.AgentView) {
 function effectWords(kind: string, phase: Phase, agent: string) {
   if (phase === "stopped") return "Running it again starts fresh; it doesn’t pick up where it stopped.";
   if (kind === "task") return "Runs once here, with " + agent + "’s usual permissions. It can change files.";
-  return capital(agent) + " answers with your setup, minus editing tools. Tools you already allow keep their effects.";
+  return capital(agent) + " answers with your native tools, skills and permissions unchanged. Tools you already allow keep their effects.";
 }
 
 // ---- pieces -------------------------------------------------------------------

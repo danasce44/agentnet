@@ -80,7 +80,16 @@ func testGroupParticipationHistoryLinkedRestartReorder(t *testing.T, dismissed, 
 	if stub.runs() != 1 || !strings.Contains(stub.last(), "PID_HISTORY_SELECTED_FILE") {
 		t.Fatalf("original execution %d", stub.runs())
 	}
+	var proactive ConvSent
 	if dismissed {
+		proactive, err = host.SendAgentMessage(tctx(t), p.PID, "", "Proactive update before dismissal")
+		if err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, "producer retains proactive original before dismissal", func() bool {
+			m, count := convMsg(t, producer, packet.State.Conv, func(m ConvMessage) bool { return m.LID == proactive.LID })
+			return count == 1 && m.VerifiedAgent && m.AgentID == record.ID
+		})
 		if _, err = w.alice.DismissParticipation(tctx(t), p.PID); err != nil {
 			t.Fatal(err)
 		}
@@ -280,6 +289,12 @@ func testGroupParticipationHistoryLinkedRestartReorder(t *testing.T, dismissed, 
 	}
 	if inboxCount(t, phone, `conv=? AND state IN ('agent-waiting','running','done','task-waiting')`, packet.State.Conv) != 0 || stub.runs() != 1 {
 		t.Fatal("linked histories executed/reran work")
+	}
+	if dismissed {
+		m, count := convMsg(t, phone, packet.State.Conv, func(m ConvMessage) bool { return m.LID == proactive.LID })
+		if count != 1 || !m.VerifiedAgent || m.AgentID != record.ID || m.PID != p.PID || m.Kind != envelope.KindMessage || m.ReplyTo != "" || !m.Replica {
+			t.Fatalf("dismissed proactive history attribution: %+v count=%d", m, count)
+		}
 	}
 	// An own linked sender cannot invent the original host or its own admission.
 	forged := output.item

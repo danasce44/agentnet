@@ -196,9 +196,9 @@ const T = { timeout: 15000 }, shots = process.env.AGENTNET_SCREENSHOTS || '';
         assert.deepEqual(errors,[],name+': page errors');await context.close();console.log('unified agent setup',name,'PASS');continue;
       }
       await p.getByRole('button', { name: /^People lists/ }).click();
-      await p.getByRole('heading', { name: 'People lists', exact: true }).waitFor(T);
+      await p.getByRole('heading', { name: 'People & agent lists', exact: true }).waitFor(T);
       await snap('teams');
-      await p.getByRole('button', { name: /Dock crew.*3 members/ }).click();
+      await p.getByRole('button', { name: /Dock crew.*3 people.*0 agents/ }).click();
       let team = p.getByRole('dialog', { name: 'Dock crew', exact: true });
       await team.getByRole('button', { name: 'Leave list' }).click();
       await p.getByText('The last manager cannot leave.', { exact: true }).waitFor(T);
@@ -245,6 +245,7 @@ const T = { timeout: 15000 }, shots = process.env.AGENTNET_SCREENSHOTS || '';
       }
       // New group opens Bring in. The team selection is also present there.
       const bring = p.getByRole('dialog', { name: 'Bring someone in', exact: true });
+      await bring.getByRole('radio',{name:/Whole chat/}).check();
       await bring.getByRole('radio',{name:/Add as a permanent member/}).check();
       await bring.getByText('Add people from a list', { exact: true }).waitFor(T);
       await bring.getByRole('button', { name: 'Close', exact: true }).click();
@@ -252,6 +253,7 @@ const T = { timeout: 15000 }, shots = process.env.AGENTNET_SCREENSHOTS || '';
       await p.evaluate(() => { __p24.clearInvitations(); __p24.openGroup(); });
       await p.getByRole('button', { name: width < 1024 ? 'Bring someone in' : 'Bring in', exact: true }).click();
       const existing = p.getByRole('dialog', { name: 'Bring someone in', exact: true });
+      await existing.getByRole('radio',{name:/Whole chat/}).check();
       await existing.getByRole('radio',{name:/Add as a permanent member/}).check();
       const bulk = existing.getByRole('region', { name: 'Invite team people' });
       await bulk.getByRole('combobox', { name: 'People list', exact: true }).selectOption('d'.repeat(64));

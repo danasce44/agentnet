@@ -908,15 +908,15 @@ func TestGroupTurnsT5StaleFanAndUnsupportedOperations(t *testing.T) {
 			unaffectedCopy = groupTurnEnvelope(t, w.alice, copy.ID)
 		}
 	}
+	// A blocked POST is not an offline sender: a still-running capability
+	// lookup can observe revocation and end that copy before the checkpoint.
+	// Stop the whole sender before removal, then refresh proof after reopen.
+	home := w.alice.home
+	w.alice.Close()
 	if err = w.bob.RemoveDevice(tctx(t), phone.Address); err != nil {
 		t.Fatal(err)
 	}
 	bobPerson, _, _ := w.bob.store.selfPerson(w.bob.Address)
-	if _, err = w.alice.refreshPerson(tctx(t), bobPerson.roster.Person, false); err != nil {
-		t.Fatal(err)
-	}
-	home := w.alice.home
-	w.alice.Close()
 	reopened, err := Open(home)
 	if err != nil {
 		t.Fatal(err)
@@ -931,6 +931,9 @@ func TestGroupTurnsT5StaleFanAndUnsupportedOperations(t *testing.T) {
 	var originalKey string
 	if err = reopened.store.db.QueryRow(`SELECT recipient_fp FROM outbox WHERE id=?`, removedCopy.ID).Scan(&originalKey); err != nil || originalKey != phone.Self().Fingerprint() {
 		t.Fatalf("original key changed: %q %v", originalKey, err)
+	}
+	if _, err = reopened.refreshPerson(tctx(t), bobPerson.roster.Person, false); err != nil {
+		t.Fatal(err)
 	}
 	handled, allowed, err := reopened.mayDeliverGroupTurn(removedCopy)
 	if !handled || allowed || err != nil {

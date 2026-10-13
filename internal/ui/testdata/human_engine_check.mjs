@@ -437,6 +437,28 @@ for (const ending of ['original', 'self']) {
  check(view.role==='human_guest'&&!view.members.some(m=>m.person===g.me.person),'guest has no membership');
 
  check(view.messages.some(m=>m.body==='chosen old group context')&&!view.messages.some(m=>m.body==='unshared old group context'),'only selected history disclosed');
+ // Ordinary agent messages share the accepted guest audience, without
+ // acquiring guest execution permission or requiring a fabricated request.
+ const agentPart=await a.inviteAgent({conv,host:b.address});await w.drain(b);
+ const agentInfo=(await b.agentConv(agentPart.pid)).info;
+ const accepted=await wire.signEvent(b.keys,{conv,pid:agentPart.pid,type:'accept',prev:agentInfo.invite,ts:Math.floor(now/1000),author:{...b.author(),group_admission:agentInfo.group.host_admission}});
+ const group=await b.groupRecord(conv);
+ await b.sendExternal(group,{kind:'message',pid:agentPart.pid,sub:'event',body:wire.eventJSON(accepted)},agentInfo);await w.drain(a);
+ check((await b.agentConv(agentPart.pid)).info.state==='active','host counts exact signed agent acceptance');
+ await a.discloseHumanPass();await b.discloseHumanPass();await w.drain(g);await g.retryHeld();
+ const events=await b.convEvents(conv),members=await b.dmMembers(group,events),audience=await b.roomPlan(group,events,members);
+ audience.author_pid=agentPart.pid;await wire.validateHumanTurn(audience,conv);
+ const proactive={conv,root:group.root,pid:agentPart.pid,human:audience,origin:'agent:proactive',emotion:'neutral',kind:'message',body:'Proactive group guest update'};
+ for(const reader of [a,g]) {
+  const sent=await w.from(b,reader,proactive),id=await w.receive(sent,reader);await w.receive(sent,reader);
+  const stored=await reader.store.get('inbox',id);
+  const held=await reader.store.get('held',id);
+  check(stored?.pid===agentPart.pid&&stored.origin==='agent:proactive'&&!stored.reply_to&&!held&&(await reader.store.all('inbox')).filter(r=>r.id===id).length===1,'ordinary proactive agent turn reaches captured member/guest once: '+reader.address+' '+JSON.stringify(held?{reason:held.reason,detail:held.detail}:stored?{pid:stored.pid,origin:stored.origin}:null));
+ }
+ await a.dismissAgent(agentPart.pid);await w.drain(b);await a.discloseHumanPass();await b.discloseHumanPass();await w.drain(g);
+ const afterEnd=await w.receive(await w.from(b,g,proactive),g);
+ const endedHeld=await g.store.get('held',afterEnd);
+ check((await g.agentConv(agentPart.pid)).info.state==='dismissed'&&['invalid','proof_pending'].includes(endedHeld?.reason)&&!await g.store.get('inbox',afterEnd),'exact locally dismissed agent cannot deliver new proactive messages, including a held captured-author proof');
  // Mixed active member readers must hold only their sealed copy, never the composer.
  for(const missing of [wire.CapGroupHumanParticipation,wire.CapGroup]) {
   const current=[...names,wire.CapGroupHumanParticipation];

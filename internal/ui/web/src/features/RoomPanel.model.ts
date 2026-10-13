@@ -77,6 +77,7 @@ export interface Guest {
   where?: string;
   hostName: string;            // whose agent, or the person
   hostHere: boolean;           // this installation hosts it (it is me, or my agent)
+  ownerInvited?: boolean;
   invitedBy: string;           // "you" or the inviter's name
   note?: string;               // the inviter's note ("Why?"), agents only
   state: string;
@@ -168,7 +169,7 @@ export function room(t: T.DMThread, o: T.Overview | null, names: Record<string, 
       where: a.host_here ? "this computer" : niceDevice(a.host.address),
       online: online(o, a.host.address), hostName: a.host_here ? "you" : personName(a.host), hostHere: a.host_here,
       invitedBy: inviterWord(a.inviter), note: a.note?.trim() || undefined,
-      state: a.state, stateText: a.state_text,
+      state: a.state, stateText: a.state_text, ownerInvited: a.owner_invited,
       shared: msgs.filter((m) => (a.shared || []).includes(m.id)), missing: a.missing,
       ...times(a.pid, a.state, a.invited && !a.invited.startsWith("0001") ? a.invited : undefined), working: working(a.pid),
       can: { decide: a.can_decide, dismiss: a.can_dismiss, end: false, leave: false },

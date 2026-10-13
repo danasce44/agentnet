@@ -10,7 +10,7 @@ import { Collapsible } from "@base-ui/react/collapsible";
 import { IconChevronDown, IconDevices } from "@tabler/icons-react";
 import type { T } from "../api";
 import { useApp } from "../context";
-import { ownReportResolution, when } from "../model";
+import { latestReviewReport, ownReportResolution, when } from "../model";
 import { Button } from "../ui/Button";
 import { Sheet } from "../ui/Sheet";
 import { capital, deviceWords, kindWord } from "./Approvals.words";
@@ -83,9 +83,7 @@ function HostReport({ host, notices, o }: { host: string; notices: T.ReviewItem[
   const store = useApp();
   const [busy, setBusy] = useState(false);
   // The newest snapshot says what waits there now; older ones are history.
-  const withReport = notices.filter((n) => n.report).sort((a, b) =>
-    b.report!.at - a.report!.at || b.at.localeCompare(a.at) || (b.report!.items || []).length - (a.report!.items || []).length);
-  const latest = withReport[0];
+  const latest = latestReviewReport(notices);
   const newest = [...notices].sort((a, b) => b.at.localeCompare(a.at))[0];
   const items = latest?.report?.items || [];
   const waiting = items.length || latest?.report?.count || 0;
@@ -100,7 +98,7 @@ function HostReport({ host, notices, o }: { host: string; notices: T.ReviewItem[
   return (
     <li className="rounded-2xl bg-surface p-3.5 stroke">
       <div className="flex items-baseline gap-2">
-        <p className="flex-1 font-bold leading-snug">{capital(where)}: {latest && waiting ? (waiting === 1 ? "1 request waits" : waiting + " requests wait") : "something waits for a person"}</p>
+        <p className="flex-1 font-bold leading-snug">{capital(where)}: {latest ? waiting ? (waiting === 1 ? "1 request reported" : waiting + " requests reported") : "nothing waits any more" : "something waits for a person"}</p>
         <time dateTime={newest.at} className="tnum shrink-0 text-[13px] text-muted">{when(newest.at)}</time>
       </div>
       {latest && items.length > 0 ? (
@@ -122,6 +120,7 @@ function ReportRow({ x, host, report, o }: { x: Item; host: string; report: T.Re
   const store = useApp();
   const [pick, setPick] = useState<Decision | null>(null);
   const decided = x.result && !x.result.refused;
+  const state = decided ? x.result!.state : x.state;
   const ownResolution = !decided && !x.actionable ? ownReportResolution(x, host, o) : null;
   // A DM or group request is decided here, never answered by hand: its
   // answer belongs in that conversation.
@@ -130,11 +129,11 @@ function ReportRow({ x, host, report, o }: { x: Item; host: string; report: T.Re
   const from = x.from ? capital(deviceWords(x.from, o)) : "Someone";
   return (
     <li className="rounded-xl bg-sunken px-3 py-2.5">
-      <p className="text-[15px] leading-snug"><b>{from}</b> {x.kind === "task" ? "gave it a task" : x.kind === "question" ? "asked it something" : "sent a " + kindWord(x.kind)} · {stateWords[x.state] || x.state}</p>
+      <p className="text-[15px] leading-snug"><b>{from}</b> {x.kind === "task" ? "gave it a task" : x.kind === "question" ? "asked it something" : "sent a " + kindWord(x.kind)} · {stateWords[state] || state}</p>
       <p className="pt-0.5 line-clamp-2 text-[14px] text-text-2 [overflow-wrap:anywhere]">{x.excerpt ? "“" + x.excerpt + "”" : "Its text isn’t shared with this device."}</p>
-      {x.state === "needs_human" && x.excerpt && <details className="mt-2"><summary className="cursor-pointer font-semibold">Read all available detail</summary><p className="pt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{x.excerpt}</p></details>}
-      {x.state === "needs_human" && !x.actionable && !ownResolution && <p className="pt-1 text-[13px]">Open it on {deviceWords(host, o)}.</p>}
-      {x.state === "running" && <p role="status" className="pt-1 text-[13px] text-text-2">{x.blocker === "seems_stuck" ? "Seems stuck · " : "Running · "}since {new Date(typeof x.since === "number" ? x.since * 1000 : x.since).toLocaleString()}</p>}
+      {x.state === "needs_human" && x.excerpt && <details className="mt-2"><summary className="cursor-pointer font-semibold">{decided ? "Earlier blocker" : "Read all available detail"}</summary><p className="pt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{x.excerpt}</p></details>}
+      {state === "needs_human" && !decided && !x.actionable && !ownResolution && <p className="pt-1 text-[13px]">Open it on {deviceWords(host, o)}.</p>}
+      {x.state === "running" && !decided && <p role="status" className="pt-1 text-[13px] text-text-2">{x.blocker === "seems_stuck" ? "Seems stuck · " : "Running · "}since {new Date(typeof x.since === "number" ? x.since * 1000 : x.since).toLocaleString()}</p>}
       {x.proposal && <details className="mt-2 text-[14px] [overflow-wrap:anywhere]">
         <summary>How this task was chosen</summary>
         <p>{deviceWords(x.proposal.asker, o)} asked: {x.proposal.question}</p>
