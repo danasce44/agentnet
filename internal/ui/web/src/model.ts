@@ -583,11 +583,20 @@ export const isRunningElsewhere = (c: T.ConvItem) => !!c.decide_on && !c.stale &
 /** Device requests use review, with a reason set from their local job state. */
 export const isWorkingReview = (r: T.ReviewItem) => !r.notice && r.reason === "agent_running";
 
+/** The newest host snapshot replaces its older blockers. Browser report times
+ * may be ISO strings; an empty settled snapshot wins a same-second tie. */
+export function latestReviewReport(notices: T.ReviewItem[]): T.ReviewItem | undefined {
+  const time = (at: number | string) => typeof at === "number" ? at * 1000 : Date.parse(at);
+  const settled = (r: T.ReviewItem) => !(r.report?.items || []).length && !r.report?.count;
+  return notices.filter(r => r.report).sort((a, b) =>
+    time(b.report!.at) - time(a.report!.at) || Number(settled(b)) - Number(settled(a)) || Date.parse(b.at) - Date.parse(a.at))[0];
+}
+
 /** A current human device can explicitly resolve its own host's exact report
  * item. This only offers the decision; the host checks roster, key and attempt. */
 export function ownReportResolution(x: T.ReportItem, host: string, o: T.Overview | null): T.ContinuationAction | null {
   const me = o?.person;
-  if (!me || me.state !== "self" || x.state !== "needs_human" || x.attempt < 1 || !["question", "task"].includes(x.kind) || !x.key || host === o?.me.address) return null;
+  if (!me || me.state !== "self" || x.result && !x.result.refused || x.state !== "needs_human" || x.attempt < 1 || !["question", "task"].includes(x.kind) || !x.key || host === o?.me.address) return null;
   if (!me.devices?.some(d => d.address === o?.me.address && d.human) || !me.devices.some(d => d.address === host)) return null;
   return {id:x.id,key:x.key,host,attempt:x.attempt};
 }

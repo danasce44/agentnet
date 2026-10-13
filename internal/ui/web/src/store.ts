@@ -370,7 +370,10 @@ export class Store {
     this.set({ tab, section });
     if (hidden && tab !== "settings") this.markOpenRead();
   }
-  openInvite(conv: string, selected?: string[], preset?: { who: string; label?: string; topic?: string }) { this.set({ invite: { conv, selected, topic: this.draft(conv).topic, ...preset } }); }
+  openInvite(conv: string, selected?: string[], preset?: { who: string; label?: string }) {
+    // Capture the visible scope once. Empty means Main flow, never all topics.
+    this.set({ invite: { conv, selected, ...preset, topic: this.draft(conv).topic || "" } });
+  }
   closeInvite() { this.set({ invite: null }); }
   setPanel(panel: boolean) { this.set({ panel }); }
 

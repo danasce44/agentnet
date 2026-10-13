@@ -6,6 +6,10 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Capture the active visible topic on Bring In, defaulting empty to Main flow
+  rather than expanding to all topics (MEL-582).
+- Clear stale needs_human blocker phase once a request has a confirmed terminal
+  outcome; display settled host snapshots as nothing waiting any more (MEL-605).
 - Open chat pictures in a fullscreen viewer with zoom, pinch and pan,
   including a 100% original-size view. On desktop, open the exact image in the
   OS default image app; Download and Use as my picture remain available (MEL-543).

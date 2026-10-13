@@ -4,7 +4,7 @@ import {stripTypeScriptTypes} from 'node:module';
 import {runInNewContext} from 'node:vm';
 import * as model from '../web/src/model.ts';
 const source=stripTypeScriptTypes((await readFile(new URL('../web/src/features/Approvals.words.ts',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replace(/^export \{.*\} from .*;\n/gm,'')).replace(/^export /gm,'');
-const words=runInNewContext(source+"\n({myAgent,myAgentSeed,remoteNeedsHumanDetail:typeof remoteNeedsHumanDetail==='function'?remoteNeedsHumanDetail:null})",{...model});
+const words=runInNewContext(source+"\n({myAgent,myAgentSeed,phaseOf,remoteNeedsHumanDetail:typeof remoteNeedsHumanDetail==='function'?remoteNeedsHumanDetail:null})",{...model});
 const host='owner/bezos',local='owner/zenbook',id='request',key='verified-key',attempt=2;
 const m={id,from:'owner/linux-laptop',to:host,dir:'out',kind:'question',body:'Who is Bernard?',author:{},history:true,exec:{host,state:'needs_human',attempt,detail:'needs_human'},continuation:{host,id,key,attempt}};
 const person={person:'own',address:local,devices:[{address:local},{address:host},{address:m.from}]};
@@ -28,4 +28,17 @@ assert.equal(words.remoteNeedsHumanDetail(m,overview([notice([item]),notice([{..
 assert.equal(words.remoteNeedsHumanDetail({...m,exec:{...m.exec,state:'answered'}},overview([notice([item])])),'','terminal card never retains old blocker');
 assert.equal(words.remoteNeedsHumanDetail({...m,continuation:undefined},overview([notice([item])])),'','no inferred continuation authority');
 assert.deepEqual(m.continuation,{host,id,key,attempt},'presentation preserves exact reply/resolve binding');
+for (const state of ['done','answered','resolved','declined','proposal','unavailable'])
+ assert.equal(words.phaseOf({...m,exec:{...m.exec,state},actions:['continue']}),null,'a confirmed terminal outcome cannot display an old continuation as a new human decision');
+assert.equal(words.phaseOf({...m,actions:['continue']}),'needs_human','a different later request succeeding never closes this exact blocker');
+const old=notice([item],100),empty=notice([],101);
+assert.equal(model.latestReviewReport([old,empty]),empty,'newest empty report settles historical blockers');
+assert.equal(model.latestReviewReport([old,notice([],100)]).report.items.length,0,'settled snapshot wins a same-second tie');
+const iso=notice([],'1970-01-01T00:01:41Z');
+assert.equal(model.latestReviewReport([old,iso]),iso,'ISO browser report time participates in ordering');
+const own={...base,person:{...person,state:'self',devices:[{address:local,human:true},{address:host}]}};
+assert.deepEqual(model.ownReportResolution({...item,result:{state:'resolved',refused:''}},host,own),null,'host-confirmed resolution offers no further human decision');
+assert.equal(model.ownReportResolution(item,host,own).attempt,attempt,'a current blocker retains an exact explicit resolution');
+assert.equal(model.ownReportResolution({...item,result:{state:'needs_human',refused:'request changed'}},host,own).attempt,attempt,'a refused decision never closes a blocker');
+assert.equal(model.ownReportResolution({...item,attempt:3},host,own).attempt,3,'a new blocked attempt remains distinct from an earlier resolved attempt');
 console.log('Remote needs-human host and exact latest report detail PASS');

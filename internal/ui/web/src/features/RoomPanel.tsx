@@ -103,8 +103,7 @@ export async function bringIn(store: Store, t: T.DMThread, wide: boolean, who?: 
   }
   const later = since ? shareable(t).filter((m) => m.at > since).map((m) => m.id) : [];
   if (!wide) store.setPanel(false);
-  const previous = pid ? [...(t.agents || []), ...(t.guests || [])].find(p => p.pid === pid) : undefined;
-  store.openInvite(t.id, later.length ? later : undefined, who ? { who, label: "Since they left", ...(previous ? { topic: previous.topic } : {}) } : undefined);
+  store.openInvite(t.id, later.length ? later : undefined, who ? { who, label: "Since they left" } : undefined);
 }
 
 function GroupInviteCard({ invite: i }: { invite: GroupInvite }) {
