@@ -21,11 +21,21 @@ checks are unchanged; CORS, CSP, hash/digest verification and trust still apply.
 The exact three-file candidate compiles and passes all 36 Android JVM tests in
 22 s in an isolated copy. That proves source compilation/policy regression, not
 a corrected released APK's runtime behavior. Before any future publication,
-complete the fresh mixed-version and pinned skin gate, tag-built artifacts,
+complete the final pinned skin gate, tag-built artifacts,
 actual Android gallery install/use/trust and warm/cold upgrade checks. See
 [V0_8_26.md](plans/V0_8_26.md). The authoritative interaction checklist is
 `.agentnet/v26-skin-usability.md`, edited by Codex; peer reports supply evidence.
-No extra Git branch or worktree was created.
+Fresh mixed-version qualification against exact published v0.8.25 passed
+128.320 s without a skip. The Go/client/Hub/host tree is unchanged from v0.8.25,
+so its valid race/native evidence is retained by exact tree comparison. Android
+release-variant unit/lint checks pass (36 tests; zero lint errors). Claude's
+standalone skin interaction inventory and diff have been reviewed; the two
+failed-send draft corrections pass fresh focused journeys in all three skins.
+The owner's Pulp avatar selection/focused gate and final native/artifact gates
+remain before publication and rollout.
+No v0.8.26 branch/worktree was created. The owner explicitly assigned a separate
+`feat/v0.8.27` worktree to the existing tab-3 worker; preserve that active work
+during v0.8.26 cleanup and remove it after reviewed v0.8.27 integration.
 
 ## Current release — v0.8.25 skins, October 13, 2026
 

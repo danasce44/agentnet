@@ -10,6 +10,14 @@ This record starts with v0.8.1; earlier releases remain on the
   subresources are allowed; navigation, native bridge, other hosts/repositories,
   credentials, query strings and unsafe paths remain blocked. This corrects the
   gallery failure in v0.8.25 and requires a new APK release.
+- Update the Classic, Holonet and Zoom gallery skins with visible Settings,
+  usable phone controls and correct chat navigation. Zoom opens chats from its
+  people list and offers Reply in the message view. Asking an agent preserves
+  the selected target through sends and retries; own-device requests omit an
+  ineligible default reply receiver. Topic selection, chat mute, reminders and
+  enabled Project space controls stay reachable in their conversation.
+
+The skin candidate is under final interaction review; v0.8.26 is not published.
 
 ## [0.8.25] — 2026-10-13
 
