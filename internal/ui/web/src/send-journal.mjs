@@ -20,7 +20,8 @@ const changed = new Set();
 export function onJournalChange(fn) { changed.add(fn); return () => { changed.delete(fn); }; }
 function write(storage, workspace, entries) {
   storage.setItem(key(workspace), JSON.stringify(entries));
-  for (const fn of [...changed]) fn();
+  // A listener's failure is its own: the journal is already written.
+  for (const fn of [...changed]) { try { fn(); } catch (_) { /* the listener's own */ } }
 }
 export function saveBatch(storage, workspace, entries) {
   const pending = readPending(storage, workspace);

@@ -68,7 +68,7 @@ export function Details({ children, label = "Details" }: { children: ReactNode; 
   return (
     <Collapsible.Root className="mt-2">
       <Collapsible.Trigger className="group -ml-2 inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-[14px] font-bold text-text-2 hover:bg-sunken">
-        {label}<IconChevronDown size={16} className="transition-transform duration-200 group-data-[panel-open]:rotate-180" aria-hidden="true" />
+        {label}<IconChevronDown size={16} className="transition-transform duration-200 motion-reduce:transition-none group-data-[panel-open]:rotate-180" aria-hidden="true" />
       </Collapsible.Trigger>
       <Collapsible.Panel><dl className="rounded-xl bg-sunken px-3.5 py-2.5">{children}</dl></Collapsible.Panel>
     </Collapsible.Root>

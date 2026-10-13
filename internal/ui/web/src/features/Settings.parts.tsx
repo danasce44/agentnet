@@ -26,7 +26,7 @@ export function GroupLabel({ children, id }: { children: ReactNode; id?: string 
 /** Tile: a section's coloured sticker icon. Pastels with ink, in both themes (like avatars). */
 export function Tile({ color, children, size = 36 }: { color: string; children: ReactNode; size?: 36 | 44 }) {
   return (
-    <span aria-hidden="true" className="grid shrink-0 place-items-center rounded-xl stroke text-[#1B1530]" style={{ width: size, height: size, background: color }}>
+    <span aria-hidden="true" className="grid shrink-0 place-items-center rounded-xl stroke text-on-fill" style={{ width: size, height: size, background: color }}>
       {children}
     </span>
   );

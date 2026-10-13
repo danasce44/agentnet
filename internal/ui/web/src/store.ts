@@ -11,6 +11,7 @@ import { api, errorText, type Api, type T } from "./api";
 import type { Host, HostEvent, OpenContext } from "./host";
 import { messageTarget } from "./model";
 import { mainPreferences, personRoots } from "./person-topics.mjs";
+import { skin as brand } from "./skin/brand";
 
 export type Conn = "loading" | "live" | "lost" | "updating" | "gone";
 // A thread names its agent's device (peer) whenever that is known: an
@@ -72,7 +73,7 @@ export interface State {
 
 export const topicChangeKey = (c: Pick<T.TopicChange, "conv" | "peer" | "id" | "root">) => JSON.stringify([c.conv || "", c.peer || "", c.root ? "root" : c.id || ""]);
 
-const draftsKey = (ws: string) => "agentnet.messenger.drafts." + ws;
+const draftsKey = (ws: string) => brand.storage + ".drafts." + ws;
 
 // unsentIn: what a reload would lose: a draft's text or files, or a send
 // not yet stored.

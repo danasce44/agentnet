@@ -139,7 +139,7 @@ function List({ selected, onPick, rows, title, desktop }: { selected?: Id; onPic
             <span className="block text-[12px] font-bold uppercase tracking-[0.08em]">Needs your OK</span>
             <span className="line-clamp-2 block font-semibold leading-snug">{requests.length === 1 ? "“" + requests[0].name + "” asks to join as you" : requests.length + " devices ask to join as you"}</span>
           </span>
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#1B1530] text-white"><IconChevronRight size={20} aria-hidden="true" /></span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-on-fill text-white"><IconChevronRight size={20} aria-hidden="true" /></span>
         </button>
       )}
       <ProfileRow o={o} selected={selected === "profile"} onPick={() => onPick("profile")} rowRef={(el) => { rows.profile = el; }} desktop={desktop} />

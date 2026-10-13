@@ -141,6 +141,9 @@
   window.agentnetOpen = deliverChannel; // device.mjs: a notification was clicked
   const skinsListeners = new Set();
   const go = (id, hash) => { const u = new URL(location.href); u.searchParams.set("skin", id); if (hash !== undefined) u.hash = hash; location.assign(u); };
+  // The release serving this page, as its overviews say (host.api below), and
+  // the gallery's release comparison once its module has loaded.
+  let runningVersion = "", newerRelease = null;
   const common = {
     version: 1,
     ...(window.__agentnetPlatform === "android" ? { platform: "android", android: window.__agentnetAndroid, onBack: window.__agentnetOnBack } : {}),
@@ -159,7 +162,12 @@
     skins: [],
     onSkinsChange(fn) { skinsListeners.add(fn); return () => { skinsListeners.delete(fn); }; },
     selectSkin(id) {
-      if (!common.skins.some((s) => s.id === id)) throw new Error("Unknown skin");
+      const skin = common.skins.find((s) => s.id === id);
+      if (!skin) throw new Error("Unknown skin");
+      // Once this page knows its release (from an overview), a package that
+      // names a newer one is not chosen (static/skins.go does the same for
+      // installed packages; a browser-local one would otherwise still run).
+      if (skin.agentnet && newerRelease && newerRelease(skin.agentnet, runningVersion)) throw new Error("This skin needs AgentNet " + skin.agentnet + " or newer. Update AgentNet first.");
       go(id);
     },
   };
@@ -179,9 +187,9 @@
   // The skin gallery (skin-gallery.mjs): published packages from one fixed
   // repository, verified, stored like an import; choosing one asks for trust.
   // The running version comes from the overviews this page has read.
-  let runningVersion = "";
   try {
-    const { gallery } = await import("/assets/skin-gallery.mjs");
+    const { gallery, newer } = await import("/assets/skin-gallery.mjs");
+    newerRelease = newer;
     common.gallery = gallery({ running: () => runningVersion, changed: refreshSkins });
   } catch (_) { /* a program without it: import still works */ }
 

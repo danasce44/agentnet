@@ -7,6 +7,7 @@ import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import { IconBrush, IconCheck } from "@tabler/icons-react";
 import { useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { errorText } from "../api";
 import { useApp } from "../context";
 import type { Host, SkinEntry } from "../host";
 import { paintTheme, type Theme } from "../owned";
@@ -15,11 +16,13 @@ import { Sheet } from "../ui/Sheet";
 import { Tag } from "../ui/Tag";
 import { SkinGallery } from "./Settings.gallery";
 import { Card, GroupLabel, Hint, PageHead } from "./Settings.parts";
+import { Mark, skin as brand } from "../skin/brand";
 
 export type { Theme };
-const themeKey = "agentnet.theme";
-/** This skin's own id in the catalog. */
-export const COMIC = "comic";
+const themeKey = brand.themeKey;
+/** This skin's own id in the catalog (installed) and in this browser (local:). */
+export const COMIC = brand.id;
+const isHere = (id: string) => id === brand.id || id === "local:" + brand.id;
 
 export function savedTheme(): Theme {
   try {
@@ -66,19 +69,9 @@ function Preview({ t }: { t: "light" | "dark" }) {
   );
 }
 
-// Comic's own mark: speech bubbles in its sticker style.
-function ComicMark() {
-  return (
-    <svg viewBox="0 0 44 44" className="size-11 shrink-0" aria-hidden="true">
-      <rect x="1" y="1" width="42" height="42" rx="12" fill="#FFD43B" stroke="#1B1530" strokeWidth="1.5" />
-      <path d="M9 13h17a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-9l-5 4v-4h-3a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3z" fill="#FFFFFF" stroke="#1B1530" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M33 20h2a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-1v3l-4-3h-7a3 3 0 0 1-3-3" fill="#A897FF" stroke="#1B1530" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 const skinWords = (s: SkinEntry) =>
-  s.id === COMIC ? "AgentNet’s own skin: chats, agents and OKs as bright stickers."
+  isHere(s.id) ? brand.blurb
     : s.builtin ? "Built into AgentNet."
     : s.local ? "Stored in this browser. It can read your chats and act as you."
     : "Installed on this computer. It can read your chats and act as you.";
@@ -92,7 +85,7 @@ export function AppearanceSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadi
   // The host refreshes its catalog in place when a package is imported or removed.
   useEffect(() => host.onSkinsChange(refresh), [host]);
   // Comic is always listed first: it is the skin drawing this page.
-  const skins = host.skins.some((s) => s.id === COMIC) ? host.skins : [{ api: 1, id: COMIC, name: "Comic", builtin: true }, ...host.skins];
+  const skins = host.skins.some((s) => isHere(s.id)) ? host.skins : [{ api: 1, id: brand.id, name: brand.name, builtin: brand.id === "comic" }, ...host.skins];
   // A gallery skin, once stored, is offered like any other: Use, then trust.
   const pick = (id: string) => setTarget(host.skins.find((s) => s.id === id) || null);
 
@@ -112,7 +105,7 @@ export function AppearanceSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadi
                 </span>
                 <span className="flex min-h-11 items-center justify-between gap-1 px-2.5 py-1.5">
                   <span className="text-[15px] font-semibold">{themeWords[t]}</span>
-                  <Radio.Root value={t} className={"grid size-6 shrink-0 place-items-center rounded-full stroke " + (theme === t ? "bg-[#1B1530] text-act" : "bg-surface")}>
+                  <Radio.Root value={t} className={"grid size-6 shrink-0 place-items-center rounded-full stroke " + (theme === t ? "bg-on-fill text-act" : "bg-surface")}>
                     <Radio.Indicator><IconCheck size={14} stroke={3} aria-hidden="true" /></Radio.Indicator>
                   </Radio.Root>
                 </span>
@@ -126,10 +119,10 @@ export function AppearanceSection({ titleRef }: { titleRef?: React.Ref<HTMLHeadi
           <GroupLabel id="appearance-skin">Skin</GroupLabel>
           <Card className="divide-y divide-hairline">
             {skins.map((s) => {
-              const here = s.id === COMIC;
+              const here = isHere(s.id);
               return (
                 <div key={s.id} className="flex min-h-16 items-center gap-3 px-4 py-3">
-                  {here ? <ComicMark /> : <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl stroke bg-sunken text-ink"><IconBrush size={22} /></span>}
+                  {here ? <Mark /> : <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl stroke bg-sunken text-ink"><IconBrush size={22} /></span>}
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 font-semibold">{s.name}{here && <Tag tone="ok">In use</Tag>}{s.local && <Tag>This browser</Tag>}</p>
                     <Hint>{skinWords(s)}</Hint>
@@ -177,11 +170,16 @@ function SwitchSkin({ skin, onClose }: { skin: SkinEntry | null; onClose: () => 
   const drafts = Object.values(store.get().drafts);
   const files = drafts.some((d) => d.files && d.files.length);
   const text = store.hasUnsent();
-  const go = () => { if (skin) store.host.selectSkin(skin.id); };
+  // The host refuses a skin this release cannot run (it needs a newer AgentNet).
+  const go = () => {
+    if (!skin) return;
+    try { store.host.selectSkin(skin.id); }
+    catch (e) { store.toast(errorText(e), "error"); onClose(); }
+  };
   const trusted = !!skin && !!skin.builtin;
   return (
     <Sheet open={!!skin} onOpenChange={(open) => { if (!open) onClose(); }} title={skin ? "Use " + skin.name + "?" : ""}
-      footer={<div className="flex flex-col gap-2 sm:flex-row-reverse"><Button variant="act" className="sm:flex-1" disabled={files} onClick={go}>Use {skin?.name}</Button><Button variant="outline" className="sm:flex-1" onClick={onClose}>Stay in Comic</Button></div>}>
+      footer={<div className="flex flex-col gap-2 sm:flex-row-reverse"><Button variant="act" className="sm:flex-1" disabled={files} onClick={go}>Use {skin?.name}</Button><Button variant="outline" className="sm:flex-1" onClick={onClose}>Stay in {brand.name}</Button></div>}>
       {skin && (
         <div className="space-y-3">
           <p>AgentNet reloads with {skin.name}. The bar at the top of it takes you back to Comic in one step.</p>

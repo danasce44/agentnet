@@ -169,7 +169,7 @@ function WorkspaceControl({ variant }: { variant: "coin" | "pill" }) {
         <>
           <button type="button" onClick={() => setMenu(true)} aria-label={"Workspace: " + label + ". Switch or join another"}
             className="flex h-11 min-w-0 max-w-[60vw] items-center gap-2 rounded-xl bg-surface pl-1.5 pr-2.5 stroke shadow-pop-sm press">
-            <span aria-hidden="true" className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-[#1B1530] font-display text-[13px] font-extrabold text-[#FFD43B]">{letters}</span>
+            <span aria-hidden="true" className="grid size-[30px] shrink-0 place-items-center rounded-[9px] bg-on-fill font-display text-[13px] font-extrabold text-[#FFD43B]">{letters}</span>
             <span className="truncate text-[15px] font-extrabold">{label}</span>
             <IconChevronDown size={16} stroke={2.4} aria-hidden="true" className="shrink-0" />
           </button>
@@ -214,7 +214,7 @@ function WorkspaceMenu({ ws, revision, onChanged, onDone, onJoin, onRename, onLe
             <li key={w.id} className={"flex items-center gap-1 rounded-2xl " + (here ? "bg-surface stroke" : "border-[1.5px] border-transparent lg:border")}>
               <button type="button" onClick={() => pick(w)} disabled={!here && !connected} aria-current={here ? "true" : undefined}
                 className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-sunken disabled:opacity-60 aria-[current]:hover:bg-transparent">
-                <span aria-hidden="true" className={"grid size-10 shrink-0 place-items-center rounded-xl font-display text-[15px] font-extrabold stroke " + (here ? "bg-act text-act-ink" : "bg-[#1B1530] text-[#FFD43B]")}>{coinLetters(name)}</span>
+                <span aria-hidden="true" className={"grid size-10 shrink-0 place-items-center rounded-xl font-display text-[15px] font-extrabold stroke " + (here ? "bg-act text-act-ink" : "bg-on-fill text-[#FFD43B]")}>{coinLetters(name)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-bold">{name}</span>
                   <span className={"block truncate text-[13px] " + (here ? "font-semibold text-ok-ink" : "text-muted")}>{line}</span>

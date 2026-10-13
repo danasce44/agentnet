@@ -7,8 +7,9 @@ import { EmojiPicker as Picker, defaultEmojiDataResolver, useSkinTone, type Emoj
 import { IconChevronDown, IconDots, IconMoodPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { usePortal } from "../owned";
 import { reactionChoices } from "../reaction-preferences.mjs";
+import { skin as brand } from "../skin/brand";
 
-const toneKey = "agentnet.messenger.skin-tone";
+const toneKey = brand.storage + ".skin-tone";
 // The emoji data ships in the package (m/emoji/en/), next to this module.
 const emojiBase = new URL("m/emoji", import.meta.url).href;
 const tones: SkinTone[] = ["none", "light", "medium-light", "medium", "medium-dark", "dark"];

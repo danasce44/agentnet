@@ -11,7 +11,7 @@ const fs = require('fs'), http = require('http'), path = require('path'), assert
 const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT || 'playwright-core');
 const base = path.resolve(__dirname, '../static') + '/';
 const other = 'c'.repeat(32), hostOf = (n) => n.toString(16).padStart(32, '0'), digest = 'f'.repeat(64);
-const skin = `export async function mount(root,host){window.mounts=(window.mounts||0)+1;window.skinHost=host;const h=document.createElement('h1');h.textContent='Fixture skin in '+host.workspace.name;root.append(h);host.onOpen(()=>{});host.listen((e)=>{if(e.type==='change')host.api('/api/overview?topics=1').catch(()=>{});});await host.api('/api/overview?topics=1');}export function unmount(root){root.replaceChildren();}`;
+const skin = `export async function mount(root,host){window.mounts=(window.mounts||0)+1;window.skinHost=host;const h=document.createElement('h1');h.textContent='Fixture skin in '+host.workspace.name;root.append(h);host.onOpen(()=>{});host.listen((e)=>{if(e.type==='change')host.api('/api/overview').catch(()=>{});});await host.api('/api/overview?topics=1');}export function unmount(root){root.replaceChildren();}`;
 
 const world = () => {
   let generation = 1;
@@ -77,7 +77,7 @@ const server = http.createServer((req, res) => {
       const page = await browser.newPage({ viewport: { width, height } }), errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (['error', 'warning'].includes(m.type()) && !m.text().startsWith('Failed to load resource')) errors.push(m.type() + ': ' + m.text()); });
-      page.on('response', (r) => { const p = new URL(r.url()).pathname; if (r.status() >= 400 && r.status() !== 409 && !['/favicon.ico', '/assets/local-skins.mjs'].includes(p)) errors.push(r.status() + ' ' + p); }); // 409: the retired handle, asked on purpose // optional files a program may lack
+      page.on('response', (r) => { const p = new URL(r.url()).pathname; if (r.status() >= 400 && r.status() !== 409 && !['/favicon.ico', '/assets/local-skins.mjs', '/assets/skin-gallery.mjs'].includes(p)) errors.push(r.status() + ' ' + p); }); // 409: the retired handle, asked on purpose // optional files a program may lack
       await page.addInitScript((d) => localStorage.setItem('agentnet.skin.trusted.fixture', d), digest);
       await page.goto(origin + '/?skin=fixture');
       await page.getByRole('heading', { name: 'Fixture skin in This computer' }).waitFor();

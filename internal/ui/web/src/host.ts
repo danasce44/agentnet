@@ -138,7 +138,8 @@ export interface Host {
     has(id: string): boolean;
     select(id: string): void;
     onChange(fn: (e: { id: string }) => void): () => void;
-    join?(body: { name: string; invite: string; agent: string; id?: string }): Promise<Host>;
+    /** Resolves the new membership's bound transport (not a full host: the host remounts the skin). */
+    join?(body: { name: string; invite: string; agent: string; id?: string }): Promise<{ workspace: Workspace }>;
     disconnect?(id: string): Promise<void>;
     state?(id: string): Record<string, unknown>;
     // Present only where this computer's program can route a membership it

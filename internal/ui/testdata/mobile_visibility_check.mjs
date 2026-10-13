@@ -61,7 +61,7 @@ async function storeJourney(platform) {
     },
   };
   const { native, ...globals } = env;
-  const Store = runInNewContext(storeSource + '\nStore', { ...globals, api, errorText, pendingSends, messageTarget, mainPreferences, personRoots });
+  const Store = runInNewContext(storeSource + '\nStore', { ...globals, api, errorText, pendingSends, messageTarget, mainPreferences, personRoots, brand: { storage: 'agentnet.messenger' } });
   const store = new Store(host);
   await store.start();
   const opened = store.open({ kind: 'dm', id: 'conversation' });

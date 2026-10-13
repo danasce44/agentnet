@@ -45,7 +45,7 @@ const report = (window.__report = { globals: [], direct: [], outside: [], errors
 // through host.android, host.onBack and host.clipboardImage.
 for (const name of ['agentnet', 'agentnetOpen', 'agentnetEngine', 'agentnetWorkspace', 'agentnetWorkspaces', 'agentnetLens',
   '__agentnetPlatform', '__agentnetAndroid', '__agentnetOnBack', '__agentnetNativeVisible', '__agentnetNativeClipboardImage',
-  '__agentnetNativeAppJSON', 'agentnetNativeBack', 'agentnetNativeVisibility', 'AgentNetAndroid']) {
+  '__agentnetNativeAppJSON', '__agentnetNativeSkinFolder', 'agentnetNativeBack', 'agentnetNativeVisibility', 'AgentNetAndroid']) {
   Object.defineProperty(window, name, { configurable: false, get() { report.globals.push(name); return undefined; }, set() { report.globals.push(name + '='); } });
 }
 const own = (path, init = {}) => realFetch(path, { ...init, headers: { ...(init.headers || {}), 'X-Contract-Host': '${marker}' } });

@@ -48,7 +48,7 @@ export function RoomPanel() {
 
   return (
     <>
-      {!roomy && <div aria-hidden="true" onClick={close} className="fade-in fixed inset-0 z-30 bg-[#1B1530]/30" />}
+      {!roomy && <div aria-hidden="true" onClick={close} className="fade-in fixed inset-0 z-30 bg-scrim/30" />}
       <aside aria-label="In this chat"
         className={"fade-in flex w-[360px] shrink-0 flex-col border-l-[1.5px] border-outline bg-surface " + (roomy ? "h-full" : "fixed inset-y-0 right-0 z-40 shadow-pop")}>
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b-[1.5px] border-outline px-5">

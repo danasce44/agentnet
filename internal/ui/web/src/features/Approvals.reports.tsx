@@ -65,7 +65,7 @@ export function Reports({ notices, o }: { notices: T.ReviewItem[]; o: T.Overview
         <IconDevices size={20} className="shrink-0 text-text-2" aria-hidden="true" />
         <span className="flex-1 font-bold">Reports from other computers</span>
         <span className="tnum grid h-6 min-w-6 place-items-center rounded-full bg-surface px-1.5 text-[13px] font-bold text-text-2 stroke">{hosts.length}</span>
-        <IconChevronDown size={20} className="shrink-0 transition-transform duration-200 group-data-[panel-open]:rotate-180" aria-hidden="true" />
+        <IconChevronDown size={20} className="shrink-0 transition-transform duration-200 motion-reduce:transition-none group-data-[panel-open]:rotate-180" aria-hidden="true" />
       </Collapsible.Trigger>
       <Collapsible.Panel className="overflow-hidden px-4 pb-4">
         <p className="text-[14px] text-text-2">Another computer said requests wait for a person there. Each card says who decides them from their own devices.</p>

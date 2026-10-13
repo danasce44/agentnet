@@ -15,7 +15,7 @@ import { InviteSheet } from "./InviteSheet";
 import { bringIn, PendingInvitations, RoomSheet } from "./RoomPanel";
 import { agentRejoinState } from "./RoomPanel.model";
 import { Header, GuestBar, helpers, type Helper } from "./Conversation.header";
-import { TopicBar, TopicEnd } from "./Conversation.topics";
+import { TopicBar, TopicEnd, TopicStart } from "./Conversation.topics";
 import { OrganizeMessages } from "./Conversation.organize";
 import { ContributeHistory } from "./Conversation.import";
 import { PersonTopics } from "./PersonTopics";
@@ -89,7 +89,7 @@ function OpenView({ open }: { open: NonNullable<Open> }) {
   const title = t ? (t.kind === "group" ? t.title || "this group" : roomTitle(t)) : threadAgentName(ctx);
 
   return (
-    <section aria-label={title} className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+    <section aria-label={title} data-part="conversation" className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
       <Header ctx={ctx} wide={wide} helpers={hs} canInvite={canInvite} />
       {t && <PendingInvitations t={t} />}
       {!wide && <GuestBar helpers={hs} onDismissed={setLeft} />}
@@ -99,7 +99,7 @@ function OpenView({ open }: { open: NonNullable<Open> }) {
       }}/> : <TopicBar thread={ctx.thread||undefined} dm={ctx.dm||undefined} />}
       {/* Another topic swaps only the messages: header, topic bar and composer stay. */}
       <Swap id={open.id} className="flex min-h-0 flex-1 flex-col" side="flex min-h-0 flex-1 flex-col" enter="an-topic-in" leave="an-topic-out" ms={MOTION.topic} label="timeline">
-      <Timeline ctx={ctx} messages={messages} focus={open.focus} focusSeq={open.focusSeq} selected={selected} onSelect={toggle} end={<TopicEnd ctx={ctx} />}
+      <Timeline ctx={ctx} messages={messages} focus={open.focus} focusSeq={open.focusSeq} selected={selected} onSelect={toggle} start={<TopicStart ctx={ctx} messages={messages} />} end={<TopicEnd ctx={ctx} />}
         footer={left && (
           // The room panel's words; the timeline keeps its last lines clear of it.
           <div role="status" className="pop-in flex items-center gap-3 rounded-2xl stroke bg-ink py-2 pl-4 pr-2 text-canvas shadow-pop">

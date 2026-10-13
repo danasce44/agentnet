@@ -120,7 +120,7 @@ function PhoneTabs({ tab, oks, overview, store, main, scroll }: { tab: Tab; oks:
         <Swap id={tab} className="min-h-0 flex-1 overflow-clip" side="h-full" {...pages} ms={MOTION.page} label="tab">
           <div ref={box} className="h-full overflow-y-auto" onScroll={(e) => { if (tab === "chats") scroll.current = e.currentTarget.scrollTop; }}>{main}</div>
         </Swap>
-        <nav aria-label="Main" className="grid grid-cols-4 border-t-[1.5px] border-outline bg-surface pb-[env(safe-area-inset-bottom)]">
+        <nav aria-label="Main" data-part="tabs" className="grid grid-cols-4 border-t-[1.5px] border-outline bg-surface pb-[env(safe-area-inset-bottom)]">
           {tabs.map((t) => (
             <button key={t.id} type="button" onClick={() => store.showTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
               className={"relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[12px] font-semibold " + (tab === t.id ? "text-ink" : "text-muted")}>
@@ -149,7 +149,7 @@ function Desktop({ tab, oks, overview, store, main }: { tab: Tab; oks: number; o
   const pane = settings ? "settings" : open ? convKey(open, views) : "none";
   return (
     <div className="grid h-full grid-cols-[76px_minmax(300px,360px)_1fr] bg-canvas">
-      <nav aria-label="Main" className="flex flex-col items-center gap-2 border-r-[1.5px] border-outline bg-[#1B1530] py-3 text-white">
+      <nav aria-label="Main" data-part="rail" className="flex flex-col items-center gap-2 border-r-[1.5px] border-outline bg-rail py-3 text-rail-ink">
         <WorkspaceCoin />
         {tabs.map((t) => (
           <button key={t.id} type="button" onClick={() => store.showTab(t.id)} aria-current={tab === t.id ? "page" : undefined}

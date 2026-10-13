@@ -116,7 +116,7 @@ function Bubble({ m, ctx, all, first = true, last = true, status, compact, group
 
   const terminal = !selecting && !readOnly && !grouped && phaseOf(m) === "stopped";
   const body = (
-    <div data-message-bubble tabIndex={wide && live && !selecting ? 0 : undefined} role={wide && live ? "group" : undefined} aria-label={wide && live ? who.name + ", " + timeOf(m.at) : undefined}
+    <div data-message-bubble data-part="bubble" tabIndex={wide && live && !selecting ? 0 : undefined} role={wide && live ? "group" : undefined} aria-label={wide && live ? who.name + ", " + timeOf(m.at) : undefined}
       className={"relative min-w-0 max-w-full stroke px-3.5 py-2 focus-visible:outline-offset-2 " + shape + (selected ? " ring-[3px] ring-agent-ink ring-offset-2 ring-offset-canvas" : "")}>
       {wide && hot && live && !selecting && !editing && <Toolbar m={m} ctx={ctx} can={can} acts={acts} mine={who.mine} />}
       {last && !who.mine && (
@@ -148,7 +148,7 @@ function Bubble({ m, ctx, all, first = true, last = true, status, compact, group
 
   return (
     <MessageLinks.Provider value={(id, conv) => { void store.openMessage(id, {conv}); }}>
-    <div data-mid={m.id} data-send-target={grouped && !isThreadMsg(m) ? m.pid : undefined} className={"min-w-0 [overflow-wrap:anywhere] " + (first && !compact ? "mt-3.5" : "mt-1")}>
+    <div data-mid={m.id} data-part="message" data-from={who.mine ? "me" : who.agent ? "agent" : "person"} data-send-target={grouped && !isThreadMsg(m) ? m.pid : undefined} className={"min-w-0 [overflow-wrap:anywhere] " + (first && !compact ? "mt-3.5" : "mt-1")}>
       <div hidden={terminal} className={"group/msg relative flex px-3 sm:px-4 [touch-action:pan-y] " + (who.mine ? "justify-end" : "justify-start") + (selecting ? " cursor-pointer" : "")}
         onClick={selecting && can.select ? (e) => { if (inside(e)) onSelect?.(m.id); } : undefined}
         onPointerEnter={wide ? () => setHot(true) : undefined} onFocus={wide ? () => setHot(true) : undefined}

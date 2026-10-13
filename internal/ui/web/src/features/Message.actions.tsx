@@ -189,7 +189,7 @@ export function Confirm({ open, onOpenChange, title, children, ok, onOk, danger 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal="trap-focus" disablePointerDismissal>
       <Dialog.Portal container={portal}>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-[#1B1530]/40 transition-opacity duration-200 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0" />
+        <Dialog.Backdrop className="fixed inset-0 z-40 bg-scrim/40 transition-opacity duration-200 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0" />
         <Dialog.Popup {...modal} role="alertdialog" className="fixed left-1/2 top-1/2 z-50 w-[min(440px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-3xl bg-canvas p-5 text-ink outline-none stroke shadow-pop transition-[opacity,scale] duration-200 ease-out-soft data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-opacity">
           <Dialog.Title className="font-display text-[22px] font-extrabold leading-tight">{title}</Dialog.Title>
           <Dialog.Description render={<div />} className="mt-2 space-y-2 text-[15px] text-text-2">{children}</Dialog.Description>
@@ -328,7 +328,7 @@ export function DetailsSheet({ open, onOpenChange, m, ctx, who }: { open: boolea
         )}
         <details className="group rounded-2xl bg-sunken px-3.5 py-1">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-semibold [&::-webkit-details-marker]:hidden">
-            Technical details <IconChevronDown size={18} className="transition-transform group-open:rotate-180" />
+            Technical details <IconChevronDown size={18} className="transition-transform motion-reduce:transition-none group-open:rotate-180" />
           </summary>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pb-2 text-[13px]">
             {rows.map(([k, v]) => [

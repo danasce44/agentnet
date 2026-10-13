@@ -129,6 +129,16 @@ program, `agentnet`, that is both the laptop client and the Hub.
   Without the tag it skips, and a skip is not a pass. CI's Linux native job
   checks out full history with tags and sets `AGENTNET_REQUIRE_COMPAT=1`, which
   makes a missing tag a failure.
+- **Skins gate, required before every release** (owner rule, v0.8.25: "if we
+  ever change the contract, the skins should also be updated"). The skin
+  contract is docs/UI_SKINS.md with its route reference docs/HOST_API_ROUTES.md
+  and the Comic kit (internal/ui/web/src/skin/README.md). Before tagging, in an
+  agentnet-skins checkout pin `upstream.json` to the release candidate and run
+  `AGENTNET_SOURCE=<this repository> npm test`: every skin in the collection,
+  standalone and overlay, must pass against the candidate. A skin that fails is
+  fixed in agentnet-skins (and its gallery release republished) or the contract
+  change is reverted; never release past it. A skin's `agentnet` field names the
+  release it was checked against.
 - Claims must match evidence: cross-compiling is not running on that OS;
   a local container test is not a platform deployment.
 - Schema changes are new SQL steps appended in the owning store; never edit

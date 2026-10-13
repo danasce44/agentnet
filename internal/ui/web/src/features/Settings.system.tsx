@@ -125,7 +125,7 @@ const hostOf = (endpoint: string) => { try { return new URL(endpoint).host; } ca
 // renaming and leaving use WorkspaceSwitcher's own sheets.
 function Coin({ ws, label }: { ws: Workspace; label?: string }) {
   return (
-    <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl stroke font-display text-[17px] font-extrabold text-[#1B1530]"
+    <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-xl stroke font-display text-[17px] font-extrabold text-on-fill"
       style={{ background: COINS[hue(ws.realm || ws.id)] }}>{initials(label || workspaceLabel(ws))}</span>
   );
 }

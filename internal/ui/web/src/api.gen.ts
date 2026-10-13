@@ -1041,6 +1041,7 @@ export interface Skin {
   style?: string;
   document?: string;
   files?: string[];
+  agentnet?: string;
   digest?: string;
 }
 

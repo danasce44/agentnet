@@ -23,9 +23,10 @@ type Item =
 const RUN = 5 * 60e3;
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function Timeline({ ctx, messages, focus, focusSeq, selected, onSelect, empty, footer, end }: {
+export function Timeline({ ctx, messages, focus, focusSeq, selected, onSelect, empty, footer, start, end }: {
   ctx: Ctx; messages: AnyMsg[]; focus?: string; focusSeq?: number; selected: string[] | null; onSelect: (id: string) => void; empty: ReactNode;
   footer?: ReactNode;      // a snackbar over the timeline's end (Bring back): the last lines stay clear of it
+  start?: ReactNode;       // before the first message (the skin's topic intro, skin/TopicIntro.tsx)
   end?: ReactNode;         // after the last message (a topic that is done or archived says so)
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -98,9 +99,10 @@ export function Timeline({ ctx, messages, focus, focusSeq, selected, onSelect, e
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={box} onScroll={onScroll} className="dots h-full overflow-y-auto overscroll-contain">
-        <div ref={inner} role="log" aria-live="polite" aria-relevant="additions" aria-label="Messages" className="mx-auto flex min-h-full w-full max-w-[800px] flex-col justify-end pb-6 pt-3"
+        <div ref={inner} role="log" aria-live="polite" aria-relevant="additions" aria-label="Messages" data-part="timeline" className="mx-auto flex min-h-full w-full max-w-[800px] flex-col justify-end pb-6 pt-3"
           style={reserve ? { paddingBottom: reserve + 24 } : undefined}>
           {items.length === 0 && empty}
+          {items.length > 0 && start}
           {items.map((it) =>
             it.type === "day" ? <DayChip key={it.key} label={it.label} />
               : it.type === "new" ? <NewLine key={it.key} />
@@ -220,7 +222,7 @@ function Activity({ ctx, messages }: { ctx: Ctx; messages: AnyMsg[] }) {
         </div>
       ))}
       {entries.length > 0 && (
-        <div role="status" className="fade-in flex items-center gap-2 text-[13px] font-semibold text-text-2">
+        <div role="status" data-part="typing" className="fade-in flex items-center gap-2 text-[13px] font-semibold text-text-2">
           <span className="ml-0.5 flex -space-x-1.5">{entries.slice(0, 3).map((e) => <PersonAvatar key={e.address} name={e.label || "?"} seed={e.person || e.address} size={24} />)}</span>
           {names.length === 1 ? names[0] + " is typing" : names.length === 2 ? names[0] + " and " + names[1] + " are typing" : names.length + " people are typing"}
           <Dots />

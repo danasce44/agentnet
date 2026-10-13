@@ -51,6 +51,16 @@ export function ConnectionBanner() {
 function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateRequiredView; app: boolean; reload: boolean; unsent: boolean }) {
   const store = useApp(), host = store.host;
   const [busy, setBusy] = useState(false), [note, setNote] = useState("");
+  // The app methods exist on every host; only the app's own status says
+  // whether it can update itself here (docs/UI_SKINS.md, host.appStatus).
+  const [supported, setSupported] = useState<{ ok: boolean; problem?: string } | null>(null);
+  useEffect(() => {
+    if (!app || host.platform === "browser" || !host.appStatus) return;
+    let alive = true;
+    host.appStatus().then((s) => { if (alive) setSupported({ ok: !!s.app_update_supported, problem: s.problem }); },
+      () => { if (alive) setSupported({ ok: false }); });
+    return () => { alive = false; };
+  }, [host, app]);
   useEffect(() => {
     if (host.platform !== "android" || !host.appStatus) return;
     let alive = true, generation = 0;
@@ -67,7 +77,7 @@ function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateR
     return () => { alive = false; generation++; off?.(); };
   }, [host, store]);
   const browser = host.platform === "browser";
-  const canUpdate = app && !browser && !!host.appUpdate;
+  const canUpdate = app && !browser && !!host.appUpdate && !!supported?.ok;
   const update = async () => {
     if (busy || !host.appUpdate) return;
     setBusy(true); setNote("");
@@ -76,7 +86,7 @@ function UpdateRequired({ required, app, reload, unsent }: { required: T.UpdateR
     finally { if (store.isActive()) setBusy(false); }
   };
   const how = host.platform === "android" ? "Install the newer AgentNet APK over this app to keep your chats and identity. Do not uninstall it." : required.auto || (reload && unsent ? "Send or clear your drafts here: the page then reloads with your server's current version. What you send waits in this browser until then."
-    : browser ? "This page reloads with your server's current version." : canUpdate ? "" : "Run agentnet update on this computer.");
+    : browser ? "This page reloads with your server's current version." : canUpdate || (app && !supported) ? "" : app ? supported?.problem || "This app can’t update itself here: install the new version over it." : "Run agentnet update on this computer.");
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 border-b-[1.5px] border-outline bg-danger-bg px-4 py-3 text-danger">
       <div className="min-w-0 flex-1 space-y-0.5">

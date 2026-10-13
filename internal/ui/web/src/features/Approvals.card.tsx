@@ -22,6 +22,7 @@ import { focusComposer } from "./Composer.focus";
 import { decidersWords } from "./Approvals.reports";
 import { Command, Details } from "./Settings.parts";
 import { ResolveOwnRequest } from "./RequestResolution";
+import { RequestFrame } from "../skin/RequestFrame";
 
 export function ApprovalCard({ message, dm, thread, compact, content }: { message: Req; dm?: T.DMThread | null; thread?: T.Thread | null; compact?: boolean; content?: ReactNode }) {
   const store = useApp();
@@ -143,7 +144,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
 
   if (phase === "closing") {
     return (
-      <Shell tone="quiet" label={notice ? "Report" : "Needs a person"} at={m.at} labelledBy={"appr-" + m.id}>
+      <RequestFrame tone="quiet" label={notice ? "Report" : "Needs a person"} at={m.at} labelledBy={"appr-" + m.id}>
         <div className="px-4 pt-3.5 pb-4">
           <h3 id={"appr-" + m.id} className="font-display text-[19px] font-bold leading-snug">
             {notice ? capital(deviceWords(m.from, o)) + " has requests waiting for a person there" : capital(agent) + "’s follow-up needs a person"}
@@ -155,7 +156,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
           title={notice ? "Dismiss this report?" : "Mark as handled?"}
           body={notice ? "It's cleared on this computer only. A newer report from " + deviceWords(m.from, o) + " shows again if requests still wait." : "Nothing is sent to " + asker.name + "."}
           confirm={notice ? "Dismiss" : "Mark as handled"} onConfirm={() => act({ do: "resolve", id: m.id }, notice ? "Report dismissed." : "Marked as handled. Nothing was sent.")} />
-      </Shell>
+      </RequestFrame>
     );
   }
 
@@ -177,7 +178,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
           <span className="truncate">{named ? agent + " is your agent, so this waits for you" : "This is for your agent, so it waits for you"}</span>
         </p>
       )}
-      <Shell tone={phase === "running" ? "work" : phase === "stopped" ? "quiet" : "act"} at={m.at}
+      <RequestFrame tone={phase === "running" ? "work" : phase === "stopped" ? "quiet" : "act"} at={m.at}
         label={phase === "decide" ? "Needs your OK" : phase === "needs_human" ? "Needs you" : phase === "running" ? "Working" : stoppedWord}>
         <Duo asker={asker} agent={mine.name} sub={named ? mine.where : "On " + mine.where.replace(/^Your agent · /, "")} seed={myAgentSeed(m, o, dm)} device={deviceKind(mine.address)}
           mood={phase === "running" ? "working" : phase === "decide" || phase === "needs_human" ? "waiting" : "neutral"} live={phase === "decide"} />
@@ -252,7 +253,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
             <IconLock size={16} className="shrink-0 text-ink" aria-hidden="true" />{phase === "needs_human" ? "Reply answers this request. Ordinary chat messages don’t restart it." : "Only you can approve this. Typing in chat can’t approve it."}
           </p>
         )}
-      </Shell>
+      </RequestFrame>
 
       {answer && <AnswerSheet question={answer.question} onClose={() => setAnswer(null)} onSend={async (text) => {
         const c = answer.request;
@@ -313,26 +314,6 @@ function effectWords(kind: string, phase: Phase, agent: string) {
 
 // ---- pieces -------------------------------------------------------------------
 
-const bands = {
-  act: "bg-act text-act-ink dots",
-  work: "bg-agent text-agent-ink dots",
-  quiet: "bg-sunken text-text-2",
-};
-
-function Shell({ tone, label, at, children, labelledBy }: { tone: keyof typeof bands; label: string; at: string; children: ReactNode; labelledBy?: string }) {
-  return (
-    <article aria-labelledby={labelledBy} className={"fade-in w-full overflow-hidden rounded-2xl bg-surface stroke " + (tone === "quiet" ? "" : "shadow-pop")}>
-      <header className={"flex items-center justify-between gap-3 border-b-[1.5px] border-outline px-3.5 py-2 " + bands[tone]}>
-        <span className={"inline-flex h-6 -rotate-2 items-center gap-1.5 rounded-md stroke px-2 text-[11px] font-extrabold uppercase tracking-[0.07em] " + (tone === "act" ? "bg-surface text-ink" : "bg-surface")}>
-          {tone === "work" && <span className="flex gap-0.5" aria-hidden="true"><i className="working-dot size-1 rounded-full bg-current" /><i className="working-dot size-1 rounded-full bg-current" /><i className="working-dot size-1 rounded-full bg-current" /></span>}
-          {label}
-        </span>
-        <time dateTime={at} className="tnum text-[13px] font-bold">{timeOf(at)}</time>
-      </header>
-      {children}
-    </article>
-  );
-}
 
 function Face({ name, sub, agent, children }: { name: string; sub: string; agent?: boolean; children: ReactNode }) {
   return (

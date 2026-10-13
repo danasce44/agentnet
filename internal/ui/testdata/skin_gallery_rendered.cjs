@@ -116,6 +116,18 @@ function digest(files) {
       await settings();
       await page.getByRole('button', { name: 'Use Pulp' }).first().waitFor({ timeout: 15000 });
       assert.ok(await page.getByText('In this browser', { exact: true }).count() >= 1, tag + ': installed skin marked');
+      if (tag === 'desk-light') {
+        // A package imported by hand that needs a newer AgentNet is stored (import checks only the
+        // field's form) but cannot be chosen: the host refuses and Comic says why.
+        const later = { api: 1, id: 'later', name: 'Later', agentnet: 'v99.0.0', entry: 'entry.mjs', files: ['entry.mjs'] };
+        await page.locator('input[aria-label="Import skin files"]').setInputFiles([
+          { name: 'skin.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(later)) },
+          { name: 'entry.mjs', mimeType: 'text/javascript', buffer: Buffer.from('export function mount(root,host){host.onOpen(()=>{});root.textContent="later";}') }]);
+        await page.getByRole('button', { name: 'Use Later' }).click();
+        await page.getByRole('dialog').getByRole('button', { name: 'Use Later' }).click();
+        await page.getByText('This skin needs AgentNet v99.0.0 or newer. Update AgentNet first.').waitFor();
+        assert.equal(new URL(page.url()).searchParams.get('skin'), null, tag + ': no switch to a skin that needs a newer AgentNet');
+      }
       assert.deepEqual(outside, [], tag + ': no other external requests');
       assert.deepEqual(errors, [], tag + ': page errors');
       await ctx.close();

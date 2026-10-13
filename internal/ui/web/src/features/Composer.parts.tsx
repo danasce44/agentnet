@@ -4,7 +4,7 @@
 // the page's base sheet resets a button's font and color.
 import { forwardRef, type CSSProperties, type ReactNode, type Ref, type MouseEvent as ReactMouseEvent, type TextareaHTMLAttributes } from "react";
 import { Menu } from "@base-ui/react/menu";
-import { IconArrowUp, IconCornerUpLeft, IconMoodSmile, IconPaperclip, IconPlus, IconUserPlus, IconX } from "@tabler/icons-react";
+import { IconCornerUpLeft, IconMoodSmile, IconPaperclip, IconPlus, IconUserPlus, IconX } from "@tabler/icons-react";
 import { AgentAvatar } from "../ui/Avatar";
 import type { Span } from "./Composer.mentions";
 import { usePortal } from "../owned";
@@ -82,17 +82,7 @@ export function IntentRow({ name, seed, onStop, note }: {
  </div>;
 }
 
-export function SendButton({ ready, busy, label }: { ready: boolean; busy: boolean; label: string }) {
-  const look = ready ? "bg-act stroke shadow-pop-sm press hover:brightness-[1.03]" : "bg-sunken border-[1.5px] border-hairline lg:border";
-  const ink = ready ? "text-act-ink" : "text-muted";
-  const dots = <span aria-hidden="true" className={"flex gap-0.5 text-lg leading-none " + ink}><span className="working-dot">•</span><span className="working-dot">•</span><span className="working-dot">•</span></span>;
-  return (
-    <button type="submit" onMouseDown={keep} aria-disabled={!ready || busy} aria-label={label} title={label}
-      className={"grid size-[46px] shrink-0 place-items-center self-end rounded-full transition-colors duration-200 lg:size-12 " + look}>
-      {busy ? dots : <IconArrowUp size={24} stroke={2.6} aria-hidden="true" className={ink} />}
-    </button>
-  );
-}
+export { SendButton } from "../skin/SendButton";
 
 /** Field: a textarea over a mirror that draws the same text, with exact
  *  mentions as chips. The textarea keeps the caret, selection, IME and

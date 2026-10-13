@@ -18,6 +18,7 @@ import { CandidateRow, NewChatButton, candidates, matches, startChat } from "./N
 import { WorkspacePill } from "./WorkspaceSwitcher";
 import { AgentAvatar, PersonAvatar } from "../ui/Avatar";
 import { Button, IconButton } from "../ui/Button";
+import { words } from "../skin/brand";
 
 type Filter = "all" | ChatItem["kind"];
 const filters: { id: Filter; label: string }[] = [
@@ -82,10 +83,10 @@ export function ChatList() {
   }, []);
 
   const closeSearch = () => { setQuery(""); setSearching(false); };
-  const title = <h1 className={"font-display text-[34px] font-extrabold leading-none tracking-[-.03em] lg:text-[30px] " + stripe}>Chats</h1>;
+  const title = <h1 className={"font-display text-[34px] font-extrabold leading-none tracking-[-.03em] lg:text-[30px] " + stripe} data-part="list-title">{words.chats}</h1>;
 
   return (
-    <section aria-label="Chats" className="pb-8 lg:pb-4">
+    <section aria-label="Chats" data-part="list" className="pb-8 lg:pb-4">
       {wide ? (
         <div className="flex items-center justify-between gap-3 px-4 pt-5">{title}<NewChatButton /></div>
       ) : (
@@ -207,7 +208,7 @@ function NeedsYouBanner({ overview: o, agentNames }: { overview: T.Overview; age
     <div className="px-4 pt-6 lg:px-3">
       <button type="button" onClick={named.go}
         className="relative flex w-full items-center gap-3 rounded-[18px] bg-act py-3 pl-3 pr-2.5 text-left text-act-ink stroke shadow-pop press">
-        <span className="absolute -top-3 left-3.5 -rotate-3 rounded-md bg-white px-2 py-[3px] text-[11px] font-extrabold uppercase leading-none tracking-[.07em] text-[#1B1530] stroke tnum">
+        <span className="absolute -top-3 left-3.5 -rotate-3 rounded-md bg-white px-2 py-[3px] text-[11px] font-extrabold uppercase leading-none tracking-[.07em] text-on-fill stroke tnum">
           {count === 1 ? "1 needs your OK" : count + " need your OK"}
         </span>
         <span className="pt-1">{named.face}</span>
@@ -215,7 +216,7 @@ function NeedsYouBanner({ overview: o, agentNames }: { overview: T.Overview; age
           <span className="line-clamp-2 font-display text-[16px] font-bold leading-[1.2]">{named.headline}</span>
           <span className="mt-0.5 block truncate text-[13.5px] font-semibold">{named.line}</span>
         </span>
-        <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-[#1B1530] text-white"><IconChevronRight size={22} stroke={2.6} /></span>
+        <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-on-fill text-white"><IconChevronRight size={22} stroke={2.6} /></span>
         <span className="sr-only">Review</span>
       </button>
     </div>

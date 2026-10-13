@@ -22,6 +22,7 @@ import { AllTopics } from "./Conversation.alltopics";
 import { OrganizeMessages } from "./Conversation.organize";
 import { deviceWords, isThreadMsg, requestState, shownText, threadAgentName, type AnyMsg, type Ctx } from "./Message.model";
 import { online } from "./RoomPanel.model";
+import { TopicIntro } from "../skin/TopicIntro";
 
 /** barTopics picks the bar's chips: what needs you, then unread, then the
  *  open topic, then the most recent active ones; the open topic always gets
@@ -144,8 +145,9 @@ export function TopicBar({ thread,dm }: { thread?: T.Thread;dm?:T.DMThread }) {
     if (!c) return;
     if (refocus.current === id && !going && !c.contains(focusedIn(el))) { c.focus({ preventScroll: true }); refocus.current = ""; }
     const l = c.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft, r = l + c.offsetWidth;
-    if (l < el.scrollLeft) el.scrollTo({ left: l - 12, behavior: "smooth" });
-    else if (r > el.scrollLeft + el.clientWidth) el.scrollTo({ left: r - el.clientWidth + 12, behavior: "smooth" });
+    const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    if (l < el.scrollLeft) el.scrollTo({ left: l - 12, behavior });
+    else if (r > el.scrollLeft + el.clientWidth) el.scrollTo({ left: r - el.clientWidth + 12, behavior });
   }, [going, open?.id]);
 
   // The chips stay in their slots across a topic switch (steadyBar).
@@ -160,7 +162,7 @@ export function TopicBar({ thread,dm }: { thread?: T.Thread;dm?:T.DMThread }) {
   const chip = "inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-semibold ";
 
   return (
-    <nav ref={nav} aria-label={"Topics with " + agent} className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-hairline bg-canvas px-3 py-1.5 lg:px-5">
+    <nav ref={nav} aria-label={"Topics with " + agent} data-part="topic-bar" className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-hairline bg-canvas px-3 py-1.5 lg:px-5">
       {dm && <button type="button" aria-pressed={!draft?.topic&&!fresh} className={chip+"shrink-0 "+(!draft?.topic&&!fresh?"bg-ink text-canvas":"bg-surface stroke")} onClick={()=>store.setDraft(dm.id,{...store.draft(dm.id),topic:undefined,newTopic:false,replyTo:undefined},true)}>{wide?"Main flow":"Main"}</button>}
       {pick.map((t) => {
         const current = !!open && t.id === open.id && !fresh;
@@ -342,6 +344,21 @@ function RenameTopic({ open, onOpenChange, topic }: { open: boolean; onOpenChang
  *  concluded (its own words, labelled as its), or your own final reply when
  *  you answered it by hand here, or that you marked it done, or that it is
  *  archived; Reopen makes it active again. */
+/** TopicStart hands the skin's topic intro (skin/TopicIntro.tsx) the facts
+ *  about what this view shows: a topic, or a people chat's main flow. */
+export function TopicStart({ ctx, messages }: { ctx: Ctx; messages: { at?: string }[] }) {
+  const store = useApp();
+  const draft = useStore(store, s => s.drafts[ctx.conv]);
+  const listed = ctx.dm?.topics;
+  const current = listed?.find(t => t.id === draft?.topic);
+  const t = current ? topicOf(current) : ctx.thread?.topic ? topicOf(ctx.thread.topic) : null;
+  const main = !t && !!ctx.dm;
+  if (!t && !main) return null;
+  const index = current && listed ? listed.indexOf(current) + 1 : undefined;
+  return <TopicIntro title={t ? t.title : "Main"} main={main} state={t ? t.state : "active"} index={index || undefined}
+    at={messages.find(m => m.at)?.at} count={messages.length} />;
+}
+
 export function TopicEnd({ ctx }: { ctx: Ctx }) {
   const store = useApp();
   const draft=useStore(store,s=>s.drafts[ctx.conv]);

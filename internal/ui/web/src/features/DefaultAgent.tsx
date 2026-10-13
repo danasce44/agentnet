@@ -130,7 +130,7 @@ function Choice({ value, selected, disabled, avatar, title, sub }: { value: stri
         <span className="block font-semibold">{title}</span>
         <span className={"block text-[13px] " + (selected ? "text-ink/80" : "text-muted")}>{sub}</span>
       </span>
-      <Radio.Root value={value} disabled={disabled} className={"grid size-7 shrink-0 place-items-center rounded-full stroke " + (selected ? "bg-[#1B1530] text-act" : "bg-surface")}>
+      <Radio.Root value={value} disabled={disabled} className={"grid size-7 shrink-0 place-items-center rounded-full stroke " + (selected ? "bg-on-fill text-act" : "bg-surface")}>
         <Radio.Indicator><IconCheck size={16} stroke={3} aria-hidden="true" /></Radio.Indicator>
       </Radio.Root>
     </label>

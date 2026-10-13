@@ -163,7 +163,7 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
 
   const item = "flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-[15px] font-medium outline-none data-[highlighted]:bg-sunken";
   return (
-    <header className={"flex shrink-0 items-center gap-2 border-b-[1.5px] border-outline bg-surface " + (wide ? "h-[76px] px-5" : "h-16 pl-1 pr-1.5")}>
+    <header data-part="conversation-head" className={"flex shrink-0 items-center gap-2 border-b-[1.5px] border-outline bg-surface " + (wide ? "h-[76px] px-5" : "h-16 pl-1 pr-1.5")}>
       {!wide && (
         <button type="button" onClick={() => store.close()} aria-label="Back to chats"
           className="flex h-11 shrink-0 items-center rounded-full pl-1 pr-1.5 hover:bg-sunken">

@@ -163,6 +163,7 @@ func TestSkinMinimumAgentNet(t *testing.T) {
 		listed         bool
 	}{
 		{"v0.8.25", "v0.8.25", true},
+		{"v0.8.25", "", true}, // empty is absent, as in browser import
 		{"v0.8.26-3-gabcdef1", "v0.8.25", true},
 		{"", "v9.0.0", true},    // an unknown version never refuses
 		{"dev", "v9.0.0", true}, // nor does an unstamped build

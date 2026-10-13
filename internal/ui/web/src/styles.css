@@ -1,96 +1,18 @@
 @import "tailwindcss" source(none);
 @source "./"; /* Keep utility scanning inside this skin’s source. */
+@source not "./skin/README.md";
+/* The skin layer: tokens, theme and part styles (skin/README.md). */
+@import "./skin/theme.css";
 
 /* Existing Drive widgets inherit Comic's theme and fit narrow sheets. */
 .drive-space .drive-error { color: var(--an-danger); }
 .drive-space pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* Pop Huddle: the Comic skin's design tokens (docs/plans/MESSENGER_DESIGN.md).
-   The skin runs in a shadow tree the host gives it, so tokens, theme and
-   the base reset belong to the skin's own root (.an-root, set by main.tsx),
-   never to the page. The theme is resolved to light or dark on that root
-   (data-theme), following the device unless one is chosen in Settings. */
-
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
-
-.an-root {
-  --an-canvas: #FFF8EC;
-  --an-surface: #FFFFFF;
-  --an-sunken: #FBF1DE;
-  --an-ink: #1B1530;
-  --an-outline: #1B1530;
-  --an-hairline: #E9DFCB;
-  --an-text-2: #463F5E;
-  --an-muted: #625B7A;
-  --an-mine: #FFF0B8;
-  --an-mine-ink: #1B1530;
-  --an-theirs: #FFFFFF;
-  --an-agent: #EEEAFF;
-  --an-agent-ink: #4F33C4;
-  --an-agent-fill: #A897FF;
-  --an-act: #FFD43B;
-  --an-act-ink: #1B1530;
-  --an-approval-ink: #7A5200;
-  --an-guest: #E8603C;
-  --an-guest-ink: #A8361A;
-  --an-guest-bg: #FFE6DC;
-  --an-ok-ink: #0B6E46;
-  --an-ok-bg: #DDF5E8;
-  --an-online: #1FA463;
-  --an-danger: #B42318;
-  --an-danger-bg: #FDE8E6;
-  --an-dots: rgb(27 21 48 / 0.04);
-  --an-shadow: #1B1530;
-  color-scheme: light;
-}
-.an-root[data-theme=dark] {
-  --an-canvas: #15111E; --an-surface: #1F1A2B; --an-sunken: #191422; --an-ink: #F5F0FF; --an-outline: #5A5075; --an-hairline: #2E2740;
-  --an-text-2: #CFC6E3; --an-muted: #A69DBD; --an-mine: #3B3317; --an-mine-ink: #FFF4CF; --an-theirs: #241E33; --an-agent: #2B2452;
-  --an-agent-ink: #B8A8FF; --an-agent-fill: #5B47C9; --an-act: #FFD43B; --an-act-ink: #1B1530; --an-approval-ink: #FFD86B;
-  --an-guest: #FF8A65; --an-guest-ink: #FFB49C; --an-guest-bg: #3A2019; --an-ok-ink: #6FD9A3; --an-ok-bg: #11301F; --an-online: #34C77B;
-  --an-danger: #FF8A80; --an-danger-bg: #3A1614; --an-dots: rgb(245 240 255 / 0.035); --an-shadow: #000000;
-  color-scheme: dark;
-}
-
-@theme inline {
-  --font-sans: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Rubik", "Onest", ui-sans-serif, system-ui, sans-serif;
-  --color-canvas: var(--an-canvas);
-  --color-surface: var(--an-surface);
-  --color-sunken: var(--an-sunken);
-  --color-ink: var(--an-ink);
-  --color-outline: var(--an-outline);
-  --color-hairline: var(--an-hairline);
-  --color-text-2: var(--an-text-2);
-  --color-muted: var(--an-muted);
-  --color-mine: var(--an-mine);
-  --color-mine-ink: var(--an-mine-ink);
-  --color-theirs: var(--an-theirs);
-  --color-agent: var(--an-agent);
-  --color-agent-ink: var(--an-agent-ink);
-  --color-agent-fill: var(--an-agent-fill);
-  --color-act: var(--an-act);
-  --color-act-ink: var(--an-act-ink);
-  --color-approval-ink: var(--an-approval-ink);
-  --color-guest: var(--an-guest);
-  --color-guest-ink: var(--an-guest-ink);
-  --color-guest-bg: var(--an-guest-bg);
-  --color-ok-ink: var(--an-ok-ink);
-  --color-ok-bg: var(--an-ok-bg);
-  --color-online: var(--an-online);
-  --color-danger: var(--an-danger);
-  --color-danger-bg: var(--an-danger-bg);
-  --shadow-pop: 3px 3px 0 0 var(--an-shadow);
-  --shadow-pop-sm: 2px 2px 0 0 var(--an-shadow);
-  --ease-out-soft: cubic-bezier(.2, .8, .2, 1);
-  --ease-pop: cubic-bezier(.34, 1.56, .64, 1);
-}
-
 @layer base {
   /* The skin is exactly as tall as its root, which the host sizes to the
      part of the screen the keyboard leaves visible (docs/UI_SKINS.md): no
      vh/dvh for the frame, and the app between root and frame fills it. */
-  .an-root { height: 100%; background: var(--an-canvas); color: var(--an-ink); font-family: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.45;
+  .an-root { height: 100%; background: var(--an-canvas); color: var(--an-ink); font-family: --theme(--font-sans); font-size: 16px; line-height: 1.45;
     -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-text-size-adjust: 100%; }
   .an-app { height: 100%; }
   @media (min-width: 1024px) { .an-root { font-size: 15px; } }

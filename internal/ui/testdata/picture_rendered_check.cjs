@@ -50,8 +50,13 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
      await p.getByRole('button',{name:/^Alice\b.*On 1 device/}).click();
     }else await p.getByRole('button',{name:'You: profile and devices'}).click();
    };
-   await profile();await p.getByRole('button',{name:'Choose picture',exact:true}).click();
-   const dialog=p.getByRole('dialog',{name:'Your profile picture'});await dialog.waitFor();
+   await profile();
+   const dialog=p.getByRole('dialog',{name:'Your profile picture'});
+   // Closing the editor puts focus back on what opened it, inside the skin's shadow root.
+   await p.getByRole('button',{name:'Choose picture',exact:true}).click();await dialog.waitFor();
+   await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await dialog.waitFor({state:'hidden'});
+   assert.equal(await p.evaluate(()=>{const a=document.getElementById('skin').shadowRoot.activeElement;return a?(a.getAttribute('aria-label')||a.textContent.trim()):null;}),'Choose picture',skin+': focus returns to the opener');
+   await p.getByRole('button',{name:'Choose picture',exact:true}).click();await dialog.waitFor();
    const sample=await ctx.request.get(new URL(process.argv[2]).origin+'/api/files/picture-message/0?dir=in');assert(sample.ok());
    await dialog.getByLabel('Choose picture',{exact:true}).setInputFiles({name:'photo.png',mimeType:'image/png',buffer:await sample.body()});
    await dialog.getByRole('button',{name:'Save picture',exact:true}).click({trial:true});

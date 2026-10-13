@@ -26,4 +26,4 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 ./node_modules/.bin/tailwindcss -i src/styles.css -o "$work/tailwind.css" >/dev/null 2>&1
 cp -R "$here/../static/skins/comic/m" "$out/m"
-node "$here/package.mjs" "$work/tailwind.css" src/document.css "$out"
+node "$here/package.mjs" "$work/tailwind.css" src/skin/document.css "$out"

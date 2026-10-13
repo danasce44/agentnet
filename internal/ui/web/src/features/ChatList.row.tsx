@@ -44,16 +44,16 @@ export function ChatRow({ item, summary, overview, selected, wide, onOpen }: {
   // Phones show one screen at a time: only the desktop column marks the open chat; a
   // phone outlines the chat being opened, at once, while it loads.
   return (
-    <button type="button" onClick={onOpen} aria-current={selected && wide ? "true" : undefined}
+    <button type="button" onClick={onOpen} aria-current={selected && wide ? "true" : undefined} data-part="chat-row" data-kind={item.kind} data-unread={unread ? "" : undefined}
       className={"relative flex w-full items-center gap-3 text-left transition-colors duration-200 "
         + (!wide ? "px-4 py-3 hover:bg-sunken active:bg-sunken " + (selected ? "z-[1] bg-surface [box-shadow:inset_0_0_0_1.5px_var(--an-outline)]" : "")
           : "rounded-2xl border px-2.5 py-2.5 " + (selected ? "border-outline bg-surface shadow-pop-sm" : "border-transparent hover:bg-sunken"))}>
       {avatar}
       <span className="min-w-0 flex-1">
-        <span className="flex items-baseline gap-2">
-          <span className={"truncate text-[16.5px] leading-tight tracking-[-.01em] lg:text-[16px] " + (item.frozen ? "font-bold text-text-2" : "font-extrabold")}>{item.title}</span>
+        <span className="flex items-baseline gap-2" data-part="chat-title-line">
+          <span data-part="chat-title" className={"truncate text-[16.5px] leading-tight tracking-[-.01em] lg:text-[16px] " + (item.frozen ? "font-bold text-text-2" : "font-extrabold")}>{item.title}</span>
           {item.guests > 0 && <span className="shrink-0 text-[13px] font-bold text-guest-ink">+{item.guests} {item.guests === 1 ? "guest" : "guests"}</span>}
-          <time dateTime={item.lastAt} className={"ml-auto shrink-0 text-[12px] tnum " + (unread ? "font-extrabold text-ink" : "font-semibold text-muted")}>{when(item.lastAt)}</time>
+          <time dateTime={item.lastAt} data-part="chat-time" className={"ml-auto shrink-0 text-[12px] tnum " + (unread ? "font-extrabold text-ink" : "font-semibold text-muted")}>{when(item.lastAt)}</time>
         </span>
         {(subtitle || item.note || item.needsYou > 0 || item.held > 0 || item.keyChanged) && (
           <span className="mt-1 flex min-w-0 items-center gap-2">
@@ -86,7 +86,7 @@ export function ChatRow({ item, summary, overview, selected, wide, onOpen }: {
             </span>
           )}
           {unread && (
-            <span className="grid h-[22px] min-w-[22px] shrink-0 place-items-center rounded-full bg-ink px-1.5 text-[12px] font-extrabold text-canvas tnum">
+            <span data-part="unread" className="grid h-[22px] min-w-[22px] shrink-0 place-items-center rounded-full bg-ink px-1.5 text-[12px] font-extrabold text-canvas tnum">
               {item.unread > 99 ? "99+" : item.unread}<span className="sr-only"> unread</span>
             </span>
           )}
@@ -101,7 +101,7 @@ function LastLine({ item, unread }: { item: ListItem; unread: boolean }) {
   // Who came or left reads quieter than what people said.
   const tone = unread ? "font-semibold text-ink" : item.event ? "text-muted" : "text-text-2";
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[14.5px] leading-snug lg:text-[14px]">
+    <span data-part="chat-preview" className="flex min-w-0 flex-1 items-center gap-1.5 text-[14.5px] leading-snug lg:text-[14px]">
       {item.working && (
         <span className="flex shrink-0 items-center gap-1 font-extrabold text-agent-ink">
           Working<span aria-hidden="true" className="flex gap-0.5"><i className="working-dot size-1 rounded-full bg-current" /><i className="working-dot size-1 rounded-full bg-current" /><i className="working-dot size-1 rounded-full bg-current" /></span>

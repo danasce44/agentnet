@@ -241,7 +241,7 @@ function NamedAgent({ a, o, onToggle }: { a: T.CatalogAgent; o: T.Overview; onTo
           <span className="sr-only">{a.record.label} is {a.enabled ? "on" : "off"}</span>
           <Switch.Root checked={a.enabled} onCheckedChange={(on) => onToggle(on)}
             className="relative flex h-7 w-12 shrink-0 items-center rounded-full bg-sunken p-0.5 stroke transition-colors duration-200 ease-out-soft data-[checked]:bg-ok-ink before:absolute before:-inset-2 before:content-['']">
-            <Switch.Thumb className="size-5 rounded-full bg-surface stroke transition-transform duration-200 ease-out-soft data-[checked]:translate-x-5" />
+            <Switch.Thumb className="size-5 rounded-full bg-surface stroke transition-transform duration-200 ease-out-soft motion-reduce:transition-none data-[checked]:translate-x-5" />
           </Switch.Root>
         </label>
       </div>
