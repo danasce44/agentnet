@@ -16,11 +16,15 @@ current owner authorization; no live device or relay state is changed by tests.
 
 The published collection `v2026.10.13`, source `6d3ee7e`, pins this exact
 candidate. Its full compatibility CI passes for Classic, Holonet, Pulp and Zoom
-plus standalone/overlay scaffolds. Focused native/browser gallery, version,
-contract, bundle and mobile-host checks pass; final vet passes. Integrated race,
-supported native OS, desktop/container, mixed-version and artifact gates are in
-progress. [V0_8_25.md](plans/V0_8_25.md) records exact evidence and open gates;
-the release is not yet tagged or published.
+plus standalone/overlay scaffolds. Focused gallery, native Tauri/WebKitGTK,
+contract, bundle, mobile-host, vet and mixed-version checks pass. All twelve
+race partitions, other/UI race and actual IndexedDB, full native platform
+coverage, desktop and container gates are qualified with retained passes and
+the bounded fixture follow-up at `a4741f68`. The last race partition passes
+515.426 s inside its unchanged 600-second limit. Claude independently cleared
+both test-only corrections. [V0_8_25.md](plans/V0_8_25.md) records exact evidence
+and limits. Application source is unchanged from `ccb8a7f6`; tagging and draft
+asset/APK qualification are next, and publication is still pending.
 
 ## Current release — v0.8.24, October 13, 2026
 

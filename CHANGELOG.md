@@ -4,7 +4,7 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
-## Unreleased — v0.8.25
+## [0.8.25] — 2026-10-13
 
 - Add a skin gallery in Settings → Appearance, with verified pictures and
   packages from the latest published AgentNet skin collection. Install keeps
