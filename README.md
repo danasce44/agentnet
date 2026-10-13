@@ -160,8 +160,8 @@ request to approve background work. Each device keeps its own identity keys,
 and an existing human device approves a new device joining your person.
 Signing in is not permission to add an unknown device silently.
 Physical-phone timing and complete history convergence remain unverified;
-see the current release limits below. Keep a source device online for history
-and files it still holds. Updating does not require a reset or relink.
+see [the handoff](docs/HANDOFF.md) for current limits. Keep a source device online
+for history and files it still holds. Updating does not require a reset or relink.
 
 ## Keep company conversations private
 
@@ -209,9 +209,8 @@ compatibility; they do not make arbitrary skin code safe.
 
 ## Get started
 
-**Current release: [v0.8.22](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22)**,
-published October 11, 2026. AgentNet is actively developing; the expandable
-release section below names what has been checked and what still needs work.
+Download the [latest release](https://github.com/misunders2d/agentnet/releases/latest)
+for your device. See the [changelog](CHANGELOG.md) for what's changed.
 
 **Update recovery:** an app attached to a separate daemon may show a local
 connection-refused page while that daemon switches versions. Once the switch
@@ -234,10 +233,10 @@ reported failure remains unconfirmed. See [the handoff](docs/HANDOFF.md).
 
 | Device | Download and open |
 | --- | --- |
-| Windows | Run the [Windows installer](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-windows-x64-setup.exe), then open AgentNet from Start. |
-| Linux | Download the [AppImage](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-linux-x86_64.AppImage), allow it to run in its file properties, then open it. [deb and rpm packages](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22) are also available. |
-| macOS | Open the [DMG](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-macos-universal.dmg) and copy AgentNet into Applications. Interactive installation remains unverified on a real Mac. |
-| Android 8+, ARM64 | Download the [signed native preview APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.22/AgentNet-android.apk) and open it with Android's installer. It is a GitHub preview, not a Google Play release. |
+| Windows | Run the [Windows installer](https://github.com/misunders2d/agentnet/releases/latest/download/AgentNet-windows-x64-setup.exe), then open AgentNet from Start. |
+| Linux | Download the [AppImage](https://github.com/misunders2d/agentnet/releases/latest/download/AgentNet-linux-x86_64.AppImage), allow it to run in its file properties, then open it. [deb and rpm packages](https://github.com/misunders2d/agentnet/releases/latest) are also available. |
+| macOS | Open the [DMG](https://github.com/misunders2d/agentnet/releases/latest/download/AgentNet-macos-universal.dmg) and copy AgentNet into Applications. Interactive installation remains unverified on a real Mac. |
+| Android 8+, ARM64 | Download the [signed native preview APK](https://github.com/misunders2d/agentnet/releases/latest/download/AgentNet-android.apk) and open it with Android's installer. It is a GitHub preview, not a Google Play release. |
 
 **Android updates:** install over your existing native preview—**do not uninstall
 or relink**. Early previews need one manual in-place APK installation. Current
@@ -264,10 +263,11 @@ once. v0.8.3 fixes the case where the app updated but an older official
 unchanged official copies automatically.
 
 **Upgrading a v0.8.3/v0.8.4 AppImage:** its old updater still needs one
-manual reopen after updating to v0.8.22. Open AgentNet from its launcher if it
-closes without returning. If v0.8.4's Update button is unavailable, run
-`agentnet update v0.8.22` for the registered desktop installation, then reopen
-once. Updates started by v0.8.5 include the restart fix.
+manual reopen after updating. Open AgentNet from its launcher if it closes
+without returning. If v0.8.4's Update button is unavailable, install the
+[latest desktop package](https://github.com/misunders2d/agentnet/releases/latest)
+over the existing installation, keeping your app data. Updates started by
+v0.8.5 include the restart fix.
 
 **With v0.8.5 or later installed**, the button and `agentnet update` update AgentNet
 as a whole: the desktop app, terminal command and AgentNet connections used by
@@ -296,13 +296,9 @@ stops future authorized access and unstarted work, not copies already received
 by others. Offline or outdated devices are different: their messages remain
 queued for recovery, not treated as permanently removed.
 
-**Current limits:** native permission inheritance across every supported harness
-(MEL-504) and valid replies rejected after an own-history peer mismatch (MEL-604)
-are **next-release blockers**, not fixes shipped in v0.8.22. Physical-phone
-latency/history, profile-picture backup restoration (MEL-601), and updater/cache
-follow-ups remain open. Passing fixtures and emulator tests do not verify your
-physical phone. See [current evidence and limits](#current-release-evidence)
-and [the handoff](docs/HANDOFF.md).
+**Current limits:** see [the handoff](docs/HANDOFF.md) for open issues and
+verified behavior. Passing fixtures and emulator tests do not verify your
+physical phone. Desktop installers remain unsigned; the Android preview is signed.
 
 ## Guides for agents and maintainers
 
@@ -319,7 +315,7 @@ current work queue.
 
 | Need | Authoritative guide |
 | --- | --- |
-| Current release, evidence, open issues and continuation | [Handoff](docs/HANDOFF.md) and [release notes](docs/NEXT_RELEASE.md) |
+| Current status, evidence, open issues and continuation | [Handoff](docs/HANDOFF.md) |
 | Install, connect tools, operate a service, update or recover | [Installation and operations](docs/revival/INSTALL.md) |
 | Create, package, install or test a skin | [Host API v1 contract](docs/UI_SKINS.md) and [agentnet-skins](https://github.com/misunders2d/agentnet-skins) |
 | Understand topic scope, lifecycle and synchronization | [Topics](docs/plans/TOPICS.md) |
@@ -475,7 +471,7 @@ once; Android requires its matching APK and Android's installation confirmation.
 The app's update button checks GitHub independently of the recommendation.
 The v0.8.0 About page incorrectly directs desktop users to `agentnet update`;
 use a desktop package instead. If its **What's new** link does nothing, open
-[the release page](https://github.com/misunders2d/agentnet/releases/tag/v0.8.22) directly.
+[the latest release page](https://github.com/misunders2d/agentnet/releases/latest) directly.
 
 The [complete update/recovery guide](docs/revival/INSTALL.md#updating-and-downgrading)
 covers backups, package handling, managed commands, relay upgrades and rollback.
@@ -509,9 +505,8 @@ agentnet hub backup --data /var/lib/agentnet --out hub-backup.tgz
 # Restore only into a new, empty directory.
 agentnet hub restore --from hub-backup.tgz --data /var/lib/agentnet-restored
 
-# From an enrolled admin device: recommend a client release separately.
+# From an enrolled admin device: inspect the client release recommendation.
 agentnet admin release show
-agentnet admin release set --url https://github.com/misunders2d/agentnet/releases/tag/v0.8.22 v0.8.22
 ```
 
 A server-hosted company agent is an ordinary member with its own separate
@@ -639,293 +634,9 @@ contributors as described in AGENTS.md. Licensed under [Apache 2.0](LICENSE).
 
 </details>
 
-<a id="current-release-evidence"></a>
+## Changelog
 
-<details>
-<summary><strong>v0.8.22 release evidence and known limits</strong></summary>
-
-Published October 11, 2026 at **16:41:57 UTC** from
-`375ba6b1b9052bed82660456a8983070044f026d`. Android recovers after resume,
-network changes and dead connections, with saved-message retry inside the chat.
-The device-link refusal/expiry race is repaired without weakening revocation.
-
-**Qualification:** composed client/UI races, affected native Linux/macOS/Windows
-checks, real mixed-version delivery, container and rendered checks passed.
-All thirteen release assets match GitHub digests; all twelve payload entries
-match SHA256SUMS. The exact signed APK passed in-place emulator upgrade and
-warm/cold preservation of 203 messages, queued sends, attachment, draft,
-identity and origin. These are automated/emulator results, not proof of the
-owner's physical-phone latency or complete history convergence.
-[The release record](docs/plans/V0_8_22.md) preserves exact evidence and limits.
-
-MEL-504 (native permission inheritance) and MEL-604 (own-history peer mismatch
-rejecting valid replies) block the **next** release; neither is claimed repaired.
-Physical-phone latency/history, the profile-picture restore allowlist (MEL-601),
-and updater/cache follow-ups remain open. Desktop installers remain unsigned;
-the Android preview is signed. Interactive Windows/macOS installation and
-physical Android behavior remain unverified. Keep source devices online for
-retained history/files and upgrade in place, without resetting or relinking.
-See [the handoff](docs/HANDOFF.md) for current status; older sections below are
-historical evidence, not current qualification.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.16 release evidence and known limits</strong></summary>
-
-Published October 10, 2026 from `45e38feea7b7e7ae9454247b2fdda28b362ceea6`.
-Saved chats open before additional workspaces reconnect. Fresh verified replies
-can arrive while older messages wait for proof or files; recovery continues in
-bounded batches without waiting for a heartbeat. Recovered ordinary messages
-keep their first receive time, so recovery does not place them after later
-arrivals. Sending progress stays consistent when late checks or an exact
-verified answer arrive. Identity,
-membership and encryption checks remain enforced; other copies keep their own
-delivery receipts.
-
-Qualification: **composed UI races, affected Linux/macOS/Windows native checks, real browser storage and rendered checks passed, including the receive-time correction; unchanged core/platform evidence is retained**.
-Packaging and asset checks:
-**all five packaging jobs passed, all 12 asset digests and 11 manifest entries matched, and standalone/bundled Linux versions match the clean tag**. The
-[release checklist](docs/plans/V0_8_16.md) records exact source revisions, CI
-results, earlier failures, skips and deployment evidence.
-
-Physical phone convergence, timing and CPU remain unverified, as does interactive
-Windows/macOS installation. Automated checks do not establish recovery of the
-owner's exact phone session. Installers remain unsigned. Keep a source computer
-updated and online for history and files it retains; reload linked browser
-clients after updating. See [the handoff](docs/HANDOFF.md) for current limits.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.14 release evidence and known limits</strong></summary>
-
-Published October 9, 2026 at 19:34:43 UTC from
-`760e945a28c38461c74d84c7d4c9610464573dea`. This release improves own-device
-history and receipts, repeated Held back notices, background work, inherited
-permissions and exact remote request handling. Comic adds topic-only invitations
-and editing a suggested task before approval.
-
-Qualification combines retained passing native/race results with focused
-corrections and bounded remaining Windows coverage; the initial full runs were
-not all green. Four shell-stub history scenarios skip Windows. All five final
-[packaging jobs](https://github.com/misunders2d/agentnet/actions/runs/37980178645)
-passed; all 12 asset digests and 11 SHA256SUMS entries matched. Standalone and
-bundled Linux commands report the exact clean tag. Only the existing relay was
-deployed, with a verified backup and normal HTTPS checks at 19:35:17 UTC.
-
-New sync and proposal operations require compatible devices/hosts; files still
-need a source retaining their bytes. A topic invitation does not narrow existing
-whole-chat access. Encryption, signed admission, task grants and each agent
-owner's native permissions remain enforced.
-
-A local page handoff failure was reported after an attached-daemon update;
-its source repair shipped in v0.8.15, with physical recovery still unconfirmed.
-A v0.8.13 phone also showed “Sending” for 15 minutes, with no exact cause
-established for that report. Physical phone convergence and
-post-fix ThinkPad CPU remain unverified. The shutdown abort is unattributed;
-the historical Mac installation report is nonblocking and not claimed fixed.
-Installers remain unsigned. See [the handoff](docs/HANDOFF.md) for exact evidence
-and the mobile responsiveness investigation.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.10 release evidence and known limits</strong></summary>
-
-Published October 8, 2026 at 21:54:58 UTC from `7afac5bda699a33f60db38dfb188b1a6d83ef66d`.
-Every desktop skin now offers an explicit **Check for updates**, independent of
-the server recommendation. Phone Bring back actions reuse exact current agent
-state and discard delayed results after navigation. Checking does not install,
-pause work or poll; permission and encryption boundaries remain intact.
-
-Full affected command/UI packages and repository-wide vet passed on native
-Linux/macOS/Windows; local affected-package races and desktop/phone-width browser
-checks passed. Unchanged messaging, history, storage and Hub code retain the
-recorded v0.8.9 qualification. All five packaging jobs passed, all downloaded
-asset digests/checksums matched, and both Linux commands report the exact clean
-revision. The final AppImage passed actual replacement and restart.
-
-Actual Amazon_team phone catch-up, physical notifications/clipboard and
-interactive Windows/macOS installation remain unverified. Installers are
-unsigned. Source laptops must be updated and online to supply missing history.
-See [the handoff](docs/HANDOFF.md) for exact evidence and remaining checks.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.9 release evidence and known limits</strong></summary>
-
-Published October 8, 2026 at 21:03:42 UTC from `bd793b64e07e303458604f3dec01067884dbb3d6`.
-This release recovers retained group history through normal admission, supports
-exact causal callbacks to a busy ancestor, installs AppImages at a stable
-per-user location, and improves long links and setup. Encryption and permission
-checks remain intact; historical requests never run.
-
-Qualification combines the full source run with corrected-fixture focused races
-and native Linux/macOS/Windows checks. The original full run passed 9/14 jobs;
-its failures were two test defects, corrected without production changes.
-All five packaging jobs passed, all downloaded digests/checksums matched, and
-the Linux CLI/bundled CLI report the exact clean revision. The final AppImage
-passed replacement and restart. Only the existing relay was deployed, with a
-verified backup and original volume/realm.
-
-Actual Amazon_team phone catch-up, physical notifications/clipboard and
-interactive Windows/macOS installation remain unverified. Source laptops must
-be updated and online to supply missing history. Installers remain unsigned.
-The stale relay recommendation remains separate from GitHub release availability;
-Update checks GitHub independently. See [the handoff](docs/HANDOFF.md).
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.8 release evidence and known limits</strong></summary>
-
-Published October 8, 2026 at 19:43:30 UTC from `8336346d546a11fddba74f06964a3fff6c95ee1c`.
-This release adds explicit clarification continuation, grouped multi-agent
-messages and distinct-executor concurrency, native Codex room questions,
-notification routing, compact approvals, stale-invitation/rejoin fixes and
-app-file checks before update shutdown. Encryption and permission checks remain.
-
-Qualification retains 12 successful full-source CI jobs, with the three failed
-test fixtures corrected and verified through focused race and native checks on
-Linux, macOS and Windows. All five release packaging jobs passed, all 12 asset
-digests and 11 checksums matched, and the downloaded Linux CLI/bundled CLI report
-the exact clean revision. Release CI passed AppImage replacement/restart.
-The original full source run is not represented as all green.
-
-Only the existing relay was deployed. The available identity cannot change its
-stale v0.8.5 recommendation, but the Update button checks GitHub independently.
-Physical notification clicks, phone catch-up, busy-ancestor cyclic callbacks
-and interactive Windows/macOS installation remain unqualified. An already
-missing old AppImage needs one reinstall. Installers remain unsigned.
-Full evidence is in [the handoff](docs/HANDOFF.md).
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.7 release evidence and known limits</strong></summary>
-
-Published October 8, 2026 at 15:35 UTC from `129a38ec5de8fc8f988b9972a0a143e6dc27dbb8`.
-All 14 [source CI jobs](https://github.com/misunders2d/agentnet/actions/runs/37795624300) and the local required vet/race
-qualification passed. [Release packaging](https://github.com/misunders2d/agentnet/actions/runs/37800186287):
-all five jobs passed; all 12 downloaded asset sizes/digests and all 11 SHA256SUMS entries matched. The Linux CLI and AppImage-bundled CLI report the exact clean release revision. The final AppImage passed the release CI replacement/restart check.
-
-This release repairs linked-device historical messages after clean assistant
-dismissal, adds specific Held back explanations and local invalid-notice
-archiving, and sends one independent request to each explicitly selected agent.
-All three skins passed desktop/phone-width regressions. Physical mobile
-catch-up remains unverified; MEL-558 remains open for that observation.
-The notification-click repair MEL-435 is on a separate later branch and is
-not included. Installers remain unsigned.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.6 release evidence and known limits</strong></summary>
-
-Published October 8, 2026 at 13:03 UTC from
-`0a0e7aeadef15b315feb694706b6e0cafb6f8ecc`. [Source CI](https://github.com/misunders2d/agentnet/actions/runs/37777205734)
-and [release builds](https://github.com/misunders2d/agentnet/actions/runs/37779934720) passed.
-All 12 asset digests and sizes and all 11 `SHA256SUMS` entries matched.
-The downloaded Linux command reports v0.8.6 and that exact clean revision.
-
-This release fixes queued-request deletion, linked history recovery, full
-approval explanations, browser agent setup and native release links. All three
-skins passed desktop/phone-width fixtures. The final AppImage passed isolated
-package replacement/restart in release CI; its downloaded native shell passed
-external-link dispatch without an ACL rejection. The link fixture permits a
-synthetic popup in its disposable WebKit settings; it does not prove a physical
-click. Physical-phone journeys and interactive Windows/macOS behavior remain
-unverified. Installers are unsigned. Existing installations were unchanged during
-qualification.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.5 release evidence and known limits</strong></summary>
-
-Published October 7, 2026 at 19:26 UTC from
-`591690c55fb1c29b206c6774433af9f3c69739d6`. [Source CI](https://github.com/misunders2d/agentnet/actions/runs/37671163931)
-and [installer builds](https://github.com/misunders2d/agentnet/actions/runs/37671250480) passed. All 12 asset digests and sizes,
-and all 11 `SHA256SUMS` entries, matched. The downloaded Linux command reports
-v0.8.5 and that exact clean revision. The relay was deployed at 19:27 UTC after
-a verified stopped-state backup, retaining its data volume and realm. Its
-public version and client recommendation both report v0.8.5.
-
-The final downloaded AppImage passed an isolated native FUSE journey:
-Comic Settings → About → Update, automatic restart into a private next-version
-fixture, a usable About page without reload, and matching app/command copies.
-The private next version is only a test artifact, not a published release.
-Identity stayed unchanged, the session token left the address/history, and a
-controlled link fragment survived. Separate genuine v0.8.3 UI and v0.8.4 CLI
-journeys verified the one-time manual reopen and independent-daemon recovery.
-Busy-daemon behavior has protocol regression coverage; an interactive busy
-update and interactive Windows/macOS updates remain unverified. Installers are
-unsigned. No existing desktop or phone installation was changed during testing.
-Mobile sending/history issues remain open; this release is updater-only.
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.4 release evidence and known limits</strong></summary>
-
-Published October 7, 2026 at 15:54 UTC. The [source CI](https://github.com/misunders2d/agentnet/actions/runs/37642753786) and [release workflow](https://github.com/misunders2d/agentnet/actions/runs/37645700324)
-passed on `ac084454e767b5f1f8096533b64c0c57b2d822b3`. All 12 asset digests and
-sizes matched GitHub, and all 11 package entries matched `SHA256SUMS`. The
-downloaded Linux command reports v0.8.4 and that exact clean source revision.
-Both isolated Linux update journeys passed with the final downloaded AppImage.
-The relay was upgraded after a verified stopped-state backup, preserving its
-existing volume and realm. Its public version and client recommendation both
-report v0.8.4. No existing desktop or phone installation was updated.
-
-All three production skins passed desktop/phone rendering checks. Isolated
-Linux qualification covers genuine v0.8.3 package and independently managed
-daemon upgrades, preserving accepted jobs. Interactive Windows/macOS upgrades,
-physical phone notification/clipboard behavior and the older published UI’s
-network update-button journey remain unverified. Installers are unsigned.
-See [current release notes](docs/NEXT_RELEASE.md) and [handoff](docs/HANDOFF.md).
-
-</details>
-
-<details>
-<summary><strong>Historical v0.8.3 release evidence and known limits</strong></summary>
-
-[Candidate CI](https://github.com/misunders2d/agentnet/actions/runs/37592322850)
-and the [release workflow](https://github.com/misunders2d/agentnet/actions/runs/37592386488)
-passed for `5aec119649807befe711135c97805a89f1aa3b90`: native Linux/Windows/macOS,
-race tests, browser storage, container checks and desktop builds. All 12 release
-assets matched GitHub digests; all 11 packages matched `SHA256SUMS`.
-
-An isolated Linux package test replaced a real AppImage and restarted its
-desktop shell/backend, then verified matching command bytes, versions and the
-completion record. Separate real-backend journeys cover About and CLI update
-entry points plus same-version repair using genuine older CLI files. Native
-and rendered desktop/phone regressions verify running direct-device requests
-stay out of approval counts in Comic, Classic and Zoom, with exact navigation
-and Stop. [Full release notes](docs/NEXT_RELEASE.md).
-
-No existing device or relay was upgraded during qualification. Interactive
-Windows/macOS upgrades and a graphical About-button click remain unverified.
-Physical-phone read/history convergence and native picture/clipboard checks
-also remain incomplete. Installers are unsigned; opening prompts depend on the
-OS. The worker-wake fix in v0.8.2 does not prove every startup delay is gone.
-
-Standing permission for future questions does not automatically accept an
-existing held question. Topic names, archives and some device-topic state are
-local; people-topic Done/Reopen has shared semantics. The
-[topic guide](docs/plans/TOPICS.md) explains the distinction. Private Projects
-remain a design discussion, outside this release.
-
-Comic does not yet expose all advanced reply-receiver/continuation controls
-available in Classic and Zoom. See the [parity gap](docs/COMIC_PARITY_GAPS.md).
-Phones use a browser device, not a native agent runtime; browser storage can
-be lost and background behavior depends on the browser. Old files may need
-an online device that still holds them. A skin compatibility pass does not
-remove any of these underlying product limits.
-
-The current [handoff](docs/HANDOFF.md) tracks open work and verification
-boundaries. Earlier release and milestone records there are historical,
-not proof of current deployment or completed live qualification.
-
-</details>
+See [CHANGELOG.md](CHANGELOG.md) for notable changes and
+[GitHub Releases](https://github.com/misunders2d/agentnet/releases) for downloads
+and per-release notes. Detailed verification records remain in
+[the handoff](docs/HANDOFF.md) and its linked release checklists.
