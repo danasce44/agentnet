@@ -4,40 +4,48 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Next release — v0.8.26 Android gallery and skin usability
+## Next release — v0.8.27, supervised implementation
 
-The owner first authorized v0.8.26, then held it and extended its scope:
-Claude must thoroughly review every skin/interaction and fix usability issues,
-including inaccessible Settings in Holonet/Classic and Zoom's unusable message
-mode. Roll out v0.8.26 only after those corrections are verified. Codex owns
-integrated review, qualification and release; Claude owns skin implementation.
-v0.8.25 remains the current published/live release in the meantime.
+The owner assigned the existing tab-3 Codex worker to the agreed V1–V9 scope,
+with Codex release lead supervising/reviewing for minimal design. Its only
+worktree is `.worktrees/v0.8.27`, branch `feat/v0.8.27`; it is actively assigned,
+not a stray. The worker owns bounded source/tests, the lead owns integration,
+Git, full qualification and release. Shared checklist:
+`.agentnet/v27-release-checklist.md`. Do not publish v27 before candidate review,
+required integrated gates, exact artifacts and upgrade preservation checks.
+Native harness permissions, signed identity, current admission and audience
+remain unchanged. No optional redesign or helpers.
 
-The bounded fix is on main: `WebPolicy.gallery` allows only GET subresources
-at the gallery's exact GitHub API endpoint and repository file prefix, with
-strict scheme/port/path and no userinfo/query/fragment. MainActivity uses that
-predicate in its existing interceptor. Main-frame navigation and native bridge
-checks are unchanged; CORS, CSP, hash/digest verification and trust still apply.
-The exact three-file candidate compiles and passes all 36 Android JVM tests in
-22 s in an isolated copy. That proves source compilation/policy regression, not
-a corrected released APK's runtime behavior. Before any future publication,
-complete the final pinned skin gate, tag-built artifacts,
-actual Android gallery install/use/trust and warm/cold upgrade checks. See
-[V0_8_26.md](plans/V0_8_26.md). The authoritative interaction checklist is
-`.agentnet/v26-skin-usability.md`, edited by Codex; peer reports supply evidence.
-Fresh mixed-version qualification against exact published v0.8.25 passed
-128.320 s without a skip. The Go/client/Hub/host tree is unchanged from v0.8.25,
-so its valid race/native evidence is retained by exact tree comparison. Android
-release-variant unit/lint checks pass (36 tests; zero lint errors). Claude's
-standalone skin interaction inventory and diff have been reviewed; the two
-failed-send draft corrections pass fresh focused journeys in all three skins.
-The owner's Pulp avatar selection/focused gate and final native/artifact gates
-remain before publication and rollout.
-No v0.8.26 branch/worktree was created. The owner explicitly assigned a separate
-`feat/v0.8.27` worktree to the existing tab-3 worker; preserve that active work
-during v0.8.26 cleanup and remove it after reviewed v0.8.27 integration.
+## Current release — v0.8.26, October 14, 2026
 
-## Current release — v0.8.25 skins, October 13, 2026
+[Download v0.8.26](https://github.com/misunders2d/agentnet/releases/tag/v0.8.26)
+or its [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.26/AgentNet-android.apk).
+Published **2026-10-13 21:23:46 UTC**, immutable tag
+`1727eaff1aeeb5429a8f018829d8bc4e1f263d08`. All13 tag-built assets/checksums pass.
+The Android gallery correction and complete skin-usability condition are
+verified. [Collection v2026.10.14](https://github.com/misunders2d/agentnet-skins/releases/tag/v2026.10.14)
+is published at `5ae0d27`: visible Settings, correct Zoom chat navigation and
+sticky Write through long histories/search, captured send/retry/draft behavior,
+phone controls and the owner's Pulp avatar selection. Native permissions and
+messaging authority are unchanged.
+
+Fresh mixed-version PASS128.320s against exact v25; unchanged Go/race/native/IDB
+coverage retained by exact tree equality. Android36 checks/lint, integrated
+pinned skin suites and affected final Zoom source/browser/touch/native checks
+pass. Actual original-key APK warm/cold upgrade preserves the exact203-message
+fixture,3 queued sends, files, draft, identity and origin. Actual WebView latest
+gallery/Pulp trust and final Zoom203-row Write/keyboard/Settings pass; native
+update check recognizes v26. Physical-phone timing is not claimed.
+See [V0_8_26.md](plans/V0_8_26.md) for exact gates, digests and limitations.
+
+Approved existing-relay deployment completed **2026-10-13 21:30:51 UTC**. Verified
+full stopped-store backup: `/opt/agentnet-revived/backups/pre-v0.8.26-_665yotk`.
+Realm, data/counts, configuration and neighboring service are preserved; HTTPS
+and binary agree, Hub restarts0. No live identities/history/grants/requests reset.
+Both main checkouts are clean/pushed at closure; v26 has no extra branch/worktree.
+Keep the explicitly active v27 worktree and its tooling until separate closure.
+
+## Previous release — v0.8.25 skins, October 13, 2026
 
 [Download v0.8.25](https://github.com/misunders2d/agentnet/releases/tag/v0.8.25)
 or the [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.25/AgentNet-android.apk).

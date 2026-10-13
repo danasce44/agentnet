@@ -4,7 +4,7 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
-## Unreleased
+## [0.8.26] — 2026-10-14
 
 - Allow Android's skin gallery to read its two fixed GitHub sources. Only GET
   subresources are allowed; navigation, native bridge, other hosts/repositories,
@@ -17,7 +17,11 @@ This record starts with v0.8.1; earlier releases remain on the
   ineligible default reply receiver. Topic selection, chat mute, reminders and
   enabled Project space controls stay reachable in their conversation.
 
-The skin candidate is under final interaction review; v0.8.26 is not published.
+- Keep Zoom’s Write control reachable in a sticky chat header through long DM
+  and device histories, including after search and resize. Keyboard focus stays
+  below the current header. The corrected collection is `v2026.10.14`.
+- Refine Pulp’s selected agent hairstyle and correct standalone permission text
+  to describe unchanged native tools and own-device consent.
 
 ## [0.8.25] — 2026-10-13
 
