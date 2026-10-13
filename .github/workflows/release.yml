@@ -6,21 +6,37 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing immutable vX.Y.Z tag to package'
+        type: string
+        required: true
 permissions:
   contents: read
 jobs:
   app:
     uses: ./.github/workflows/desktop.yml
     with:
-      version: ${{ github.ref_name }}
+      version: ${{ inputs.release_tag || github.ref_name }}
+      ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
   program:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: scripts/build.sh "${{ github.ref_name }}"
+      - name: build exact tagged program
+        env:
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$VERSION^{commit}")"
+          scripts/build.sh "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: agentnet-program
@@ -33,6 +49,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -47,11 +64,13 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
       - name: build and verify signed Android preview
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.release_tag || github.ref_name }}
           AGENTNET_PREVIEW_KEYSTORE_BASE64: ${{ secrets.ANDROID_PREVIEW_KEYSTORE_BASE64 }}
           GOMAXPROCS: '2'
         run: |
           set -euo pipefail
+          [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$VERSION^{commit}")"
           umask 077
           export AGENTNET_PREVIEW_KEYSTORE="$RUNNER_TEMP/agentnet-preview.keystore"
           trap 'rm -f "$AGENTNET_PREVIEW_KEYSTORE"' EXIT
@@ -80,5 +99,5 @@ jobs:
       - name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes "AgentNet $TAG. Desktop installers, the signed Android preview APK, and the agentnet program for agents and servers. Check all files against SHA256SUMS. Desktop installers are not signed; the Android preview preserves its existing signing key." files/*
