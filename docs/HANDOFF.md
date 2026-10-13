@@ -32,6 +32,15 @@ platform/race coverage remains required before tagging. The corrected-source mix
 in 56.599s against exact v0.8.23, with no skip. None of these isolated results
 establishes physical-device delivery or a live-relay deployment.
 
+Application candidate `7d1dd587` is pushed; integrated CI passes client shards
+1–11, native Linux/macOS, desktop packaging and container. Client-0 had one
+fixture failure: blocked POSTs did not make its sender fully offline before
+phone removal. Closing the sender before removal preserves all original
+queue/key/access assertions; three focused race repetitions pass. Only that
+fixture and docs change afterward; retain other application-source gates.
+Windows native, non-client/UI and final affected CI checks remain pending.
+Completed feature worktrees and branches are removed, with evidence retained.
+
 Tag-built asset/checksum, APK in-place warm/cold preservation and publication/
 deployment gates remain pending. All existing qualification/review helper results are saved and their panes
 are closed. Codex is the
