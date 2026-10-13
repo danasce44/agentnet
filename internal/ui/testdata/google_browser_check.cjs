@@ -70,11 +70,6 @@ const shots = process.env.AGENTNET_SCREENSHOTS;
       assert.equal(overlap,false,'landing app link overlaps Other systems');await capture('desktop-landing');
       await page.goto(relay+'/#'+deviceCode);await page.getByText('Open in AgentNet',{exact:true}).waitFor();await capture('desktop-device-link');
       await page.goto(relay+'/#'+inviteCode);await page.getByText('Open your invitation in AgentNet.',{exact:true}).waitFor();await page.getByText('Open in AgentNet',{exact:true}).waitFor();assert.equal(await page.getByText('Sign in with Google in AgentNet',{exact:true}).count(),0);await capture('desktop-cli-invite');
-      for(const skin of ['classic','zoom']){
-        await page.goto(native+'/?skin='+skin);await page.getByRole('button',{name:'Your profile and settings'}).click();await page.getByText('operator@example.com · verified by this workspace',{exact:true}).waitFor();
-        assert.equal(await page.evaluate(()=>{const visible=root=>[...root.children].map(e=>(e.innerText||'')+[...e.querySelectorAll('*'),e].filter(x=>x.shadowRoot).map(x=>visible(x.shadowRoot)).join('')).join('');return /g-[0-9a-f]{24}\//.test(visible(document.body));}),false,skin+' exposes Google routing addresses');
-        await capture(skin+'-profile');
-      }
       await context.close();
     }
     const context=await browser.newContext({viewport:{width:390,height:844},ignoreHTTPSErrors:true,userAgent:'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36'});
@@ -83,6 +78,6 @@ const shots = process.env.AGENTNET_SCREENSHOTS;
     if(shots)await page.screenshot({path:path.join(shots,'google-phone-device-link-390.png')});
     await page.goto(relay);await page.getByRole('button',{name:'Sign in with Google',exact:true}).waitFor();if(shots)await page.screenshot({path:path.join(shots,'google-phone-landing-390.png')});
     await page.getByRole('button',{name:'Sign in with Google',exact:true}).click();await page.getByRole('button',{name:'You',exact:true}).waitFor();await page.getByRole('button',{name:'You',exact:true}).click();await page.getByRole('button',{name:/Fixture Person/}).click();await page.getByText('browser@example.com · verified by this workspace',{exact:true}).waitFor();await page.waitForTimeout(350);if(shots)await page.screenshot({path:path.join(shots,'google-phone-joined-390.png')});
-    await context.close();assert.deepEqual(errors,[]);assert.deepEqual(externals,[]);console.log('Google UI PASS: 1280/light + 390/dark; real email/domain controls; signed profiles Comic/Classic/Zoom; setup retry; app handoff; mocked GIS browser enrollment; no external requests');
+    await context.close();assert.deepEqual(errors,[]);assert.deepEqual(externals,[]);console.log('Google UI PASS: 1280/light + 390/dark; real email/domain controls; signed profile in Comic; setup retry; app handoff; mocked GIS browser enrollment; no external requests');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1});

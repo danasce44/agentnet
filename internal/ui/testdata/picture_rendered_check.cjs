@@ -33,7 +33,7 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
    const saved=await(await ctx.request.get(new URL(process.argv[2]).origin+'/api/overview')).json();assert(saved.person.picture,'strict server accepted edited picture');
    assert.deepEqual(errors,[]);await ctx.close();console.log('P22 shared crop editor PASS');return;
   }
-  for(const phone of [false,true])for(const skin of ['comic','classic','zoom']){
+  for(const phone of [false,true])for(const skin of ['comic']){
    const ctx=await browser.newContext({viewport:phone?{width:390,height:844}:{width:1440,height:900},isMobile:phone,hasTouch:phone});
    await ctx.addInitScript(()=>{window.__pictureClipboardReads=0;window.__pictureClipboardMode='image';window.__agentnetNativeClipboardImage=async()=>{
     window.__pictureClipboardReads++;if(window.__pictureClipboardMode==='text')return null;
@@ -44,7 +44,6 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
    await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);
    const shot=async name=>{if(process.env.AGENTNET_SCREENSHOTS){fs.mkdirSync(process.env.AGENTNET_SCREENSHOTS,{recursive:true});await p.screenshot({path:process.env.AGENTNET_SCREENSHOTS+`/p22-${skin}-${phone?'phone':'desktop'}-${name}.png`});}};
    const profile=async()=>{
-    if(skin!=='comic') { await p.locator('#profile-btn').click();return; }
     if(phone) {
      await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:'You',exact:true}).click();
      await p.getByRole('button',{name:/^Alice\b.*On 1 device/}).click();
@@ -66,17 +65,13 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
    assert(await dialog.locator('canvas').evaluate(c=>c.width===256&&c.height===256),'square preview');
    await shot('crop');await dialog.getByRole('button',{name:'Save picture',exact:true}).click();await dialog.waitFor({state:'hidden'});
    await p.getByRole('button',{name:'Remove picture',exact:true}).waitFor();
-   const selfPicture=skin==='comic'?p.locator('[data-size="72"] img').first():p.locator('#profile-card .avatar img').first();
+   const selfPicture=p.locator('[data-size="72"] img').first();
    await selfPicture.waitFor({state:'visible'});await selfPicture.evaluate(im=>im.decode());assert(await selfPicture.evaluate(im=>im.naturalWidth>0&&im.naturalWidth===im.naturalHeight&&im.naturalWidth<=256),'rendered square profile picture');await shot('profile');
    const current=await (await ctx.request.get(new URL(process.argv[2]).origin+'/api/overview')).json();assert(current.person.picture&&current.person.picture_url,'saved shared host data');
    await p.getByRole('button',{name:'Remove picture',exact:true}).click();await p.getByRole('button',{name:'Remove picture',exact:true}).waitFor({state:'hidden'});
-   if(skin==='comic')await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^Chats/}).click();else await p.locator('#settings').evaluate(d=>d.close());
-   if(skin==='zoom') {
-    // Opening a person now goes directly to Main; file controls remain one level deeper.
-    await p.locator('.person-cluster').getByRole('button',{name:/^Bob/}).click();
-   }else await p.getByRole('button',{name:/^Bob/}).first().click();
-   if(skin==='zoom')await p.getByRole('button',{name:/Write in this DM/}).click();
-   const field=skin==='comic'?p.locator('#skin textarea').last():p.locator(skin==='zoom'?'#write-body':'#body');
+   await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^Chats/}).click();
+   await p.getByRole('button',{name:/^Bob/}).first().click();
+   const field=p.locator('#skin textarea').last();
    const pasted=p.getByRole('button',{name:/^Remove pasted-image-/});
    await field.fill('');
    await field.evaluate(el=>{const dt=new DataTransfer();dt.items.add(new File([new Uint8Array([1,2,3])],'image.png',{type:'image/png'}));dt.setData('text/plain','companion text');el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}));});
@@ -86,14 +81,8 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
    await p.evaluate(()=>{window.__pictureClipboardMode='text';});
    await field.evaluate(el=>{const dt=new DataTransfer();dt.setData('text/plain','ordinary pasted text');el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt}));});
    await p.waitForFunction(()=>[...document.querySelector('#skin').shadowRoot.querySelectorAll('textarea')].some(el=>el.value==='ordinary pasted text'));assert.equal(await field.inputValue(),'ordinary pasted text','native text-only paste preserved');await field.fill('');
-   if(skin==='zoom') {
-    await p.getByRole('button',{name:'Cancel',exact:true}).click();
-    await p.locator('.mini-chat').getByRole('button',{name:/avatar\.png/}).click();
-   }
-   // Comic exposes an image thumbnail; the legacy skins expose file chips.
-   const openPicture=skin==='comic'
-    ? p.getByRole('button',{name:'Open picture avatar.png',exact:true})
-    : p.locator('.file').filter({hasText:'avatar.png'}).getByRole('button',{name:'Open',exact:true});
+   // Comic exposes an image thumbnail.
+   const openPicture=p.getByRole('button',{name:'Open picture avatar.png',exact:true});
    await openPicture.click();
    await p.getByRole('button',{name:'Use as my picture',exact:true}).click();await dialog.waitFor();await shot('chat-picture');
    await dialog.getByRole('button',{name:'Save picture',exact:true}).click();await dialog.waitFor({state:'hidden'});

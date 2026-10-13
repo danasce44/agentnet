@@ -186,8 +186,9 @@ AgentNet's whole interface is a **skin**: the layout, navigation, conversations,
 settings and interactions. Skins use the same AgentNet underneath, so choosing
 another one keeps your conversations, identity and permissions.
 
-The app includes **Comic**, **Classic** and **Zoom**. Choose one under
-**Settings → Appearance → Skin**. You and your colleagues can use different
+The app includes **Comic**, its own skin. **Classic** and **Zoom** are skin
+packages in the agentnet-skins collection, installed like any other skin.
+Choose one under **Settings → Appearance → Skin**. You and your colleagues can use different
 skins in the same workspace.
 
 Anyone can create and share a skin. It is a portable module you can install
@@ -546,8 +547,8 @@ for that browser only. Keep files owned by the serving user and not writable
 by other users. Reserved IDs, declared-file limits and digest-bound trust
 apply. A changed package requires renewed trust; skins are not sandboxed.
 
-The reference packages live in `internal/ui/skins/classic`,
-`internal/ui/skins/zoom` and `internal/ui/web` (Comic). The creator workflow
+Comic's source lives in `internal/ui/web`; the Classic and Zoom packages live
+in the agentnet-skins collection. The creator workflow
 must run contract validation and actual host/browser journeys, not just
 compile CSS. Compatibility with the host does not prove the skin's code is
 trustworthy or every optional feature is available on every platform.
@@ -565,7 +566,7 @@ trustworthy or every optional feature is available on every platform.
 | `internal/protocol`, `internal/envelope` | Signed requests and end-to-end encrypted message/attachment formats |
 | `internal/identity`, `secfile`, `lockfile`, `sqlitedb` | Keys, private files, process ownership and schema steps |
 | `internal/ui`, `internal/ui/static` | UI host, local APIs, browser device engine and skin loader |
-| `internal/ui/web`, `internal/ui/skins` | Portable interface packages |
+| `internal/ui/web`, `internal/ui/skins/shared` | Comic, and helpers shared with skin packages |
 | `internal/a2abind`, `itest` | A2A adapter and separate-process integration journeys |
 
 ![AgentNet network: your agent, the encrypted relay and a colleague's agent, with optional direct delivery](docs/revival/readme-assets/architecture.svg)
@@ -918,7 +919,7 @@ local; people-topic Done/Reopen has shared semantics. The
 remain a design discussion, outside this release.
 
 Comic does not yet expose all advanced reply-receiver/continuation controls
-available in Classic and Zoom. See the [parity gap](docs/COMIC_PARITY_GAPS.md).
+available in the Classic and Zoom skin packages. See the [parity gap](docs/COMIC_PARITY_GAPS.md).
 Phones use a browser device, not a native agent runtime; browser storage can
 be lost and background behavior depends on the browser. Old files may need
 an online device that still holds them. A skin compatibility pass does not

@@ -15,7 +15,7 @@ import (
 	"github.com/misunders2d/agentnet/internal/envelope"
 )
 
-// Opt-in rendered P23 regression across all skins, desktop and touch phone.
+// Opt-in rendered P23 regression in Comic, desktop and touch phone.
 // Real local signed transports; no model, installed identity or production.
 func TestProposalConfirmationRendered(t *testing.T) { testProposalConfirmationRendered(t, false) }
 
@@ -25,11 +25,7 @@ func testProposalConfirmationRendered(t *testing.T, revised bool) {
 	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
 		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT")
 	}
-	skins := []string{"comic", "classic", "zoom"}
-	if revised {
-		skins = []string{"comic"}
-	}
-	for _, skin := range skins {
+	for _, skin := range []string{"comic"} {
 		for _, width := range []string{"1440", "390"} {
 			t.Run(skin+width, func(t *testing.T) {
 				alice, bob, live := liveWorld(t)
@@ -143,7 +139,7 @@ func TestProposalConversationRendered(t *testing.T) {
 	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
 		t.Skip("opt-in rendered conversation check")
 	}
-	for _, skin := range []string{"comic", "classic", "zoom"} {
+	for _, skin := range []string{"comic"} {
 		for _, width := range []string{"1440", "390"} {
 			t.Run(skin+width, func(t *testing.T) {
 				base := NewFixture(time.Now)

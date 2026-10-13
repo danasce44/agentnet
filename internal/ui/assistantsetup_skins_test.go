@@ -47,14 +47,6 @@ func TestComicAssistantSetupModel(t *testing.T) {
 	runNodeCheck(t, "testdata/assistant_setup_model_check.mjs")
 }
 
-// TestSkinAssistantSetupFolders drives Classic's and Zoom's setup: the
-// working folder is browsed through /api/folders, never typed, and a folder
-// that can't be read (an agent's deleted folder, a closed subfolder) still
-// leads somewhere through Up and Home.
-func TestSkinAssistantSetupFolders(t *testing.T) {
-	runNodeCheck(t, "testdata/assistant_setup_skin_check.mjs")
-}
-
 // TestComicAssistantSetupStatesWorded pins every tool state the native
 // setup reports (cmd/agentnet/assistantsetup.go) to words in Comic, and
 // keeps the folders on these screens browsed, not typed (owner, MEL-534).

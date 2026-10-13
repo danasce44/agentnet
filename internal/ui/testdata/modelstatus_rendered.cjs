@@ -34,12 +34,11 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
  try{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
   browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium'});
-  for(const skin of process.env.AGENTNET_MODEL_SKINS?process.env.AGENTNET_MODEL_SKINS.split(','):['comic','classic','zoom'])for(const width of [1280,390])for(const mobileBrowser of [false,true]){
+  for(const skin of process.env.AGENTNET_MODEL_SKINS?process.env.AGENTNET_MODEL_SKINS.split(','):['comic'])for(const width of [1280,390])for(const mobileBrowser of [false,true]){
    const context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.stack));
    await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
    await page.goto(origin+'/?skin='+skin+(mobileBrowser?'&browser=1':''));await page.waitForFunction(()=>window.ready);
    if(skin==='comic'){await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:'Agents',exact:true}).click();await page.getByText(/^Last reported model: Claude Opus 4.6/).waitFor();await page.getByText(/^Last reported model: gpt-6.1-sol/).waitFor();}
-   else{await page.locator('#profile-btn').click();await page.locator('[data-settings="device"]').click();await page.locator('#responder').locator('..').locator('summary').click();await page.locator('#responder').getByText(/^Last reported model: Claude Opus 4.6/).waitFor();await page.locator('#responder').getByText(/^Last reported model: gpt-6.1-sol/).first().waitFor();}
    await settle(page);
    const visibleRows=page.locator('[data-agent-model]:visible');assert(await visibleRows.count()>=2,'private model rows are discoverable '+JSON.stringify({skin,width,mobileBrowser,count:await visibleRows.count()}));
    assert(await page.getByText('Model unknown',{exact:true}).count()>=1,'absent reports remain unknown');
@@ -50,6 +49,6 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    await settle(page);const shot=path.join(evidence,skin+'-model-status-'+width+(mobileBrowser?'-browser':'-native')+'.png');await page.screenshot({path:shot});shots.push(shot);
    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'no model status horizontal overflow');assert.deepEqual(errors,[]);await context.close();
   }
-  console.log(JSON.stringify({ok:true,checks:'Private readonly model report/unknown metadata; Comic/Classic/Zoom; desktop390/1280; native/browser',shots}));
+  console.log(JSON.stringify({ok:true,checks:'Private readonly model report/unknown metadata; Comic; desktop390/1280; native/browser',shots}));
  }finally{if(browser)await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

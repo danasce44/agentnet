@@ -5,7 +5,7 @@ async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;c
 (async () => {
   const browser = await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM || '/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
   try {
-    for (const skin of ['comic','classic','zoom']) for (const state of (process.env.RETRY_STATES?process.env.RETRY_STATES.split(','):['cancelled','failed','interrupted','awaiting','running'])) {
+    for (const skin of ['comic']) for (const state of (process.env.RETRY_STATES?process.env.RETRY_STATES.split(','):['cancelled','failed','interrupted','awaiting','running'])) {
       const stopped=['cancelled','failed','interrupted'].includes(state);
       const actions=state==='running'?['cancel']:state==='awaiting'?['accept','decline']:state==='interrupted'?['accept','resolve']:['accept'];
       const ctx=await browser.newContext({reducedMotion:'reduce',viewport:process.env.RETRY_MODE==='phone'?{width:390,height:844}:{width:1440,height:900}});
@@ -23,20 +23,16 @@ async function settle(p){await p.evaluate(async()=>{await document.fonts.ready;c
         await route.fulfill({response,json:d});
       });
       await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);
-      if(skin==='comic') await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
-      else {await p.locator('#profile-btn').click();await p.locator('#settings-tab-device').click();await p.locator('#quarantine-summary').click();}
+      await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
       await p.getByText(/A message that couldn.t be accepted/).first().waitFor();
       assert.ok(await p.getByText(/failed a check and was kept out/).count(),skin+': legacy operation distinction');
       await settle(p);
       if(state==='cancelled'&&process.env.AGENTNET_SCREENSHOTS){fs.mkdirSync(process.env.AGENTNET_SCREENSHOTS,{recursive:true});await p.screenshot({path:process.env.AGENTNET_SCREENSHOTS+'/held-'+process.env.RETRY_MODE+'-'+skin+'.png'});}
-      if(skin==='comic') {if(state==='interrupted'){await p.getByRole('button',{name:'Run it again',exact:true}).waitFor();assert.equal(await p.getByText(/Answered only if you allow it/).count(),0);}await p.getByRole('button',{name:/Open it in the chat/}).first().click();}
-      else {await p.keyboard.press('Escape');if(state==='interrupted'){await p.locator('#review-btn').click();await p.locator('#review-list button').filter({hasText:'Your agent was interrupted'}).click();}else {await p.locator('#nav-chats').click();await p.getByRole('button',{name:/Bob/}).filter({visible:true}).first().click();}}
-      if(skin==='zoom'&&state!=='interrupted'){await p.getByRole('button',{name:/Original request/}).click();}
-      const row=skin==='comic'?p.locator('[data-mid="needs-request"]'):skin==='zoom'?p.locator('.zoom-message'):p.locator('#m-needs-request');
+      if(state==='interrupted'){await p.getByRole('button',{name:'Run it again',exact:true}).waitFor();assert.equal(await p.getByText(/Answered only if you allow it/).count(),0);}await p.getByRole('button',{name:/Open it in the chat/}).first().click();
+      const row=p.locator('[data-mid="needs-request"]');
       await row.waitFor();
-      const expected=state==='running'?(skin==='comic'?'Stop':'Stop…'):state==='awaiting'?(skin==='comic'?'Allow once':'Run…'):(skin==='comic'?'Run it again':'Run your responder again…');
-      if(state==='awaiting' && skin!=='comic') await row.getByRole('button',{name:/run/i}).first().waitFor();
-      else await row.getByRole('button',{name:expected,exact:true}).waitFor();
+      const expected=state==='running'?'Stop':state==='awaiting'?'Allow once':'Run it again';
+      await row.getByRole('button',{name:expected,exact:true}).waitFor();
       if(state==='interrupted'){await row.getByText('Interrupted run needs an explicit retry.',{exact:true}).waitFor();await row.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();}
       if(stopped) {
         assert.equal(await row.getByText('Needs your OK',{exact:true}).count(),0,skin+': retry called consent');

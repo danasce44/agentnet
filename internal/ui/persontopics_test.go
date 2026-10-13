@@ -28,7 +28,7 @@ func TestPersonTopicsAllSkinsRendered(t *testing.T) {
 		cmd.Env = append(cmd.Env, "AGENTNET_SCREENSHOTS="+t.TempDir())
 	}
 	out, err := cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(out), "person topics comic 390 PASS") || !strings.Contains(string(out), "person topics zoom 390 PASS") {
+	if err != nil || !strings.Contains(string(out), "person topics comic 390 PASS") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	t.Log(string(out))
@@ -41,7 +41,7 @@ func TestPersonTopicUnreadRendered(t *testing.T) {
 	cmd := exec.CommandContext(t.Context(), "node", "testdata/person_topics_rendered.cjs")
 	cmd.Env = append(os.Environ(), "AGENTNET_TOPIC_UNREAD=1")
 	out, err := cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(out), "topic unread comic 390 PASS") || !strings.Contains(string(out), "topic unread zoom 390 PASS") {
+	if err != nil || !strings.Contains(string(out), "topic unread comic 390 PASS") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	t.Log(string(out))

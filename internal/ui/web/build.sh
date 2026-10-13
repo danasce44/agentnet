@@ -28,12 +28,13 @@ cp "$here/../static/optimistic.mjs" "$here/../static/optimistic.d.mts" "$work/sr
 cp "$here/../skins/shared/person-topics.mjs" "$here/../skins/shared/reaction-preferences.mjs" "$here/../skins/shared/collective-mentions.mjs" "$work/src/"
 # Bundle the existing presentation-only Drive widgets; transports always
 # come from Comic's captured host. No dependency on page globals/assets.
-cp "$here/../skins/classic/src/drivespace.mjs" "$work/src/drive-space.mjs"
-cp "$here/../skins/classic/src/drivespace-setup.mjs" "$work/src/drive-setup.mjs"
+cp "$here/../skins/shared/drivespace.mjs" "$work/src/drive-space.mjs"
+cp "$here/../skins/shared/drivespace-setup.mjs" "$work/src/drive-setup.mjs"
 cd "$work"
 npm ci --ignore-scripts --no-audit --no-fund >/dev/null
 ./node_modules/.bin/tsc -p tsconfig.json
-# Reuse the pinned lexer for raw-link labels in the plain-text bundled skins.
+# Reuse the pinned lexer for raw-link labels in the plain-text skin packages
+# (Classic and Zoom, in agentnet-skins).
 ./node_modules/.bin/esbuild src/linkText.ts --bundle --format=esm --platform=browser --target=es2022 \
   --minify --legal-comments=eof --log-level=warning --outfile="$here/../skins/shared/link-text.mjs"
 { printf '\n/*!\n'; cat node_modules/marked/LICENSE; printf '\n*/\n'; } >> "$here/../skins/shared/link-text.mjs"
@@ -42,7 +43,7 @@ rm -rf "$out" && mkdir -p "$out"
 	--jsx=automatic --minify --legal-comments=eof --define:process.env.NODE_ENV='"production"' \
 	--log-level=warning --outfile="$out/entry.mjs"
 ./node_modules/.bin/tailwindcss -i src/styles.css -o "$work/tailwind.css" --minify >/dev/null 2>&1
-cat "$here/../skins/classic/src/drivespace.css" >> "$work/tailwind.css"
+cat "$here/../skins/shared/drivespace.css" >> "$work/tailwind.css"
 # Fonts and emoji data are served from the package itself: no CDN, and
 # offline is normal. m/ holds exactly these files.
 mkdir -p "$out/m/fonts" "$out/m/emoji/en"

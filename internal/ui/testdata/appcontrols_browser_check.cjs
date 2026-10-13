@@ -1,4 +1,4 @@
-// Real loader and bundled skins; every app operation is intercepted locally.
+// Real loader and the bundled skin (Comic); every app operation is intercepted locally.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,7 +6,7 @@ const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT || 'playwright-core
 const settle = page => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 async function releaseChecks(browser) {
   const prominent = process.argv.includes('--prominent-update');
-  for (const skin of (prominent ? ['comic'] : (process.env.AGENTNET_TEST_SKINS || 'comic,classic,zoom').split(','))) for (const width of (prominent ? [1440,390] : [1280,390])) {
+  for (const skin of (prominent ? ['comic'] : (process.env.AGENTNET_TEST_SKINS || 'comic').split(','))) for (const width of (prominent ? [1440,390] : [1280,390])) {
     const context = await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'});
     const page = await context.newPage();page.setDefaultTimeout(8000);await page.clock.install();
     const errors = [], actions = [], checks = [], pending = [];
@@ -37,14 +37,13 @@ async function releaseChecks(browser) {
       if(skin==='comic'){
         await nav().getByRole('button',{name:width===390?'You':'Settings',exact:true}).click();
         await page.getByRole('button',{name:/^About/}).click();
-      }else await page.getByRole('button',{name:'Your profile and settings',exact:true}).click();
+      }
     };
     const close = async () => {
       if(skin==='comic'){
         await nav().getByRole('button',{name:'Chats',exact:true}).click();
         await page.getByRole('button',{name:'Update AgentNet',exact:true,includeHidden:true}).waitFor({state:'detached'});
       }
-      else await page.getByRole('button',{name:'Close settings',exact:true}).click();
       await settle(page);
     };
     const check = () => page.getByRole('button',{name:'Check for updates',exact:true});
@@ -106,9 +105,6 @@ async function releaseChecks(browser) {
             await page.getByRole('heading',{name:'Appearance',exact:true}).waitFor();
             if(width===390)await page.getByRole('button',{name:'You',exact:true}).first().click();
             await page.getByRole('button',{name:/^About/}).click();
-          }else{
-            await page.getByRole('tab',{name:'Appearance',exact:true}).click();
-            await page.getByRole('tab',{name:'Profile',exact:true}).click();
           }
         }else {await close();await about();}
         await check().waitFor();

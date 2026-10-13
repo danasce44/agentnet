@@ -90,8 +90,9 @@ const skins = [
   { api: 1, id: "comic", name: "Comic", digest: "c".repeat(64) },
   { api: 1, id: "notebook", name: "Notebook", digest },
   { api: 1, id: "sketch", name: "Sketch", digest, local: true },
-  { api: 1, id: "zoom", name: "Not Zoom", digest, local: true }, // a stored package can never be built in
+  { api: 1, id: "zoom", name: "Zoom", digest }, // an installed agentnet-skins package, not built in
 ].map(mark);
+const stored = mark({ api: 1, id: "comic", name: "Not Comic", digest, local: true }); // a stored package can never be built in
 const id = (o) => o.selected && o.selected.id;
 // Saved choices and the page's ?skin=.
 assert.equal(HOME, "comic");
@@ -101,7 +102,8 @@ assert.deepEqual([id(choose(skins, { saved: "classic" })), choose(skins, { saved
 assert.deepEqual([id(choose(skins, { saved: "comic" })), choose(skins, { saved: "comic" }).save], ["comic", null]);
 assert.equal(id(choose(skins, { saved: "notebook" })), "notebook", "a saved installed skin opens");
 assert.equal(id(choose(skins, { query: "default", saved: "notebook" })), "comic", "?skin=default names Comic");
-assert.equal(id(choose(skins, { query: "classic" })), "comic", "?skin=classic opens Comic in this release");
+assert.equal(id(choose(skins, { query: "classic" })), "comic", "?skin=classic opens Comic while no Classic package is installed");
+assert.equal(id(choose(skins, { saved: "zoom" })), "zoom", "a saved installed Zoom package opens");
 assert.equal(id(choose(skins, { query: "sketch", saved: "comic" })), "sketch", "?skin= wins over the saved choice");
 assert.equal(id(choose(skins, { saved: "gone" })), "comic", "an unknown id opens Comic");
 const withClassic = [...skins, mark({api:1,id:"classic",name:"Classic"})];
@@ -118,24 +120,28 @@ assert.equal(trusted(by("notebook"), other), false, "installed, changed or tampe
 assert.equal(trusted(by("sketch"), null), false, "browser-local, never accepted");
 assert.equal(trusted(by("sketch"), digest), true, "browser-local, accepted digest");
 assert.equal(trusted(by("sketch"), digest.toUpperCase()), false, "browser-local, tampered digest");
-assert.equal(by("zoom").builtin, false, "a stored package with a built-in id is not built in");
-assert.equal(trusted(by("zoom"), null), false);
+assert.equal(stored.builtin, false, "a stored package with a built-in id is not built in");
+assert.equal(trusted(stored, null), false);
+assert.equal(by("zoom").builtin, false, "Zoom is a package, not built in");
+assert.equal(trusted(by("zoom"), null), false, "installed Zoom, never accepted");
+assert.equal(trusted(by("zoom"), digest), true, "installed Zoom, accepted digest");
 assert.equal(trusted(mark({ id: "notebook", builtin: true, digest }), null), false, "a manifest cannot claim to be built in");
 // No package shows as a built-in skin.
-for (const n of ["Comic", " comic ", "CLASSIC", "Zoom"]) assert.equal(takenName(n), true, n);
-for (const n of ["Notebook example", "Comic book", "Default"]) assert.equal(takenName(n), false, n);
+for (const n of ["Comic", " comic ", "COMIC"]) assert.equal(takenName(n), true, n);
+for (const n of ["Notebook example", "Comic book", "Default", "Classic", "Zoom"]) assert.equal(takenName(n), false, n);
 console.log("skin choice PASS");
 `
 
 // An installed package may not show as a built-in skin: one named "Comic"
-// (in any case or spacing), "Classic" or "Zoom" is left out of the catalog.
+// (in any case or spacing) is left out of the catalog. "Classic" and "Zoom"
+// are the names of agentnet-skins packages, not reserved.
 func TestInstalledSkinCannotTakeBuiltInName(t *testing.T) {
-	for _, name := range []string{"Comic", " comic ", "CLASSIC", "Zoom"} {
+	for _, name := range []string{"Comic", " comic ", "COMIC"} {
 		if !ReservedSkinName(name) {
 			t.Errorf("%q is not reserved", name)
 		}
 	}
-	for _, name := range []string{"Notebook example", "Comic book", "Default"} {
+	for _, name := range []string{"Notebook example", "Comic book", "Default", "Classic", "Zoom"} {
 		if ReservedSkinName(name) {
 			t.Errorf("%q is reserved", name)
 		}

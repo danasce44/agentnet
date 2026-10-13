@@ -23,15 +23,16 @@ func catalogOf(t *testing.T, dir string) []map[string]any {
 	return list
 }
 
-// Built-in skins are packages like any other: Comic first, with each manifest's
-// entry, style, document rules and files, and a digest of its bytes.
+// Built-in skins are packages like any other: Comic, the only one, with its
+// manifest's entry, style, document rules and files, and a digest of its
+// bytes. Classic and Zoom are packages from the agentnet-skins collection.
 func TestBuiltinSkinCatalog(t *testing.T) {
 	for _, dir := range []string{"", t.TempDir()} {
 		list := catalogOf(t, dir)
-		if len(list) != 3 {
+		if len(list) != 1 {
 			t.Fatalf("catalog %q: %v", dir, list)
 		}
-		for i, id := range []string{"comic", "classic", "zoom"} {
+		for i, id := range []string{"comic"} {
 			skin := list[i]
 			if skin["id"] != id || skin["entry"] != "entry.mjs" || skin["style"] != "style.css" || len(skin["digest"].(string)) != 64 {
 				t.Fatalf("catalog %q: %v", dir, list)
@@ -40,11 +41,11 @@ func TestBuiltinSkinCatalog(t *testing.T) {
 				t.Fatal("the catalog carries a trust word: trust is the host's own list")
 			}
 		}
-		if list[0]["name"] != "Comic" || list[0]["document"] != "document.css" || list[1]["name"] != "Classic" || list[2]["name"] != "Zoom" {
+		if list[0]["name"] != "Comic" || list[0]["document"] != "document.css" {
 			t.Fatal(list)
 		}
 	}
-	if !slices.Equal(BuiltinSkins, []string{"comic", "classic", "zoom"}) {
+	if !slices.Equal(BuiltinSkins, []string{"comic"}) {
 		t.Fatalf("built-in skins %v", BuiltinSkins)
 	}
 }
@@ -108,9 +109,10 @@ func TestBuiltinSkinServedBytesMatchBuild(t *testing.T) {
 	}
 }
 
-// No installed package may take a built-in skin's id, one to come, or the
-// old name of the default: such a directory is skipped and the built-in
-// bytes stay what is served.
+// No installed package may take a built-in skin's id or the old name of
+// the default: such a directory is skipped and the built-in bytes stay what
+// is served. Classic and Zoom are not reserved: their official packages
+// (agentnet-skins) install like any other.
 func TestReservedSkinIDs(t *testing.T) {
 	home := t.TempDir()
 	for _, id := range ReservedSkinIDs {
@@ -136,10 +138,32 @@ func TestReservedSkinIDs(t *testing.T) {
 	if strings.Contains(w.Body.String(), "impostor") {
 		t.Fatal("an installed package replaced the built-in Comic")
 	}
-	for _, id := range []string{"comic", "classic", "zoom", "default"} {
+	for _, id := range []string{"comic", "default"} {
 		if !slices.Contains(ReservedSkinIDs, id) {
 			t.Errorf("%s is not reserved", id)
 		}
+	}
+	// The packages that left the program install under their own ids and names.
+	home = t.TempDir()
+	for _, p := range []struct{ id, name string }{{"classic", "Classic"}, {"zoom", "Zoom"}} {
+		if slices.Contains(ReservedSkinIDs, p.id) || ReservedSkinName(p.name) {
+			t.Errorf("%s is still reserved", p.id)
+		}
+		dir := filepath.Join(home, p.id)
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		for name, data := range map[string]string{
+			"skin.json": `{"api":1,"id":"` + p.id + `","name":"` + p.name + `","entry":"entry.mjs","files":["entry.mjs"]}`,
+			"entry.mjs": `export function mount(root) { root.textContent = "` + p.id + `"; }`,
+		} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if list := catalogOf(t, home); len(list) != len(BuiltinSkins)+2 || list[len(BuiltinSkins)]["id"] != "classic" || list[len(BuiltinSkins)+1]["id"] != "zoom" {
+		t.Fatalf("an installed Classic or Zoom package was not listed: %v", list)
 	}
 }
 

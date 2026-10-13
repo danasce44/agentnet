@@ -100,7 +100,7 @@ const server = http.createServer((req, res) => {
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const origin = 'http://127.0.0.1:' + server.address().port;
     browser = await chromium.launch({ headless: true, executablePath: process.env.AGENTNET_CHROMIUM || '/usr/bin/chromium' });
-    for (const skin of (process.env.P11_SKINS||'comic,classic,zoom').split(',')) for (const kind of ((process.env.P11_ORGANIZE_ONLY||process.env.P11_HISTORY_IMPORT_ONLY||process.env.P11_DRAFTS_ONLY||process.env.P11_MENTIONS_ONLY)?['dm','group']:(process.env.P11_PENDING_ONLY||process.env.P11_STOP_ONLY)?['group','agent']:['dm', 'group', 'agent'])) for (const width of [1280, 390]) {
+    for (const skin of (process.env.P11_SKINS||'comic').split(',')) for (const kind of ((process.env.P11_ORGANIZE_ONLY||process.env.P11_HISTORY_IMPORT_ONLY||process.env.P11_DRAFTS_ONLY||process.env.P11_MENTIONS_ONLY)?['dm','group']:(process.env.P11_PENDING_ONLY||process.env.P11_STOP_ONLY)?['group','agent']:['dm', 'group', 'agent'])) for (const width of [1280, 390]) {
       const tag = skin + '-' + kind + '-' + width;
       const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: width < 500, reducedMotion: 'reduce' });
       await ctx.route('**/*', r => new URL(r.request().url()).origin === origin ? r.continue() : r.abort());
@@ -310,13 +310,11 @@ const server = http.createServer((req, res) => {
             if(skin==='comic'){
               if(width>600){await page.getByText('Quick main flow message',{exact:false}).first().hover();await page.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Make a topic',exact:true}).click();}
               else{const actions=page.getByRole('button',{name:'Message actions',exact:true});await actions.focus();await actions.click();await page.getByRole('button',{name:'Make a topic',exact:true}).click();}
-            }else if(skin==='zoom'){
-              await page.getByRole('button',{name:/Quick main flow message/}).click();await page.getByLabel('Message actions',{exact:true}).click();await page.getByRole('button',{name:'Make a topic',exact:true}).click();
-            }else await page.getByRole('button',{name:'Make a topic',exact:true}).click();
+            }
             await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/topic/create'));
             await shot('promoted-flow');
             await page.getByRole('button',{name:/^(Main|Main flow)$/}).click();
-            const mainRow=page.locator(skin==='comic'?'[data-mid="'+ 'a'.repeat(32)+'"]':skin==='classic'?'.timeline .body':'.zoom-message .body, .mini-chat .mc-text').filter({hasText:'Quick main flow message'});
+            const mainRow=page.locator('[data-mid="'+ 'a'.repeat(32)+'"]').filter({hasText:'Quick main flow message'});
             await mainRow.first().waitFor({state:'hidden'});
             assert.equal(await mainRow.first().isVisible(),false,tag+': promoted message leaves main flow');
           }
@@ -324,7 +322,6 @@ const server = http.createServer((req, res) => {
           await page.locator('textarea:visible').last().fill('Brand new topic message');
           await page.getByRole('button',{name:/^(Send\b|Ask )/}).click();
           await page.locator('text=Brand new topic message >> visible=true').first().waitFor();
-          if(skin!=='comic')await page.locator('.topics-bar .topic-chip[aria-pressed=true]').waitFor();
           const sent=await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/dm/send'||r.path==='/api/send'));
           assert(sent,tag+': send through Host API');
           if(kind!=='agent'){assert.equal(sent.body.topic,'new');assert.equal(await page.getByText('Quick main flow message',{exact:false}).first().isVisible(),false,tag+': new topic opens after sending');}else assert(!sent.body.reply_to,tag+': new agent topic has no parent');
@@ -342,8 +339,7 @@ const server = http.createServer((req, res) => {
         await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
         await dialog.getByRole('button', { name: 'Undo', exact: true }).click();
         assert.equal((await changed()).length, 0, tag + ': Undo stops mutations');
-        if (skin === 'comic') await dialog.getByRole('button', { name: 'Mark done', exact: true }).click();
-        else await dialog.getByRole('button', { name: 'Mark done', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Mark done', exact: true }).click();
         // Owner (v0.8.17): the confirmation says where Done applies, like the footer.
         const doneAsk = await dialog.innerText();
         assert.match(doneAsk, kind === 'agent' ? /Mark these topics done on your linked devices\?|Mark done 2 topics\? On your linked devices\./ : /Mark these topics done for everyone\?|Mark done 2 topics\? Shared with everyone\./, tag + ': Mark done says where it applies');

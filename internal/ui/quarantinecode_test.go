@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"os/exec"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -179,27 +178,5 @@ func TestHeldNoticeActionable(t *testing.T) {
 	}
 	if data, _ := json.Marshal(item("key_changed", "", "", 0)); strings.Contains(string(data), "sender_verified") || strings.Contains(string(data), "logical") || strings.Contains(string(data), "size") || strings.Contains(string(data), "action") || strings.Contains(string(data), "copies") || strings.Contains(string(data), "last_at") {
 		t.Fatalf("empty fields not omitted: %s", data)
-	}
-}
-
-// Classic and Zoom word a held message from its code with who() (never from
-// Reason, which names the address), name every verified code, and their
-// trust and approve dialogs send no one to a terminal.
-func TestSkinsWordHeldBackFromCode(t *testing.T) {
-	for _, skin := range []string{"classic", "zoom"} {
-		src := readSources(t, "skins/"+skin+"/src", []string{".mjs"})
-		for _, code := range []string{HoldKeyChanged, HoldProof, HoldConflict, HoldDuplicate} {
-			if !regexp.MustCompile(`(?m)^  ` + code + `: \(`).MatchString(src) {
-				t.Errorf("%s has no held-back words for %s", skin, code)
-			}
-		}
-		if !strings.Contains(src, "heldWords[q.code](who(q.peer))") {
-			t.Errorf("%s no longer words held-back rows from their code", skin)
-		}
-		for _, bad := range []string{"q.reason", "agentnet trust", "agentnet approve"} {
-			if strings.Contains(src, bad) {
-				t.Errorf("%s still shows %q", skin, bad)
-			}
-		}
 	}
 }

@@ -4,10 +4,10 @@ const settle=async p=>p.evaluate(async()=>{await document.fonts.ready;const root
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
  try {
-  for(const skin of ['comic','classic','zoom']) for(const width of [1280,390]) {
+  for(const skin of ['comic']) for(const width of [1280,390]) {
    const ctx=await browser.newContext({reducedMotion:'reduce',viewport:{width,height:1000}}),p=await ctx.newPage(),errors=[],posted=[];
    // Comic keeps background notices in Settings / About / Technical details and
-   // all skins archive exact displayed snapshots.
+   // archives exact displayed snapshots.
    const want={do:'archive_held_batch',held:[{id:'pending',reason:'proof_pending',detail_code:''}]};
    let archived=false,fail=true;p.setDefaultTimeout(6000);p.on('pageerror',e=>errors.push(String(e)));
    await p.route('**/api/overview*',async route=>{
@@ -33,10 +33,10 @@ const settle=async p=>p.evaluate(async()=>{await document.fonts.ready;const root
      await p.getByRole('button',{name:/^About/}).click();
      await p.getByRole('button',{name:'Technical details',exact:true}).click();
      await p.locator('summary').filter({hasText:'Retained sync records'}).click();
-    }else {await p.locator('#profile-btn').click();await p.locator('[data-settings="device"]').click();await p.locator('#quarantine-summary').click();}
+    }
    };
    await open();
-   const archive=p.getByRole('button',{name:skin==='comic'?'Archive this notice':'Archive notice',exact:true});await archive.waitFor();
+   const archive=p.getByRole('button',{name:'Archive this notice',exact:true});await archive.waitFor();
    assert.equal(await archive.count(),1,'only pending-context notice can archive');assert.equal(posted.length,0,'reading never archives');
    await p.getByText('Checks continue when connected; the message appears when verified.',{exact:false}).filter({visible:true}).waitFor();
    if(process.env.AGENTNET_SCREENSHOTS){fs.mkdirSync(process.env.AGENTNET_SCREENSHOTS,{recursive:true});await settle(p);await p.screenshot({path:`${process.env.AGENTNET_SCREENSHOTS}/pending-held-before-${skin}-${width}.png`});}

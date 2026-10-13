@@ -35,12 +35,12 @@ design. Keep those transitions fast, interruptible and optional through
 reduced-motion preferences; preserve readable content and familiar action
 labels. Passing compatibility tests does not establish a successful design.
 
-- **Comic** (`comic`) is AgentNet's own skin and the default: the messenger,
-  built from `internal/ui/web` into the package `internal/ui/static/skins/comic/`
-  and embedded in the program.
-- **Classic** and **Zoom** (`classic`, `zoom`) are standalone reference packages,
-  built from their own folders in `internal/ui/skins/` into embedded packages
-  under `internal/ui/static/skins/`. Each can be copied and built independently.
+- **Comic** (`comic`) is AgentNet's own skin, the default and the only
+  built-in one: the messenger, built from `internal/ui/web` into the package
+  `internal/ui/static/skins/comic/` and embedded in the program.
+- **Classic** and **Zoom** (`classic`, `zoom`) are packages in the
+  [agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection,
+  installed like any other skin.
 - Installed skins: packages placed next to the program (below), and
   browser-local skins imported into one browser.
 
@@ -65,7 +65,7 @@ The UI host (`internal/ui/static/loader.js`) does the same for every skin:
 2. picks the skin: `?skin=<id>`, else the one chosen before in this browser,
    else Comic. A saved `default` or `classic` (the names before skins were
    packages) opens Comic and is rewritten once; choices made through the package loader
-   are marked separately so selecting new Classic survives reload. `?skin=default` names Comic;
+   are marked separately so choosing an installed Classic package survives reload. `?skin=default` names Comic;
 3. asks for trust unless the skin is built in;
 4. adopts the package's [document rules](#document-rules-fonts) at document
    level, waiting for them at most a moment (rules that arrive later are
@@ -89,10 +89,10 @@ is a conformance expectation, not a security guarantee.
 
 ### Trust
 
-A built-in skin is trusted by the host's own fixed list of ids (`comic`,
-`classic`, `zoom`), never by anything a manifest says. No installed or
-browser-local package may use those ids or `default`, or show as a built-in
-skin (the name Comic, Classic or Zoom, in any case or spacing): the program
+A built-in skin is trusted by the host's own fixed list of ids (`comic`),
+never by anything a manifest says. No installed or browser-local package may
+use those ids or `default`, or show as a built-in skin (the name Comic, in
+any case or spacing): the program
 skips such a directory and the browser refuses such a package. Every list of
 skins says where each one comes from (built in, installed on this computer,
 stored in this browser). The rules live in one browser module,
@@ -183,7 +183,7 @@ involved.
 
 IDs use lowercase letters, digits and hyphens, starting with a letter, at
 most 48 characters; `name` is at most 80 bytes;
-`comic`, `classic`, `zoom` and `default` are reserved. The optional
+`comic` and `default` are reserved. The optional
 `agentnet` field names the oldest AgentNet release the package supports
 (`"agentnet": "v0.8.25"`): a program older than that leaves an installed
 package out of its catalog instead of running it, and the skins gallery

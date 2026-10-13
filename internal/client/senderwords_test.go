@@ -16,7 +16,7 @@ import (
 type deviceWordVector struct{ In, Out string }
 
 // deviceWordVectors are the device words every side shares: Go, the
-// browser engine, Comic, Classic and Zoom.
+// browser engine and Comic (and the Classic and Zoom skin packages).
 func deviceWordVectors(t *testing.T) []deviceWordVector {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("..", "ui", "testdata", "device_words.json"))

@@ -1,7 +1,8 @@
 # Comic reply continuation gap (MEL-528)
 
 Service role, teams and Google Drive have Comic controls. Reply receiver
-selection and continuation status remain available in **Classic** (and Zoom).
+selection and continuation status remain available in the **Classic** (and
+Zoom) skin packages, now in the agentnet-skins collection.
 The owner must see this remaining gap before Comic replaces those interfaces.
 Claude approved deferring this larger port in fixes-1005-p24-codex2.
 
@@ -43,7 +44,8 @@ Classic while the port remains open. A small dropdown would omit the send-time
 identity, session and configuration checks above; the complete port needs
 composer/draft integration plus stale-choice and remote-host regressions.
 
-Source: `internal/ui/skins/classic/src/entry.mjs`, functions
+Source: Classic's `src/entry.mjs` (agentnet-skins; formerly
+`internal/ui/skins/classic/src/entry.mjs` here), functions
 `localReceiverCatalog`, `localReplySessions`, `remoteReplySessions`,
 `receiverHostProof`, `loadReceiverCatalog`, `prepareReplyReceiverSelection`,
 `renderReplyReceiver` and `renderReceiverStatus`. Zoom keeps the same flow.

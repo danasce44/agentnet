@@ -11,7 +11,8 @@
 //     until opened in Comic; an unknown workspace opens nothing;
 //   - a browser-local skin is imported from the switcher, asks for trust,
 //     asks again when its bytes change, and is removed again;
-//   - one step back to Comic, and reload keeps the choice.
+//   - one step back to Comic, and reload keeps the choice; a load never
+//     shows the switcher unstyled.
 //   node skins_browser_check.cjs DAEMON_URL_WITH_TOKEN NOTEBOOK_DIR
 const fs = require('fs'), path = require('path'), assert = require('node:assert/strict');
 const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT || 'playwright-core');
@@ -28,6 +29,8 @@ const local = (version) => {
   try {
     for (const [tag, width, height, scheme] of [['desk-light', 1800, 960, 'light'], ['phone-dark', 390, 844, 'dark']]) {
       const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
+      // Every frame: is the host's switcher showing before its own stylesheet applies?
+      await ctx.addInitScript(() => { window.__unstyledBars = []; const sample = () => { const h = document.querySelector('#skin-bar'), nav = h && h.shadowRoot && h.shadowRoot.querySelector('nav'); if (nav && getComputedStyle(nav).visibility !== 'hidden' && !(h.shadowRoot.querySelector('link[rel=stylesheet]') || {}).sheet) window.__unstyledBars.push(performance.now()); requestAnimationFrame(sample); }; requestAnimationFrame(sample); });
       const page = await ctx.newPage(), errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -68,17 +71,6 @@ const local = (version) => {
       await page.goto(origin + '/?skin=default');
       await comicUp();
 
-      for (const id of ['classic','zoom']) {
-        await page.goto(origin + '/?skin=' + id);
-        await page.waitForFunction(id=>document.querySelector('#skin')?.shadowRoot?.querySelector('.'+id+'-root #me')?.textContent==='This device',id);
-        assert.equal(await page.getByRole('button',{name:'Use this skin',exact:true}).count(),0,tag+': built-in never asks trust');
-        assert(await page.evaluate(()=>!!window.agentnet.drive&&typeof window.agentnet.drive.drive==='function'&&typeof window.agentnet.drive.driveUpload==='function'),tag+': real host Drive provider');
-        await page.goto(origin + '/');
-        await page.waitForFunction(id=>document.querySelector('#skin')?.shadowRoot?.querySelector('.'+id+'-root #me')?.textContent==='This device',id);
-        await noScroll(id);await snap(id);
-        await page.getByRole('button',{name:'Switch to Comic',exact:true}).click();await comicUp();
-      }
-
       // The installed Notebook: trust first, the switcher already there.
       await page.goto(origin + '/?skin=notebook');
       const trust = page.getByRole('button', { name: 'Use this skin' });
@@ -89,6 +81,12 @@ const local = (version) => {
       await snap('trust');
       await trust.click();
       await page.getByRole('heading', { name: 'Notebook', exact: true }).waitFor();
+      assert(await page.evaluate(()=>!!window.agentnet.drive&&typeof window.agentnet.drive.drive==='function'&&typeof window.agentnet.drive.driveUpload==='function'),tag+': real host Drive provider');
+      // The choice is saved: a plain load opens Notebook again, its accepted digest still trusted.
+      await page.goto(origin + '/');
+      await page.getByRole('heading', { name: 'Notebook', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Use this skin', exact: true }).count(), 0, tag + ': accepted digest keeps trust');
+      assert.deepEqual(await page.evaluate(() => window.__unstyledBars), [], tag + ': a load shows no unstyled host switcher');
       const layout = await page.evaluate(() => {
         const bar = document.getElementById('skin-bar').getBoundingClientRect(), skin = document.getElementById('skin').getBoundingClientRect();
         return { barBottom: bar.bottom, skinTop: skin.top, skinBottom: skin.bottom, h: innerHeight, scheme: document.getElementById('skin-bar').dataset.scheme };

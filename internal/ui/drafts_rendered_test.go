@@ -17,7 +17,7 @@ func TestComicMentionButtonRendered(t *testing.T) {
 }
 
 func TestRemoteStopRendered(t *testing.T) {
-	t.Setenv("P11_SKINS", "comic,classic,zoom")
+	t.Setenv("P11_SKINS", "comic")
 	t.Setenv("AGENTNET_SCREENSHOTS", t.TempDir())
 	t.Setenv("P11_STOP_ONLY", "1")
 	t.Log(browserCheck(t, "testdata/chattopics_rendered.cjs"))
