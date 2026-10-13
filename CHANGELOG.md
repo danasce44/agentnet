@@ -6,6 +6,9 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Open chat pictures in a fullscreen viewer with zoom, pinch and pan,
+  including a 100% original-size view. On desktop, open the exact image in the
+  OS default image app; Download and Use as my picture remain available (MEL-543).
 - Keep Comic composer text transparent during selection, with a translucent
   highlight so collective tags do not show overlapping textarea glyphs (MEL-613).
 - Correct question approval wording to describe unchanged native tools, skills

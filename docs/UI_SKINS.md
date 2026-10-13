@@ -401,7 +401,12 @@ Common JSON routes (see `internal/ui/ui.go` for concrete view types and
 - Notifications: `/api/notify/enable`, `/disable`, `/mute`, `/allow`, `/seen`,
   plus GET `/api/notify/resolve?chan=...`.
 - Files: `/api/upload/discard`, `/api/file/request`; use host stage/file for
-  platform differences.
+  platform differences. On a daemon host, `POST /api/file/open-image`
+  `{id, dir: "in"|"out", index}` asks this computer's default image app to
+  open that exact verified PNG, JPEG, GIF or WebP attachment. It takes no
+  caller-supplied path or program. Private temporary copies expire after one
+  hour and are removed on restart. Browser engines and Android do not offer
+  this action; they can display the original bytes fullscreen and download.
 - Message controls: `POST /api/message/react` `{conv?,id,dir,emoji,remove?}`,
   `/api/message/edit` `{conv?,id,dir,text}`, `/api/message/delete` `{conv?,id,dir}`.
   A message view carries what controls did to it: `reactions[]` (`emoji`, `by[]`

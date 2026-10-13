@@ -11,6 +11,7 @@ import { useApp } from "../context";
 import { usePortal } from "../owned";
 import { niceDevice, size as bytes } from "../model";
 import { Sheet } from "../ui/Sheet";
+import { ImageViewer } from "../ui/ImageViewer";
 import { Button } from "../ui/Button";
 import { openPictureEditor } from "../pictures.mjs";
 import { isThreadMsg, type AnyMsg } from "./Message.model";
@@ -52,7 +53,7 @@ export function MessageFiles({ m }: { m: AnyMsg }) {
   if (!files.length) return null;
   return (
     <div className="mt-1.5 flex flex-col gap-1.5">
-      {files.map((f) => <div key={f.index} className="min-w-0 space-y-1">
+      {files.map((f) => <div key={pictureKey(m, f)} className="min-w-0 space-y-1">
         {standing(m, f) === "open" && pictureName.test(f.name) ? <Picture m={m} f={f} /> : <FileChip m={m} f={f} />}
         {standing(m, f) === "open" && !isThreadMsg(m) && <SaveToDrive m={m} index={f.index} />}
       </div>)}
@@ -185,10 +186,10 @@ function Picture({ m, f }: { m: AnyMsg; f: FileItem }) {
           className={"absolute inset-0 block h-full w-full object-cover transition-opacity duration-200 motion-reduce:transition-none " + (shown ? "opacity-100" : "opacity-0")} />}
         {!shown && <span className="absolute inset-0 grid place-items-center text-muted"><IconPhoto size={28} stroke={1.6} className="animate-pulse motion-reduce:animate-none" /></span>}
       </button>
-      <Sheet open={big} onOpenChange={setBig} title={f.name} description={bytes(f.size)} wide
-        footer={<><Button variant="act" size="lg" icon={<IconDownload size={20} />} onClick={() => save(url, f.name, portal)}>Download</Button>{hasPerson && <Button onClick={async () => { if (await openPictureEditor({ into: portal, src: url, save: png => store.api.setPersonPicture(png) })) await store.refetch(); }}>Use as my picture</Button>}</>}>
-        <img src={url} alt={f.name} className="mx-auto max-h-[60dvh] rounded-2xl object-contain" />
-      </Sheet>
+      {big && <ImageViewer src={url} name={f.name} onClose={() => setBig(false)}
+        openInApp={store.api.host.platform === "daemon" ? () => store.api.openImage(m.id, f.index, m.dir) : undefined}
+        actions={<><Button icon={<IconDownload size={20} />} onClick={() => save(url, f.name, portal)}>Download</Button>
+          {hasPerson && <Button onClick={async () => { if (await openPictureEditor({ into: portal, src: url, save: png => store.api.setPersonPicture(png) })) await store.refetch(); }}>Use as my picture</Button>}</>} />}
     </>
   );
 }

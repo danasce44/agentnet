@@ -612,6 +612,12 @@ type Files interface {
 	OpenFile(ctx context.Context, dir, msgID string, index int) (io.ReadCloser, string, error)
 }
 
+// ImageOpener hands a verified raster attachment to this computer's image app.
+// Browser engines and Android do not offer this desktop action.
+type ImageOpener interface {
+	OpenImage(ctx context.Context, dir, msgID string, index int) error
+}
+
 // MessageControls is implemented by providers that can react to, edit and
 // delete messages (MEL-476, MEL-477): reactions by anyone in the thread or
 // conversation, edits and deletions by the sender only; every control is
