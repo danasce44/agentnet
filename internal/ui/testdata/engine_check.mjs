@@ -16,7 +16,7 @@ let latency = 0, writeDelay = 0;
 let ackGate = null; // holdAcks: receipts wait here until released
 // page stands in for an open skin: on a change it reads the overview and
 // the open DM again, one read at a time (a change meanwhile reads again
-// once), as Classic's refetch does.
+// once), as the Classic skin's refetch does.
 let pageConv = "", pageBusy = false, pageAgain = false;
 async function pageRefetch() {
   if (pageBusy) { pageAgain = true; return; }

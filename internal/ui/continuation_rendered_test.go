@@ -14,7 +14,7 @@ func continuationRendered(t *testing.T, mode string) {
 		t.Skip("opt-in installed Playwright")
 	}
 	cmd := exec.CommandContext(t.Context(), "node", "testdata/group_guest_controls_rendered.cjs")
-	cmd.Env = append(os.Environ(), "AGENTNET_SCREENSHOTS="+t.TempDir(), "AGENTNET_TEST_SKINS=comic,classic,zoom", mode+"=1")
+	cmd.Env = append(os.Environ(), "AGENTNET_SCREENSHOTS="+t.TempDir(), "AGENTNET_TEST_SKINS=comic", mode+"=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), `"ok":true`) {
 		t.Fatalf("%v\n%s", err, out)

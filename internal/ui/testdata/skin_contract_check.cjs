@@ -86,13 +86,6 @@ window.__openP3 = async () => {
  }
  throw Error('prepared P3 quote fixture not found');
 };
-window.__openOtherThread = async () => {const overview=await json('/api/overview');const t=overview.threads.find(t=>t.peer!=='bob/desk'&&t.count>0&&!t.notice_only);if(!t)throw Error('No alternate fictional thread');const view=await json('/api/thread?id='+t.id),m=view.messages[0];openHandler(m.id,'message',{dir:m.dir});return m.body;};
-window.__openDevice = async () => {
- if (!window.__openKinds.includes('message')) throw new Error('skin did not take message notifications');
- const overview = await json('/api/overview'), thread = overview.threads.find(t => t.peer === 'bob/desk' && t.count > 1 && !t.notice_only);
- const view = await json('/api/thread?id=' + thread.id), message = view.messages.find(m => m.id === thread.id);
- openHandler(message.id, 'message', {dir:message.dir});
-};
 // The skin's own direct transport (around the host's captured originals).
 window.fetch = (input, init) => { const u = new URL(typeof input === 'string' ? input : input.url, location.href); if (/^\\/(api|events)\\b/.test(u.pathname)) report.direct.push('fetch ' + u.pathname); return realFetch(input, init); };
 window.EventSource = function (url, o) { report.direct.push('EventSource ' + url); return new RealES(url, o); };
@@ -265,45 +258,6 @@ const journeys = {
     await page.waitForTimeout(400);
     await page.keyboard.press('Escape');
   },
-  classic: async (page) => {
-    await page.locator('#conv-list button.contact').first().waitFor();
-    await page.evaluate(()=>window.__openDevice());
-    await page.locator('#timeline .msg').first().waitFor();
-    await messageShot(page,'classic');
-    const text='Classic contract send '+(++sent);
-    await page.locator('#body').fill(text);await page.locator('#composer').evaluate(form=>form.requestSubmit());
-    await page.locator('#timeline').getByText(text,{exact:true}).waitFor();
-  },
-  zoom: async (page) => {
-    await page.locator('#zoom .thread-row').first().waitFor();
-    await page.evaluate(()=>window.__openDevice());await page.locator('#zoom .zoom-message').waitFor();
-    await messageShot(page,'zoom');
-    await page.keyboard.press('Escape');await page.locator('#zoom .mini-chat').waitFor();
-    const text='Zoom contract send '+(++sent);
-    await page.locator('#zoom').getByRole('button',{name:'Write in this conversation…',exact:true}).click();
-    await page.locator('#write-body').fill(text);await page.locator('#dialog-ok').click();
-    await page.locator('#zoom .mini-chat').getByText(text,{exact:true}).waitFor();
-    await messageShot(page,'zoom-chat');
-    await page.locator('#zoom .mc-bubble').filter({hasText:text}).click();
-    await page.waitForFunction(()=>document.querySelector('#skin').shadowRoot.querySelectorAll('#zoom .zoom-layer').length===1);
-    await page.locator('#zoom .zoom-message').focus();
-    for(const level of [2,1,0]){
-      await page.keyboard.press('Escape');
-      await page.waitForFunction(()=>document.querySelector('#skin').shadowRoot.querySelectorAll('#zoom .zoom-layer').length===1);
-      assert.equal(await page.locator('#zoom .rung').nth(level).getAttribute('aria-current'),'step','Zoom Escape level '+level);
-    }
-    // A captured direct-thread draft must not send into a later thread.
-    await page.evaluate(()=>window.__openDevice());await page.locator('#zoom .zoom-message').waitFor();await page.keyboard.press('Escape');
-    await page.locator('#zoom').getByRole('button',{name:'Write in this conversation…',exact:true}).click();
-    await page.locator('#write-body').fill('Captured route must stay exact');
-    const before=await page.evaluate(()=>__report.api.filter(r=>r.write&&r.path==='/api/send').length);
-    const nextBody=await page.evaluate(()=>window.__openOtherThread());await page.locator('#zoom .zoom-message').filter({hasText:nextBody}).waitFor();await page.locator('#dialog-ok').click();
-    await page.locator('#dialog-error').getByText('Conversation or workspace changed; reopen this draft there.',{exact:true}).waitFor();
-    assert.equal(await page.locator('#write-body').inputValue(),'Captured route must stay exact','rejected captured draft stays visible');
-    assert.equal(await page.evaluate(()=>__report.api.filter(r=>r.write&&r.path==='/api/send').length),before,'route change sends neither old nor new target');
-    await page.locator('#dialog-cancel').click();
-
-  },
   notebook: async (page) => {
     await page.getByRole('heading', { name: 'Notebook', exact: true }).waitFor({ timeout: 20000 });
     await page.locator('.notebook nav button').first().click();
@@ -342,9 +296,9 @@ const journeys = {
       if(process.env.AGENTNET_P3_REVIEW && p.manifest.id!=='notebook') {
         try {
           const id=await page.evaluate(()=>window.__openP3());
-          const quoted=page.locator(p.manifest.id==='comic'?'[data-mid="'+id+'"]':p.manifest.id==='classic'?'#m-'+id:'.zoom-message');
+          const quoted=page.locator('[data-mid="'+id+'"]');
           await quoted.waitFor();assert.match(await quoted.textContent(),/P3 QUOTED TEXT/,p.manifest.id+': quoted message');
-          const reference=p.manifest.id==='comic'?quoted.getByRole('button').filter({hasText:'P3 PARENT TEXT'}):quoted.locator('.replyref');
+          const reference=quoted.getByRole('button').filter({hasText:'P3 PARENT TEXT'});
           await reference.waitFor();assert.equal(await reference.count(),1,p.manifest.id+': exactly one explicit quote');
           assert.match(await reference.textContent(),/P3 PARENT TEXT/,p.manifest.id+': quoted text');
           await page.getByText('Cannot reach your server; retries automatically',{exact:false}).first().waitFor();

@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-for(const skin of ['comic','classic','zoom']){
- const file=skin==='comic'?'../web/src/features/Composer.mentions.ts':'../skins/'+skin+'/src/entry.mjs';
+for(const skin of ['comic']){
+ const file='../web/src/features/Composer.mentions.ts';
  const source=fs.readFileSync(new URL(file,import.meta.url),'utf8');
- const name=skin==='comic'?'shift':'shiftMentions';
+ const name='shift';
  let code=source.match(new RegExp('(?:export )?function '+name+'\\([\\s\\S]*?^\\}', 'm'))?.[0];
  assert(code,skin+' edit helper exists');
- if(skin==='comic')code=code.replace(/^export function[^\n]+/, 'function shift(spans, prev, cur, caret) {').replaceAll('caret!','caret').replace('const kept: Span[] = [], dropped: Span[] = [];','const kept = [], dropped = [];');
+ code=code.replace(/^export function[^\n]+/, 'function shift(spans, prev, cur, caret) {').replaceAll('caret!','caret').replace('const kept: Span[] = [], dropped: Span[] = [];','const kept = [], dropped = [];');
  const mentionAt=(text,s)=>text.slice(s.start,s.start+s.name.length+1)==='@'+s.name;
  const context={mentionAt,intact:mentionAt};vm.createContext(context);vm.runInContext(code,context);
  const token='@Brin’s Analyst ',prev=token+token;

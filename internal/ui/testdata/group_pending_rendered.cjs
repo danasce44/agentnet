@@ -42,7 +42,7 @@ try {
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium'});
- for(const skin of ['comic','classic','zoom']) for(const width of [1280,390]) {
+ for(const skin of ['comic']) for(const width of [1280,390]) {
   console.log('Checking '+skin+' '+width);
   const context=await browser.newContext({viewport:{width,height:900}});
   await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());
@@ -52,8 +52,8 @@ try {
   await page.getByText(/1 (?:current )?member.*1 invited/).and(page.locator(':visible')).first().waitFor();
   if(skin==='comic') {
    if(!await page.getByRole('list',{name:'Invited people',exact:true}).isVisible()) await page.getByRole('button',{name:'amazon_team. Who’s in this chat',exact:true}).click();
-  } else if(skin==='zoom') { const d=page.getByRole('group',{name:'People in this group',exact:true}); await d.waitFor(); if(await d.getAttribute('open')===null) await d.locator(':scope > summary').click(); }
-  const invited=skin==='comic'?page.getByRole('list',{name:'Invited people',exact:true}):page.locator('.invited-person:visible');
+  }
+  const invited=page.getByRole('list',{name:'Invited people',exact:true});
   await invited.waitFor();
   assert.match(await invited.innerText(),/Bohdan/);
   assert.match(await invited.innerText(),/waiting for them to accept/);
@@ -76,6 +76,6 @@ try {
   await context.close();
  }
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({ok:true,checks:'Pending person discoverable in room/header; accepted not joined; joined, declined, revoked transitions; no decisions or invites (refresh allowed); desktop/phone, all skins',shots}));
+ console.log(JSON.stringify({ok:true,checks:'Pending person discoverable in room/header; accepted not joined; joined, declined, revoked transitions; no decisions or invites (refresh allowed); desktop/phone, Comic',shots}));
 } finally { if(browser) await browser.close(); server.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});

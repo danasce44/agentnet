@@ -1,5 +1,5 @@
-// The relay's device page (index.html, device.mjs, loader, engine) with each
-// built-in skin, on synthetic persisted data; every relay request is
+// The relay's device page (index.html, device.mjs, loader, engine) with the
+// built-in skin (Comic), on synthetic persisted data; every relay request is
 // answered here, no live relay or user data. Its server then refuses this
 // page's build (owner policy "latest only": the stream's update_required
 // event, 426 to the rest) and serves a newer one. With a typed draft and an
@@ -18,21 +18,15 @@ const devicePage=indexHTML.replace(loaderScript,'<script type="module" src="/ass
 const draft='Draft that must survive the update',fileName='plan.txt';
 const seed=`import {Engine,openIDB} from '/assets/engine.mjs';import * as w from '/assets/wire.mjs';const s=await openIDB();const e=new Engine({store:s,base:location.origin});const keys=await w.newKeys(),pub=await w.publicEntry(keys,'fixture/phone'),fp=await w.fingerprint(pub);e.keys=keys;e.address=pub.address;e.fp=fp;const own=await e.personRecord([await w.newRoster(keys,pub.address,'Fixture owner')],'self',null);e.me=own;const pk=await w.newKeys(),pp=await w.publicEntry(pk,'peer/desktop'),pf=await w.fingerprint(pp),peer=await e.personRecord([await w.newRoster(pk,pp.address,'Saved colleague')],'pinned',null);const root=await w.newRoot(keys,{person:own.person,roster:own.hash,address:pub.address,fingerprint:fp},{person:peer.person,roster:peer.hash}),conv=await w.rootID(root);const ops=[{s:'kv',k:'identity',v:{keys,address:pub.address,fingerprint:fp}},{s:'kv',k:'person',v:own},{s:'kv',k:'notices_settled',v:true},{s:'kv',k:'delivered-carrier-repair-v1',v:{done:true}},{s:'persons',k:peer.person,v:peer},{s:'pins',k:pp.address,v:{address:pp.address,fingerprint:pf,json:w.marshalPublic(pp),pending:null}},{s:'convs',k:conv,v:{id:conv,root:w.rootJSON(root),peer:peer.person,created:root.created,creator:pub.address}}];const id='1'.padStart(32,'0');ops.push({s:'inbox',k:id,v:{id,lid:id,v:2,conv,from:pp.address,fp:pf,kind:'message',body:'Saved cached message',at:1791500000000,ts:1791500000,read:true,own:false}});await s.write(ops);s.close();window.seeded={conv};`;
 const outbox=`import {openIDB} from '/assets/engine.mjs';const s=await openIDB();window.outbox=(await s.all('outbox')).map(r=>({body:r.body,files:(r.files||[]).map(f=>f.ct&&f.ct.byteLength?(f.attachment||f).name:'(no ciphertext) '+(f.attachment||f).name),state:r.state||''}));s.close();`;
-const skins=['comic','classic','zoom'];
+const skins=['comic'];
 const catalog=JSON.stringify(skins.map(id=>JSON.parse(fs.readFileSync(path.join(assets,'skins',id,'skin.json'),'utf8'))));
 const srv=http.createServer((q,r)=>{const u=new URL(q.url,'http://x');const finish=(text,type='text/javascript')=>{r.setHeader('Content-Type',type);r.end(text);};if(u.pathname==='/seed')return finish('<script type="module" src="/seed.mjs"></script>','text/html');if(u.pathname==='/seed.mjs')return finish(seed);if(u.pathname==='/outbox')return finish('<script type="module" src="/outbox.mjs"></script>','text/html');if(u.pathname==='/outbox.mjs')return finish(outbox);if(u.pathname==='/')return finish(devicePage,'text/html');if(u.pathname==='/assets/skins/index.json')return finish(catalog,'application/json');if(u.pathname.startsWith('/assets/')){const file=path.resolve(assets,'.'+u.pathname.slice(7));if(file.startsWith(assets+'/')&&fs.existsSync(file)&&fs.statSync(file).isFile())return finish(fs.readFileSync(file),file.endsWith('.mjs')||file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.json')?'application/json':file.endsWith('.woff2')?'font/woff2':'application/octet-stream');}r.statusCode=404;r.end();});
 const refusal=JSON.stringify({error:'update_required',latest:'v0.8.18',url:'https://github.com/misunders2d/agentnet/releases/tag/v0.8.18',message:'Update AgentNet to v0.8.18 to continue.'});
 
 // Each skin's own controls for the open chat's composer.
-// Zoom writes in a dialog over the chat; its draft is the chat's.
 const ui={
  comic:{open:p=>p.getByRole('button').filter({hasText:'Saved colleague'}).first().click(),composer:p=>p.getByRole('textbox').last(),file:p=>p.locator('input[type=file]').first(),
   waiting:p=>p.getByText(/Send or clear your drafts here/).first(),send:p=>p.getByRole('button',{name:'Send',exact:true}).click()},
- classic:{open:p=>p.getByText('Saved colleague').first().click(),composer:p=>p.locator('#body'),file:p=>p.locator('#file-input'),
-  waiting:p=>p.getByText(/Send or clear drafts in every workspace before reloading/).first(),send:p=>p.locator('#send').click()},
- zoom:{open:async p=>{await p.getByRole('button').filter({hasText:'Saved colleague'}).first().click();await p.getByRole('button',{name:/Write in this DM/}).first().dispatchEvent('click');},
-  composer:p=>p.locator('#write-body'),file:p=>p.locator('#write-files'),
-  waiting:p=>p.getByText(/Send or clear drafts in every workspace before reloading/).first(),send:p=>p.getByRole('button',{name:'Send',exact:true}).click()},
 };
 
 (async () => {

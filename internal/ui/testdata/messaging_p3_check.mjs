@@ -31,18 +31,10 @@ assert.equal(flushed,1,"updated signed caps/member event retries waiting copies 
 // Execute each shipped selector: a waiting original member is never confused
 // with the guest host, and an ambiguous display label grants no DM target.
 const me={person:"me",label:"Self",state:"self",address:"self/desk"},bob={person:"bob",label:"Bob",address:"bob/desk"},carol={person:"carol",label:"Carol",address:"carol/phone"};
-for(const skin of ["classic","zoom","comic"]) {
-  let select;
-  if(skin==="comic") {
-    const source=await readFile(new URL("../web/src/features/RoomPanel.model.ts",import.meta.url),"utf8");
-    const fn=source.match(/export function guestUpdatePeople[\s\S]*?\n}/)[0].replace("export ","");
-    select=runInNewContext("("+stripTypeScriptTypes(fn)+")");
-  } else {
-    const source=await readFile(new URL("../skins/"+skin+"/src/entry.mjs",import.meta.url),"utf8");
-    const fn=source.match(/function guestUpdateTargets\(g,t\) {[\s\S]*?\n}/)[0];
-    const get=runInNewContext("("+fn+")",{state:{overview:{person:me}}});
-    select=(waiting,people)=>get({host:people[0],needs_update:waiting},{peer:people[1],members:people.slice(2)});
-  }
+for(const skin of ["comic"]) {
+  const source=await readFile(new URL("../web/src/features/RoomPanel.model.ts",import.meta.url),"utf8");
+  const fn=source.match(/export function guestUpdatePeople[\s\S]*?\n}/)[0].replace("export ","");
+  const select=runInNewContext("("+stripTypeScriptTypes(fn)+")");
   const result=select(["Bob"],[carol,bob,me],"me");assert.equal(result.length,1,skin);assert.equal(result[0].address,"bob/desk",skin);
   assert.equal(select(["Self"],[carol,bob,me],"me").length,0,skin+" never opens a DM to self");
   assert.equal(select(["Bob"],[carol,bob,{...bob,person:"other",address:"other/phone"}],"me").length,0,skin+" ambiguous name");
@@ -66,19 +58,10 @@ await e.dispatch("receipt",JSON.stringify({id,state:"delivered",seq:2}));
 await store.write([{s:"kv",k:"test-result",v:true}],scope);
 await store.write([{s:"outbox",k:id,v:{...await store.get("outbox",id),body:"ALTERED"}}]);
 await assert.rejects(()=>store.write([{s:"kv",k:"test-result",v:false}],scope),/storage changed/);
-for(const skin of ["classic","zoom"]) {
- const source=await readFile(new URL("../skins/"+skin+"/src/entry.mjs",import.meta.url),"utf8");
- const fn=source.match(/function deliveryText\(m\) {[\s\S]*?\n}/)[0];
- const words=source.match(/const copyWord = [^\n]+/)[0];
- const text=runInNewContext(words+";("+fn+")");
- assert.equal(text({delivery:"expired"}),"not delivered: that session ended first",skin);
- assert.equal(text({delivery:"quarantined"}),"they could not verify it",skin);
- assert.equal(text({delivery:"waiting",state_text:waits[0].want}),waits[0].want,skin);
-}
-for(const skin of ["classic","zoom","comic"]) {
- const source=await readFile(new URL(skin==="comic"?"../web/src/features/RoomPanel.model.ts":"../skins/"+skin+"/src/entry.mjs",import.meta.url),"utf8");
+for(const skin of ["comic"]) {
+ const source=await readFile(new URL("../web/src/features/RoomPanel.model.ts",import.meta.url),"utf8");
  let fn=source.match(/(?:export )?function guestUpdateDraft\(member[^)]*\) {[\s\S]*?\n}/)[0].replace("export ","");
- if(skin==="comic")fn=stripTypeScriptTypes(fn);
+ fn=stripTypeScriptTypes(fn);
  const draft=runInNewContext("("+fn+")");
  assert.match(draft(false),/bring you into a chat/);assert.match(draft(true),/Our chat needs it for a guest/);
  for(const member of [false,true])assert.match(draft(member),/https:\/\/github.com\/misunders2d\/agentnet\/releases/,skin+" always includes update link");
@@ -86,10 +69,10 @@ for(const skin of ["classic","zoom","comic"]) {
 console.log("PASS delivery and receipt checks");
 
 // Producer completion and actual carrier receipts remain separate facts.
-for(const skin of ["classic","zoom","comic"]) {
- const source=await readFile(new URL(skin==="comic"?"../web/src/features/Settings.profile.tsx":"../skins/"+skin+"/src/entry.mjs",import.meta.url),"utf8");
- const raw=source.match(skin==="comic"?/function copyWords[\s\S]*?\n}/:/function historyLine[\s\S]*?\n}/)[0];
- const words=runInNewContext("("+(skin==="comic"?stripTypeScriptTypes(raw):raw)+")",{state:{overview:{device:{}}}});
+for(const skin of ["comic"]) {
+ const source=await readFile(new URL("../web/src/features/Settings.profile.tsx",import.meta.url),"utf8");
+ const raw=source.match(/function copyWords[\s\S]*?\n}/)[0];
+ const words=runInNewContext("("+stripTypeScriptTypes(raw)+")",{state:{overview:{device:{}}}});
  const done={state:"done",name:"phone",done:4,total:4};
  for(const [patch,want] of [
   [{},"History prepared here · delivery confirmation unavailable"],
@@ -97,10 +80,10 @@ for(const skin of ["classic","zoom","comic"]) {
   [{delivery_known:true,delivered:7},"7 history copies delivered · nothing waiting to send here"],
   [{delivery_known:true,queued:2},"2 waiting to send"],
   [{delivery_known:true,custody:3},"3 on the server, waiting for the device"],
-  [{delivery_known:true,blocked:1},skin==="comic"?"1 blocked history copies":"1 history copies need attention"],
-  [{deferred:2},skin==="comic"?"2 pending history items":"2 history items waiting for context"],
-  [{delivery_known:true,retained:5},skin==="comic"?"5 history items accepted for background import":"5 history records stored on the device"],
-  [{delivery_known:true,queued:2,retained:5},"2 waiting to send · "+(skin==="comic"?"5 history items accepted for background import":"5 history records stored on the device")],
+  [{delivery_known:true,blocked:1},"1 blocked history copies"],
+  [{deferred:2},"2 pending history items"],
+  [{delivery_known:true,retained:5},"5 history items accepted for background import"],
+  [{delivery_known:true,queued:2,retained:5},"2 waiting to send · 5 history items accepted for background import"],
  ]) assert.equal(words({...done,...patch}),want,skin+" producer and receipt evidence stay distinct");
  assert.equal(words({state:"running",name:"phone",done:0,total:0}),"Preparing history on this device",skin+" unknown producer progress is not phone delivery");
  assert(/stopped/.test(words({state:"ended",name:"phone",done:4,total:4})),skin+" ended stays stopped");

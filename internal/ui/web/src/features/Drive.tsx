@@ -1,4 +1,5 @@
-// Reuse Classic's presentation widgets, bundled by build.sh. They get only
+// Reuse the shared presentation widgets (skins/shared/drivespace*.mjs),
+// bundled by build.sh. They get only
 // this workspace's host provider, never a default transport or page global.
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useApp } from "../context";

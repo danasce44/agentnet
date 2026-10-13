@@ -35,12 +35,12 @@ design. Keep those transitions fast, interruptible and optional through
 reduced-motion preferences; preserve readable content and familiar action
 labels. Passing compatibility tests does not establish a successful design.
 
-- **Comic** (`comic`) is AgentNet's own skin and the default: the messenger,
-  built from `internal/ui/web` into the package `internal/ui/static/skins/comic/`
-  and embedded in the program.
-- **Classic** and **Zoom** (`classic`, `zoom`) are standalone reference packages,
-  built from their own folders in `internal/ui/skins/` into embedded packages
-  under `internal/ui/static/skins/`. Each can be copied and built independently.
+- **Comic** (`comic`) is AgentNet's own skin, the default and the only
+  built-in one: the messenger, built from `internal/ui/web` into the package
+  `internal/ui/static/skins/comic/` and embedded in the program.
+- **Classic** and **Zoom** (`classic`, `zoom`) are packages in the
+  [agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection,
+  installed like any other skin.
 - Installed skins: packages placed next to the program (below), and
   browser-local skins imported into one browser.
 
@@ -67,7 +67,7 @@ The UI host (`internal/ui/static/loader.js`) does the same for every skin:
 2. picks the skin: `?skin=<id>`, else the one chosen before in this browser,
    else Comic. A saved `default` or `classic` (the names before skins were
    packages) opens Comic and is rewritten once; choices made through the package loader
-   are marked separately so selecting new Classic survives reload. `?skin=default` names Comic;
+   are marked separately so choosing an installed Classic package survives reload. `?skin=default` names Comic;
 3. asks for trust unless the skin is built in;
 4. adopts the package's [document rules](#document-rules-fonts) at document
    level, waiting for them at most a moment (rules that arrive later are
@@ -91,10 +91,10 @@ is a conformance expectation, not a security guarantee.
 
 ### Trust
 
-A built-in skin is trusted by the host's own fixed list of ids (`comic`,
-`classic`, `zoom`), never by anything a manifest says. No installed or
-browser-local package may use those ids or `default`, or show as a built-in
-skin (the name Comic, Classic or Zoom, in any case or spacing): the program
+A built-in skin is trusted by the host's own fixed list of ids (`comic`),
+never by anything a manifest says. No installed or browser-local package may
+use those ids or `default`, or show as a built-in skin (the name Comic, in
+any case or spacing): the program
 skips such a directory and the browser refuses such a package. Every list of
 skins says where each one comes from (built in, installed on this computer,
 stored in this browser). The rules live in one browser module,
@@ -239,7 +239,7 @@ without hiding the others; a malformed catalog fails as a whole.
 IDs use lowercase letters, digits and hyphens, starting with a letter, at
 most 48 characters; `name` is at most 80 bytes and is not a built-in
 skin's name (see [Trust](#trust));
-`comic`, `classic`, `zoom` and `default` are reserved. The optional
+`comic` and `default` are reserved. The optional
 `agentnet` field names the oldest AgentNet release (vX.Y.Z) the package
 supports (`"agentnet": "v0.8.25"`); the program and browser import both
 treat an empty or `null` value as absent. Where it is checked:
@@ -607,8 +607,9 @@ types are the Go structs in `internal/ui/*.go`, generated into
   pending Undo before calling the host. Delete for me in people chats
   affects only this person's devices; others keep their copies. Archive
   and names follow this person's own linked devices only; new
-  messages/shared actions clear an archive. Comic, Classic and
-  Zoom implement these controls through Host API v1 only.
+  messages/shared actions clear an archive. Comic implements these controls
+  through Host API v1 only, as do Classic and Zoom in the agentnet-skins
+  collection.
 - Headless: a request message may carry `exec` `{state, at, host, stale?, attempt?, detail?}`,
   the executing host's own signed word (never delivery, presence or a timer);
   show it apart from delivery and say when it is stale. A review notice may carry
@@ -759,8 +760,8 @@ What a skin can rely on:
 - **A minimum release** in the manifest (`agentnet`) for a package that
   needs routes or fields that older releases lack.
 
-When AgentNet changes this contract it changes its built-in packages
-(Comic, Classic and Zoom) in the same change. Skins in the
+When AgentNet changes this contract it changes its built-in package
+(Comic) in the same change. Skins in the
 [agentnet-skins](https://github.com/misunders2d/agentnet-skins) collection
 are tested against the AgentNet commit pinned in their `upstream.json`, and
 AgentNet's release checklist (AGENTS.md) runs the agentnet-skins tests
@@ -858,7 +859,8 @@ trust records (`agentnet.skin`, `agentnet.skin.package`,
 `agentnet.skin.trusted.<id>`). Comic, built in, uses
 `agentnet.messenger.*` for drafts, main-flow choices, emoji skin tone and
 reaction usage (the main-flow choices and reaction usage are shared with
-Classic and Zoom), `agentnet.theme`, and on Android
+Classic and Zoom in the agentnet-skins collection, which copy the same
+modules), `agentnet.theme`, and on Android
 `agentnet.android.send-journal.v1.<workspace>` for sends saved across the
 app being closed; its bundled emoji picker caches its data under
 `frimousse/` in `localStorage` and `sessionStorage`. Per-workspace state
@@ -869,10 +871,11 @@ Only `/assets/typing.mjs` may be imported from the host at run time. Other
 helpers the built-in skins use are copied into the package at build time:
 `internal/ui/static/pictures.mjs` (profile pictures: `avatarPicture`, the
 picture editor, paste), `internal/ui/static/optimistic.mjs` (pending-send
-previews that agree across skins), the presentation-only Drive and
-Connect-an-agent panels and QR encoder in `internal/ui/skins/classic/src/`
-(`drivespace*.mjs`, `assistant-setup*.mjs`, `qr.mjs`) and the topic,
-mention and reaction modules in `internal/ui/skins/shared/`. Keep their
+previews that agree across skins), and from `internal/ui/skins/shared/` the
+presentation-only Drive panels (`drivespace.mjs`, `drivespace-setup.mjs`,
+`drivespace.css`) and the topic, mention and reaction modules. (Classic and
+Zoom in the agentnet-skins collection also carry their own Connect-an-agent
+panel and QR encoder.) Keep their
 licenses and take them from the AgentNet release named in `agentnet`.
 `internal/ui/static/drivespace*.mjs` and `assistant-setup.mjs` are the
 host's own modules: never copy them into a skin.
@@ -935,7 +938,7 @@ shadow tree next to `root`, are not caught. Comic's journey also sends a
 message through the host and requires one sheet (the trust sheet) and one
 confirmation (deleting a conversation or topic) to be modal inside the root
 (aria-modal, the app behind them inert, focus kept inside through 10 Tabs
-and 10 Shift+Tabs). It runs Comic, Classic, Zoom and the Notebook example
+and 10 Shift+Tabs). It runs Comic and the Notebook example
 at 1440 and 390 pixels, and needs `node` and Chromium (`AGENTNET_CHROMIUM`
 or `/usr/bin/chromium`):
 

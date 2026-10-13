@@ -3,16 +3,17 @@
 // manager (local-skins.mjs) share these rules; static/skins.go keeps the
 // same ids (BuiltinSkins, ReservedSkinIDs) and its tests pin both copies.
 
-// BUILT_IN are the built-in skins, present and to come: trusted by this
-// list, never by a manifest. HOME is the default skin.
-export const BUILT_IN = Object.freeze(["comic", "classic", "zoom"]);
+// BUILT_IN are the built-in skins: trusted by this list, never by a
+// manifest. HOME is the default skin. Comic is the only one; Classic and
+// Zoom are packages from the agentnet-skins collection.
+export const BUILT_IN = Object.freeze(["comic"]);
 export const HOME = "comic";
 // RESERVED: no installed or browser-local package may use these ids: the
 // built-in skins and "default", the default interface's old name.
 export const RESERVED = Object.freeze([...BUILT_IN, "default"]);
 
-/** takenName: a built-in skin's name (present or to come), ignoring case
- *  and spacing; no installed or browser-local package may show as one
+/** takenName: a built-in skin's name, ignoring case and spacing; no
+ *  installed or browser-local package may show as one
  *  (static/skins.go ReservedSkinName). */
 export const takenName = (name) => BUILT_IN.includes(String(name).trim().split(/\s+/).join(" ").toLowerCase());
 

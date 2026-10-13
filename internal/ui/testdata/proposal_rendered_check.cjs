@@ -10,8 +10,8 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
   page.on('pageerror',e=>errors.push(String(e)));
   const url=new URL(process.env.P23_URL);await page.goto(url.href);await page.goto(url.origin+'/?skin='+skin);
   const root=page.locator('#skin');
-  // Comic and narrow Classic/Zoom start on their list; wide native skins
-  // can already have opened the one available conversation.
+  // Comic starts on its list, or has already opened the one available
+  // conversation.
   const doit=root.getByRole('button',{name:'Do it',exact:true});
   if(!await doit.isVisible().catch(()=>false)) {
    const chat=root.getByRole('button').filter({hasText:new RegExp(process.env.P23_PEER.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'|CHANGELOG|Not linked to a person|Laptop')}).first();
@@ -19,22 +19,17 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
     if(shots){fs.mkdirSync(shots,{recursive:true,mode:0o700});await page.screenshot({path:path.join(shots,'p23-'+mode+'-'+skin+'-'+width+'-error.png')});}
     console.error((await page.evaluate(()=>document.querySelector('#skin').shadowRoot.textContent)).slice(-10000));throw e;
    }
-   // A person's Zoom card opens Main directly; wait for that transition.
-   // Device contacts still need their exact thread selected at level 1.
-   if(skin==='zoom' && mode!=='conversation' && !await doit.isVisible().catch(()=>false)) await root.locator('.thread-list button').first().click();
   }
   await doit.waitFor({state:'visible',timeout:15000});
-  const composer=skin==='comic'?root.locator('form[aria-label="Write a message"]'):root.locator('#composer');
+  const composer=root.locator('form[aria-label="Write a message"]');
   assert.equal(await composer.getByRole('radio').count(),0,'no composer intent toggle');
   assert.equal(await composer.getByRole('button',{name:/Do it/}).count(),0,'no up-front execution');
   assert.ok(await root.getByText('Update CHANGELOG.md.',{exact:false}).count(),'proposal shown');
   await page.waitForTimeout(450);
-  // Live Zoom redraws can detach a Playwright element between selection and
-  // measurement. Select and measure together, after navigation motion settles.
+  // Select and measure together, after navigation motion settles.
   const measured=await page.waitForFunction(()=>{
    const shadow=document.querySelector('#skin')?.shadowRoot;
    if(!shadow)return false;
-   if(shadow.querySelector('#zoom')?.getAnimations({subtree:true}).some(a=>a.playState==='running'))return false;
    const buttons=[...shadow.querySelectorAll('button')].filter(b=>b.textContent.trim()==='Do it' && b.getClientRects().length && getComputedStyle(b).visibility==='visible');
    if(buttons.length!==1)return false;
    const r=buttons[0].getBoundingClientRect();

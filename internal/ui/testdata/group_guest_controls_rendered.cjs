@@ -375,8 +375,8 @@ const server=http.createServer((req,res)=>{if(req.url==='/native-result'&&req.me
    await new Promise(resolve=>{nativeFinish=resolve;});return;
   }
   browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||undefined});
-  for(const skin of (process.env.AGENTNET_TEST_SKINS||'classic,zoom').split(','))for(const width of (process.env.AGENTNET_GUEST_INLINE==='1'?[1024,1279,390]:[1280,390])){
-   const openCase=async variant=>{const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'});await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());const page=await context.newPage();page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(skin+': '+e.stack));await page.goto(origin+'/?skin='+skin+'&case='+variant);try{await page.waitForFunction(()=>window.ready);}catch(e){console.error(JSON.stringify({skin,width,variant,errors,text:await page.locator('body').innerText()}));throw e;}if(variant==='completion'||variant==='direct-files'||variant==='device-oks'||variant.startsWith('delivery-')||variant.startsWith('decline-invite-'))return {page,context};await page.evaluate(()=>openGroup());try{await page.getByText(variant==='oks'?'Main flow conversation':'Selected warehouse context',{exact:skin!=='comic'}).first().waitFor();}catch(e){console.error(JSON.stringify({errors,text:await page.locator('#skin').evaluate(e=>e.shadowRoot.innerText||e.shadowRoot.textContent)}));throw e;}return {page,context};};
+  for(const skin of (process.env.AGENTNET_TEST_SKINS||'comic').split(','))for(const width of (process.env.AGENTNET_GUEST_INLINE==='1'?[1024,1279,390]:[1280,390])){
+   const openCase=async variant=>{const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'});await context.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():r.abort());const page=await context.newPage();page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(skin+': '+e.stack));await page.goto(origin+'/?skin='+skin+'&case='+variant);try{await page.waitForFunction(()=>window.ready);}catch(e){console.error(JSON.stringify({skin,width,variant,errors,text:await page.locator('body').innerText()}));throw e;}if(variant==='completion'||variant==='direct-files'||variant==='device-oks'||variant.startsWith('delivery-')||variant.startsWith('decline-invite-'))return {page,context};await page.evaluate(()=>openGroup());try{await page.getByText(variant==='oks'?'Main flow conversation':'Selected warehouse context',{exact:false}).first().waitFor();}catch(e){console.error(JSON.stringify({errors,text:await page.locator('#skin').evaluate(e=>e.shadowRoot.innerText||e.shadowRoot.textContent)}));throw e;}return {page,context};};
 if(completion){
  for(const mode of ['grouped','single','unverified','excerpt','quote','wrong-target','unrelated']){
   const {page,context}=await openCase('completion');
@@ -508,20 +508,20 @@ if(process.env.AGENTNET_REACTION_REGRESSION==='1'){
  const {page,context}=await openCase('reactions');
  try{
   const key='agentnet.messenger.reaction-usage.v1';
-  const message=()=>page.locator(skin==='comic'?'[data-mid="context"]':skin==='zoom'?'.zoom-message':'#m-context');
-  const enter=async()=>{if(skin==='zoom')await page.locator('#m-context .mc-bubble').click();await message().waitFor();};
+  const message=()=>page.locator('[data-mid="context"]');
+  const enter=async()=>{await message().waitFor();};
   const chip=emoji=>message().getByRole('button',{name:new RegExp('^'+emoji+' (from|by) ')});
   const stored=()=>page.evaluate(key=>localStorage.getItem(key),key);
   const counts=async()=>JSON.parse(await stored()||'[]');
   const openPicker=async()=>{await message().getByLabel('Add a reaction',{exact:true}).click();await page.getByRole('button',{name:'React 👍',exact:true}).waitFor();};
   const choices=()=>page.getByRole('button',{name:/^React /}).evaluateAll(es=>es.map(e=>e.getAttribute('aria-label').slice(6)));
-  const closePicker=async()=>{if(skin==='comic')await page.keyboard.press('Escape');else await page.getByRole('group',{name:'Choose a reaction',exact:true}).getByRole('button',{name:'Close',exact:true}).click();await settle(page);};
+  const closePicker=async()=>{await page.keyboard.press('Escape');await settle(page);};
   await enter();
   const humanLabels=await message().getByRole('button',{name:/ (from|by) /}).allTextContents();
   assert.deepEqual(humanLabels.map(s=>s.trim().split(/\s|(?=[0-9])/)[0]),['👍','🎉','😂'],'Human chips sort by count with stable ties');
-  assert.equal(await message().locator(skin==='comic'?'[role="img"]':'.assistant-reaction').count(),2,'Agent marks remain separate, noninteractive chips');
+  assert.equal(await message().locator('[role="img"]').count(),2,'Agent marks remain separate, noninteractive chips');
   assert.equal(await stored(),null,'Receiving/rendering reactions never counts them');
-  await openPicker();assert.deepEqual((await choices()).slice(0,6),skin==='comic'?['👍','❤️','😂','🎉','🙏','👀']:['👍','❤️','😂','🎉','👀','✅']);await closePicker();
+  await openPicker();assert.deepEqual((await choices()).slice(0,6),['👍','❤️','😂','🎉','🙏','👀']);await closePicker();
   await chip('😂').click();await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)||'[]').some(([e,n])=>e==='😂'&&n===1),key);
   await chip('😂').click();await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/api/message/react').at(-1)?.body.remove===true);await settle(page);
   assert.deepEqual(await counts(),[['😂',1]],'Removal does not increment usage');
@@ -529,14 +529,12 @@ if(process.env.AGENTNET_REACTION_REGRESSION==='1'){
   await page.evaluate(()=>{fixture.holdReaction=true;});await chip('👍').click();await page.waitForFunction(()=>!!window.finishReaction);assert.deepEqual(await counts(),[['😂',1]],'Pending calls do not count');await page.evaluate(()=>finishReaction());
   await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)||'[]').some(([e,n])=>e==='👍'&&n===1),key);await settle(page);
   await openPicker();assert.deepEqual((await choices()).slice(0,2),['😂','👍'],'Usage ties retain first-use order');
-  // Comic toggles in its picker; legacy pickers retain their existing add-only behavior.
+  // Comic toggles in its picker.
   await page.getByRole('button',{name:'React 👍',exact:true}).click();await settle(page);
   assert.deepEqual(await counts(),[['😂',1],['👍',1]],'An owned choice cannot count another addition');
-  if(skin!=='comic'){await chip('👍').click();await settle(page);}
   await chip('👍').click();await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)||'[]').some(([e,n])=>e==='👍'&&n===2),key);await settle(page);
   await openPicker();assert.deepEqual((await choices()).slice(0,2),['👍','😂']);
   assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'Picker does not overflow phone');
-  if(skin!=='comic')assert(await page.getByRole('button',{name:/^React /}).evaluateAll(es=>es.every(e=>{const b=e.getBoundingClientRect();return b.width>=44&&b.height>=44&&b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=innerHeight;})),'Every legacy choice has a visible 44px target');
   await settle(page);let shot=path.join(evidence,skin+'-reactions-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
   if(skin==='comic'){
    await page.getByRole('button',{name:'More reactions',exact:true}).click();
@@ -608,16 +606,8 @@ if(process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'){
 if(process.env.AGENTNET_LONG_LINK_REGRESSION==='1'){
  const {page,context}=await openCase('long-links');
  try {
-  let message=page.locator(skin==='comic'?'[data-mid="long-links"]':'#m-long-links');await message.waitFor();
+  const message=page.locator('[data-mid="long-links"]');await message.waitFor();
   const url=await page.evaluate(()=>fixture.url),body=await page.evaluate(()=>fixture.linkBody);
-  if(skin==='zoom'){
-   assert.equal(await message.getByRole('link').count(),0,'Zoom preview stays one message-opening button');
-   assert((await message.innerText()).includes('example.test/…'),'Zoom preview shortens raw URL text');
-   assert(await message.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'Zoom preview stays within viewport');
-   await settle(page);const preview=path.join(evidence,'zoom-long-links-preview-'+width+'.png');await page.screenshot({path:preview});shots.push(preview);
-   await message.locator('.mc-bubble').click();
-   message=page.locator('.zoom-message');await message.waitFor();
-  }
   const links=message.getByRole('link',{name:url,exact:true});assert.equal(await links.count(),2);
   for(const link of await links.all()){
    assert.equal(await link.innerText(),'example.test/…');assert.equal(await link.getAttribute('href'),url);assert.equal(await link.getAttribute('title'),url);
@@ -770,10 +760,10 @@ if(process.env.AGENTNET_CONTINUATION_REGRESSION==='1'){
  for(const mode of ['local','remote','stale']){
   const {page,context}=await openCase('continuation-'+mode);
   try{
-   const request=page.locator(skin==='comic'?'[data-mid="needs-answer-exact"]':'#m-needs-answer-exact');await request.waitFor();
-   const continuationReply=(skin==='comic'?request:request.locator(skin==='classic'?'.decide .acts':'.agent-turn .acts')).getByRole('button',{name:'Reply',exact:true});
-   const note=page.locator(skin==='comic'?'[data-mid="ordinary-quote"]':'#m-ordinary-quote');await note.waitFor();
-   if(skin==='comic'&&width===390){const actions=note.getByRole('button',{name:'Message actions',exact:true});await actions.focus();await actions.press('Enter');await page.getByRole('dialog').getByRole('button',{name:'Reply',exact:true}).click();}else if(skin!=='zoom'){await note.hover();await note.getByRole('button',{name:'Reply',exact:true}).click();}
+   const request=page.locator('[data-mid="needs-answer-exact"]');await request.waitFor();
+   const continuationReply=request.getByRole('button',{name:'Reply',exact:true});
+   const note=page.locator('[data-mid="ordinary-quote"]');await note.waitFor();
+   if(width===390){const actions=note.getByRole('button',{name:'Message actions',exact:true});await actions.focus();await actions.press('Enter');await page.getByRole('dialog').getByRole('button',{name:'Reply',exact:true}).click();}else{await note.hover();await note.getByRole('button',{name:'Reply',exact:true}).click();}
    assert.equal(await page.getByRole('dialog',{name:'Answer your agent',exact:true}).count(),0,'Ordinary Reply only quotes a message');
    assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>(r.path==='/api/operator/decide'||r.path==='/api/act'&&r.body?.do!=='read')).length),0,'Ordinary initial quote never submits a continuation');
    assert(!await page.evaluate(()=>fixture.requests.some(r=>['/api/dm/send','/api/dm/agent/ask','/api/send'].includes(r.path))),'Clarification and quote never create another request/manual answer');
@@ -815,12 +805,6 @@ if(process.env.AGENTNET_DECLINE_INVITATION_REGRESSION==='1'){
     if(status==='stale')assert.equal(await page.getByRole('button',{name:'Join',exact:true}).count(),0,'Stale invitation cannot Join');
     const before=path.join(evidence,skin+'-decline-'+status+'-before-'+width+'.png');await page.screenshot({path:before});shots.push(before);
     await page.getByRole('button',{name:'No thanks',exact:true}).click();
-   }else{
-    await page.getByRole('button',{name:/Invitation: Orchard inbound invitation/}).click();
-    const dialog=page.getByRole('dialog');await dialog.waitFor();
-    if(status==='stale')assert.equal(await dialog.getByRole('button',{name:'Accept invitation',exact:true}).count(),0,'Stale invitation cannot accept');
-    const before=path.join(evidence,skin+'-decline-'+status+'-before-'+width+'.png');await page.screenshot({path:before});shots.push(before);
-    await dialog.getByRole('button',{name:'No thanks',exact:true}).click();
    }
    await page.waitForFunction(()=>fixture.overview.group_invitations.length===0);await page.evaluate(()=>reloadFixture());await settle(page);
    assert.equal(await page.getByText('Orchard inbound invitation',{exact:true}).count(),0,'Declined card stays absent after refresh');
@@ -847,17 +831,6 @@ if(process.env.AGENTNET_TEAM_EDIT_REGRESSION==='1'){
    await page.getByRole('combobox',{name:/^Agent’s device/}).selectOption(brin.address);
    await page.getByRole('combobox',{name:'Agent',exact:true}).selectOption('1'.repeat(32));
    await page.getByRole('button',{name:'Add agent',exact:true}).click();
-  }else{
-   if(width===390){if(skin==='zoom')await page.getByRole('navigation',{name:'Zoom level',exact:true}).getByRole('button',{name:'Everyone',exact:true}).click();else await page.getByRole('button',{name:'Back to conversations',exact:true}).click();}
-   await page.getByRole('button',{name:'People',exact:true}).click();
-   await page.getByRole('button',{name:'New people or agent list…',exact:true}).click();
-   await page.locator('#team-name').fill('Warehouse');await page.locator('#dialog-ok').click();
-   await page.locator('.team-item button').filter({hasText:'Warehouse'}).click();
-   await page.getByRole('button',{name:'Add person…',exact:true}).click();
-   await page.getByRole('dialog').getByLabel('Person',{exact:true}).selectOption(brin.person);await page.locator('#dialog-ok').click();
-   await page.getByRole('button',{name:'Add agent…',exact:true}).click();
-   await page.getByRole('dialog').getByLabel('Agent device',{exact:true}).selectOption(brin.address);
-   await page.getByRole('dialog').getByLabel('Agent',{exact:true}).selectOption('1'.repeat(32));await page.locator('#dialog-ok').click();
   }
   await page.waitForFunction(()=>fixture.teams[0]?.agents.length===1);
   const t=await page.evaluate(()=>fixture.teams[0]);assert.equal(t.version,2);assert.deepEqual(t.members,[brin.person]);assert.deepEqual(t.agents,[{id:'1'.repeat(32),host:brin.address,host_key:brin.fingerprint}]);
@@ -924,8 +897,7 @@ if(process.env.AGENTNET_RENDER_PERF==='1'){
 if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
  const {page,context}=await openCase('multi-agent');
  try{
-  if(skin==='zoom')await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
-  const field=skin==='comic'?page.locator('form[aria-label="Write a message"] textarea'):skin==='zoom'?page.locator('#write-body'):page.locator('#body');
+  const field=page.locator('form[aria-label="Write a message"] textarea');
   await field.waitFor({state:'visible'});
   let firstAgentToken='';
   const pick=async index=>{
@@ -934,7 +906,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    const before=await field.inputValue();
    await field.pressSequentially('@');
    // Two same-label agents on one host, distinct participation IDs, fixed DTO order.
-   const options=skin==='comic'?page.getByRole('option').filter({hasText:'Analyst'}):page.locator('.mention-row').filter({hasText:'Analyst'});
+   const options=page.getByRole('option').filter({hasText:'Analyst'});
    assert.equal(await options.count(),2,'both same-label agents must be offered');
    await options.nth(index).click();
    return (await field.inputValue()).slice(before.length);
@@ -942,7 +914,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
    // Removing the only collective must clear the legacy single-agent fallback.
    await field.pressSequentially('@everyone');
-   const firstTag=skin==='comic'?page.getByRole('option').filter({hasText:'everyone'}):page.locator('.mention-row').filter({hasText:'everyone'});
+   const firstTag=page.getByRole('option').filter({hasText:'everyone'});
    await firstTag.click();assert.equal((await field.inputValue()).trimEnd(),'@everyone');
    if(skin==='comic'){
     await page.getByRole('button',{name:'Don’t ask 2 agents',exact:true}).click();
@@ -951,12 +923,11 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    }
    await field.fill('');
    if(skin==='comic')assert.equal(await page.getByRole('button',{name:/^Don’t ask /}).count(),0,'deleted collective leaves no fallback agent');
-   else assert.equal(await page.locator('#mentions .addressed-assistant').count(),0,'deleted collective leaves no fallback agent');
    for(const name of ['everyone','Reviewers']){
     await field.press('Control+End');
     if((await field.inputValue())&&!/\s$/.test(await field.inputValue()))await field.pressSequentially(' ');
     await field.pressSequentially('@'+name);
-    const option=skin==='comic'?page.getByRole('option').filter({hasText:name}):page.locator('.mention-row').filter({hasText:name});
+    const option=page.getByRole('option').filter({hasText:name});
     await option.waitFor({state:'visible'});if(name==='everyone'){const shot=path.join(evidence,skin+'-tag-picker-'+width+'.png');await settle(page);await page.screenshot({path:shot});shots.push(shot);}await option.click();
    }
    assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','collectives remain two compact tags');
@@ -967,8 +938,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    await page.evaluate(()=>{fixture.teamSnapshotEdited=true;localStorage.setItem('fixture-team-snapshot-edited','1');reloadFixture();});
    await settle(page);assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers');
    await page.reload();await page.waitForFunction(()=>window.ready);await page.evaluate(()=>openGroup());
-   await page.getByText('Selected warehouse context',{exact:skin!=='comic'}).first().waitFor();
-   if(skin==='zoom'&&!await field.isVisible())await page.getByRole('button',{name:'Write in this group…',exact:true}).click();
+   await page.getByText('Selected warehouse context',{exact:false}).first().waitFor();
    await field.waitFor({state:'visible'});
    assert.equal((await field.inputValue()).trimEnd(),'@everyone @Reviewers','full reload restores both compact frozen tags after list edits');
   }else{firstAgentToken=await pick(0);await pick(1);}
@@ -980,11 +950,9 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    await field.evaluate((el,range)=>{el.focus();el.setSelectionRange(range.start,range.end);},{start:firstAgent,end:firstAgent+remove.length});await field.press('Delete');
   }
   await pick(0);await field.pressSequentially('Compare warehouse inventory');
-  const file=skin==='comic'?page.locator('form[aria-label="Write a message"] input[type=file]'):skin==='zoom'?page.locator('#write-files'):page.locator('#file-input');
+  const file=page.locator('form[aria-label="Write a message"] input[type=file]');
   await file.setInputFiles({name:'inventory.txt',mimeType:'text/plain',buffer:Buffer.from('synthetic inventory')});
   if(skin==='comic')await page.locator('form[aria-label="Write a message"] button[type=submit]').click();
-  else await page.locator(skin==='zoom'?'#dialog-ok':'#send').click();
-  if(skin==='classic'&&await page.getByText('You started this text for someone else. Check the To line, then send again.',{exact:true}).isVisible())await page.locator('#send').click();
   await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/ask').length===2);
   const asks=()=>page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/ask').map(r=>r.body));
   const first=await asks();assert.deepEqual(first.map(a=>a.pid).sort(),['agent-a','agent-b']);
@@ -1007,7 +975,6 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    }
   }
   assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/send').length),0,'no ordinary-message fallback');
-  if(skin==='zoom')for(const pid of ['agent-a','agent-b'])await page.locator('.mini-chat [data-agent-recipient][title="'+pid+'"]').getByText(/^To @.*Analyst$/).waitFor();
   assert.equal(first[0].files.length,1);assert.equal(first[1].files.length,1);
   assert.notDeepEqual(first[0].files[0],first[1].files[0],'each request owns separately staged upload');
   assert.equal(await page.evaluate(()=>fixture.stages.length),2);
@@ -1027,7 +994,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
   });
   await settle(page);assert.equal(await visibleCopies(),1,'durable projection replaces previews without duplicating body');
   if(process.env.AGENTNET_COLLECTIVE_TAGS==='1'){
-   const rendered=skin==='comic'?await page.locator('[data-send-group]').innerText():(await Promise.all(first.map(a=>page.locator('#m-'+a.id).innerText()))).join(' ');
+   const rendered=await page.locator('[data-send-group]').innerText();
    assert(rendered.includes('@everyone')&&rendered.includes('@Reviewers'),'1000-member sent/history projection shows compact original labels');
    assert(!rendered.includes('Participant 0')&&!rendered.includes('agentnet:collective/'),'history never expands names or exposes frozen recipient metadata');
   }
@@ -1037,7 +1004,7 @@ if(process.env.AGENTNET_MULTI_AGENT_REGRESSION==='1'){
    assert.equal(await group.locator('[data-send-target]').count(),2,'Each exact target retains its own state');
    assert.equal((await group.innerText()).split('inventory.txt').length-1,1,'Shared attachment shown once');
    assert.match(await group.innerText(),/Working/);assert.match(await group.innerText(),/Done/);
-  } else for(const a of first){const child=page.locator('#m-'+a.id);assert((await child.innerText()).includes('inventory.txt'),'Each exact recipient retains its own attachment name');}
+  }
   await page.evaluate(()=>reloadFixture());await settle(page);assert.equal(await visibleCopies(),1,'reloading server projection preserves grouping');
   await page.evaluate(()=>{fixture.thread.messages.push({id:'incoming-ref',lid:'incoming-ref',from:'brin/desktop',dir:'in',kind:'message',body:'[@Analyst](agentnet:agent/agent-a) [@Analyst](agentnet:agent/agent-b) INERT_INCOMING_MARKER',at:'2026-10-05T10:03:00Z'});reloadFixture();});
   await page.getByText(/INERT_INCOMING_MARKER/).first().waitFor();await settle(page);
@@ -1060,42 +1027,24 @@ if(process.env.AGENTNET_HELDBACK_REGRESSION==='1'){
    await nav.getByRole('button',{name:width<700?'You':'Settings',exact:true}).click();
    await page.getByRole('button',{name:/^About/}).click();
    await page.getByRole('button',{name:'Technical details',exact:true}).click();
-  }else{
-   if(width===390){if(skin==='zoom')await page.getByRole('navigation',{name:'Zoom level',exact:true}).getByRole('button',{name:'Everyone',exact:true}).click();else await page.getByRole('button',{name:'Back to conversations',exact:true}).click();}
-   await page.locator('#profile-btn').click();await page.locator('[data-settings="device"]').click();
-   await page.locator('#quarantine-summary').click();
   }
-  const held=skin==='comic'?page.getByRole('region',{name:'Sync diagnostics',exact:true}):page.locator('#quarantine');
+  const held=page.getByRole('region',{name:'Sync diagnostics',exact:true});
   await held.waitFor({state:'visible'});
   if(skin==='comic')await held.locator('summary').filter({hasText:'Retained sync records'}).click();
   assert.equal(await held.locator('li').count(),4);
   const specific=held.locator('li').filter({hasText:'This invitation no longer matches the current group.'});
   await specific.getByText('If you still need to join, use the newer invitation or ask the inviter for a fresh one. You can archive this old notice.',{exact:true}).waitFor();
-  assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),skin==='comic'?0:2);
+  assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),0);
   assert.equal(await held.getByRole('button',{name:/Accept|Approve|Run task|Trust/}).count(),0,'held notices cannot authorize execution or identity');
   assert(!/SECRET_HELD_BODY|SECRET_HELD_ATTACHMENT/.test(await held.innerText()),'encrypted contents never shown');
   // Old invalid DTO has no detail/recovery: safe generic fallback remains.
   await held.getByText('The original detailed reason was not recorded or is unavailable.',{exact:true}).waitFor();
-  if(skin!=='comic'){
-   const unknown=held.locator('li').filter({hasText:"couldn't be verified"});
-   assert.equal(await unknown.count(),1,'unknown old classification stays unverified');
-   assert.equal(await unknown.getByRole('button',{name:'Archive notice'}).count(),0);
-  }
   if(skin==='comic'){
    await held.getByRole('button',{name:'Archive all 2 notices',exact:true}).click();
    await page.waitForFunction(()=>fixture.overview.quarantine.length===2);
    assert.deepEqual(await page.evaluate(()=>fixture.overview.quarantine.map(q=>q.id).sort()),['legacy-unknown','proof-waiting']);
    assert.equal(await page.evaluate(()=>fixture.retainedHeld.length),4,'archiving diagnostics retains blocked messages');
    assert(!await page.evaluate(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body.do!=='archive_held_batch')),'archive changes no admission or task state');
-  }else{
-  await specific.getByRole('button',{name:'Archive notice',exact:true}).click();
-  await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='archive_held_batch'));
-  await page.waitForFunction(()=>fixture.overview.quarantine.length===3);
-  await page.waitForFunction(()=>!document.querySelector('#skin').shadowRoot.textContent.includes('This invitation no longer matches the current group.'));
-  assert.deepEqual(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act').map(r=>r.body)),[{do:'archive_held_batch',held:[{id:'invalid-ended-invite',reason:'invalid',detail_code:'group_invitation_outdated'}]}]);
-  assert.deepEqual(await page.evaluate(()=>fixture.overview.quarantine.map(q=>q.id).sort()),['legacy-invalid','legacy-unknown','proof-waiting']);
-  assert.equal(await page.evaluate(()=>fixture.retainedHeld.length),4,'local notice hide retains blocked envelope metadata');
-  assert.equal(await held.getByRole('button',{name:'Archive notice',exact:true}).count(),1,'other invalid notice remains');
   }
   await settle(page);const shot=path.join(evidence,skin+'-heldback-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
  }catch(e){const shot=path.join(evidence,skin+'-heldback-failure-'+width+'.png');await page.screenshot({path:shot});console.error(JSON.stringify({skin,width,shot,errors,text:await page.locator('#skin').evaluate(e=>e.shadowRoot.innerText||e.shadowRoot.textContent),requests:await page.evaluate(()=>fixture.requests)}));throw e;}
@@ -1107,7 +1056,7 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     for(const scenario of ['never','never-native','uncertain','uncertain-native','custody','delivered','running','answered','queued-error']){
      const {page,context}=await openCase('delivery-'+scenario),request='9'.repeat(32);
      await page.evaluate(id=>openFixtureMessage(id),request);
-     const row=skin==='comic'?page.locator('[data-mid="'+request+'"]'):skin==='zoom'?page.locator('.zoom-message'):page.locator('#m-'+request);
+     const row=page.locator('[data-mid="'+request+'"]');
      try{await row.waitFor();}catch(e){const shot=path.join(evidence,skin+'-'+scenario+'-failure-'+width+'.png');await page.screenshot({path:shot});console.error(JSON.stringify({skin,width,scenario,errors,shot,text:await page.locator('#skin').evaluate(e=>e.shadowRoot.innerText||e.shadowRoot.textContent),requests:await page.evaluate(()=>fixture.requests)}));throw e;}const visible=await row.innerText();
      assert(!/Cancelled|Canceled/.test(visible),skin+' '+scenario+': local stop never claims recipient cancellation');
      if(scenario.startsWith('uncertain'))assert.match(visible,/Delivery unconfirmed|delivery unconfirmed/);
@@ -1117,7 +1066,6 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
      if(scenario==='delivered')assert.match(visible,/Delivered|delivered|on their/);
      if(scenario==='custody')assert.match(visible,/server|custody|Sent/);
      if(skin==='comic')await row.getByRole('button',{name:/^Asked /}).click();
-     else {const details=row.locator('details.tech');if(!await details.evaluate(e=>e.open))await details.locator('summary').click();}
      const detail=await page.evaluate(()=>fixture.deliveryDetail);
      if(detail)await page.getByText(detail,{exact:true}).filter({visible:true}).first().waitFor();
      if(scenario.startsWith('uncertain'))assert(await page.getByText(/Cancellation cannot be confirmed/).filter({visible:true}).count()>0);
@@ -1132,14 +1080,10 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     if(skin==='comic'){
       if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
       await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();
-    }else {
-      if(width===390){if(skin==='zoom')await page.getByRole('navigation',{name:'Zoom level',exact:true}).getByRole('button',{name:'Everyone',exact:true}).click();else await page.getByRole('button',{name:'Back to conversations',exact:true}).click();}
-      await page.locator('#review-btn').click();
     }
     await page.getByText('Read the agent’s whole message',{exact:true}).click();
     await page.getByText(/FINAL_REASON_MARKER/).filter({visible:true}).first().waitFor();
     if(skin==='comic')await page.locator('[data-open]').filter({hasText:'Review carrier handoff'}).click();
-    else await page.locator('#review-list button').filter({hasText:'Your agent couldn’t finish'}).click();
     const region=page.getByRole('region',{name:'Your agent says',exact:true});
     try{await region.waitFor();}catch(e){const shot=path.join(evidence,skin+'-full-reason-failure-'+width+'.png');await page.screenshot({path:shot});console.error(JSON.stringify({skin,width,errors,shot,text:await page.locator('#skin').evaluate(e=>e.shadowRoot.innerText||e.shadowRoot.textContent),requests:await page.evaluate(()=>fixture.requests)}));throw e;}
     assert((await region.innerText()).includes(await page.evaluate(()=>fixture.why)),'Chat retains the complete overview explanation when message detail is absent');
@@ -1151,9 +1095,6 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
      if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
      await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:'Agents',exact:true}).click();
      await page.getByRole('button',{name:'Connect an agent on your computer',exact:true}).click();
-    }else{
-     if(width===390){if(skin==='zoom')await page.getByRole('navigation',{name:'Zoom level',exact:true}).getByRole('button',{name:'Everyone',exact:true}).click();else await page.getByRole('button',{name:'Back to conversations',exact:true}).click();}
-     await page.locator('#profile-btn').click();await page.locator('[data-settings="device"]').click();
     }
     const setup=page.getByRole('region',{name:'Connect an agent on your computer',exact:true});
     await setup.getByRole('link',{name:'Get AgentNet for Linux',exact:true}).waitFor();
@@ -1171,12 +1112,11 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
    }
    if(process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'){
     const {page,context}=await openCase('device-oks');const request='7'.repeat(32),body='Check Orchard warehouse inventory';
-    const activity=async()=>{if(skin==='comic'){const back=page.getByRole('button',{name:'Back to chats',exact:true});if(width===390&&await back.isVisible())await back.click();await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();}else{const back=page.getByRole('button',{name:'Back to conversations',exact:true});if(width===390&&await back.isVisible())await back.click();if(await page.locator('#review-btn').getAttribute('aria-expanded')!=='true')await page.locator('#review-btn').click();}};
-    const waiting=skin==='comic'?page.getByRole('list',{name:'Waiting for you',exact:true}):page.locator('#review-list');
-    const working=skin==='comic'?page.getByRole('list',{name:'Working',exact:true}):page.locator('#activity-extra');
+    const activity=async()=>{const back=page.getByRole('button',{name:'Back to chats',exact:true});if(width===390&&await back.isVisible())await back.click();await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).click();};
+    const waiting=page.getByRole('list',{name:'Waiting for you',exact:true});
+    const working=page.getByRole('list',{name:'Working',exact:true});
     await activity();await waiting.getByRole('button').filter({hasText:body}).waitFor();
     if(skin==='comic'){await page.getByText('1 thing needs you',{exact:true}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).getByText('1',{exact:true}).count(),1,'Direct held request counts in OK badge');}
-    else{assert.equal(await page.locator('#review-count').innerText(),'1');assert(await page.locator('#review-count').isVisible());}
     if(skin==='comic'){
      await waiting.getByRole('button',{name:'Brin asked your agent something. Review it.',exact:true}).waitFor();
      await waiting.getByRole('button',{name:'Allow once',exact:true}).waitFor();
@@ -1206,13 +1146,12 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     await page.evaluate(()=>setDeviceState('running'));await working.getByRole('button').filter({hasText:body}).waitFor();assert.equal(await waiting.getByRole('button').filter({hasText:body}).count(),0,'Running review[] request leaves decision list');
     if(skin==='comic')assert.equal(await working.getByRole('button',{name:'Allow once',exact:true}).count(),0,'Running requests offer no approval');
     if(skin==='comic'){assert.equal(await page.getByText('1 thing needs you',{exact:true}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:/^OKs/}).getByText('1',{exact:true}).count(),0,'Working review[] request clears OK badge');}
-    else{assert.equal(await page.locator('#review-count').innerText(),'0');assert(!await page.locator('#review-count').isVisible(),'Working review[] request clears activity badge');}
     assert(!/needs your (OK|decision)|Waiting for approval/.test(await working.innerText()),'Working row uses no approval claim');assert(!/\[object HTML/.test(await working.innerText()),'Working row renders peer name rather than DOM string');assert(!/Already running\s*·\s*Already running/.test(await working.innerText()),'Working status is not duplicated');assert.match(await working.innerText(),/Working|Already running/);await settle(page);const listShot=path.join(evidence,skin+'-direct-review-working-'+width+'.png');await page.screenshot({path:listShot});shots.push(listShot);
-    await page.evaluate(()=>openOtherDevice());const unrelated=skin==='comic'?page.locator('[data-mid="'+'8'.repeat(32)+'"]'):skin==='zoom'?page.locator('.zoom-message').filter({hasText:'Different device thread'}):page.locator('#m-'+'8'.repeat(32));await unrelated.waitFor();assert((await unrelated.innerText()).includes('Different device thread'));await activity();
-    await working.locator('button').filter({hasText:body}).first().click();const focused=skin==='comic'?page.locator('[data-mid="'+request+'"]'):skin==='zoom'?page.locator('.zoom-message').filter({hasText:body}):page.locator('#m-'+request);
+    await page.evaluate(()=>openOtherDevice());const unrelated=page.locator('[data-mid="'+'8'.repeat(32)+'"]');await unrelated.waitFor();assert((await unrelated.innerText()).includes('Different device thread'));await activity();
+    await working.locator('button').filter({hasText:body}).first().click();const focused=page.locator('[data-mid="'+request+'"]');
     await focused.waitFor();assert((await focused.innerText()).includes(body),'Working row opens exact direct request');await unrelated.waitFor({state:'hidden'});assert(!await unrelated.isVisible(),'Working row leaves unrelated thread');
     await settle(page);const shot=path.join(evidence,skin+'-direct-review-running-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
-    await focused.getByRole('button',{name:skin==='comic'?'Stop':'Stop…',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Stop',exact:true}).click();await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='cancel'));
+    await focused.getByRole('button',{name:'Stop',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Stop',exact:true}).click();await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='cancel'));
     assert.equal(await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/act'&&r.body?.do==='cancel').body.id),request,'Stop binds exact running request');await activity();await working.getByRole('button').filter({hasText:body}).waitFor();assert.equal(await waiting.getByRole('button').filter({hasText:body}).count(),0,'Stopping request remains outside decisions');
     await page.evaluate(()=>setDeviceState('done'));await page.waitForFunction(()=>!document.querySelector('#skin').shadowRoot.textContent.includes('Already running'));assert.equal(await working.getByRole('button').filter({hasText:body}).count(),0,'Completed request leaves Working');assert.equal(await waiting.getByRole('button').filter({hasText:body}).count(),0);
     assert.equal(await page.evaluate(()=>fixture.overview.needs_you.length),0,'Regression exercises direct review[] throughout');await context.close();continue;
@@ -1287,48 +1226,8 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
     }
     continue;
    }
-   const people=async page=>{if(skin==='zoom'){const d=page.getByLabel('People in this group',{exact:true});if(await d.getAttribute('open')===null)await d.locator(':scope > summary').click();}};
-   const participants=async page=>{await people(page);await page.getByRole('button',{name:'+ Add participants',exact:true}).filter({visible:true}).first().click();};
-   for(const variant of ['admin','member']){
-    const {page,context}=await openCase(variant);await participants(page);assert.equal(await page.getByRole('button',{name:'Invite permanent member…',exact:true}).count(),variant==='admin'?1:0,'Only admin gets permanent member action');
-    if(variant==='admin'){await page.getByRole('button',{name:'Invite permanent member…',exact:true}).click();await page.locator('#group-invite-person').waitFor();assert.equal(await page.locator('#guest-host').count(),0,'Explicit permanent member uses separate consent flow');await page.keyboard.press('Escape');await participants(page);}
-    await page.getByRole('button',{name:'Bring in human…',exact:true}).click();await page.locator('#guest-host').fill(cora.address);
-    assert.match(await page.locator('#dialog').innerText(),/Current group members shared with the guest:.*Aster.*Brin/);assert.match(await page.locator('#dialog').innerText(),/not permanent membership/);
-    if(variant==="admin")await page.locator('input[name="guest-share"][value="context"]').check();else{await page.getByRole("button",{name:"Check app compatibility",exact:true}).click();await page.getByText("All conversation devices support human guests.",{exact:true}).waitFor();await page.locator('input[name="guest-share"][value="context"]').focus();await page.keyboard.press("Space");}assert(await page.locator('input[name="guest-share"][value="context"]').isChecked(),"Pointer and keyboard select actual context checkbox");await page.locator('#dialog-ok').click();await page.getByText('Selected context includes files. Confirm file sharing, or deselect those messages.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/guest/invite').length),0);
-    await settle(page);const consentShot=path.join(evidence,skin+'-'+variant+'-guest-history-'+width+'.png');await page.screenshot({path:consentShot});shots.push(consentShot);
-    await page.locator('input[name="guest-file-consent"]').check();await page.locator('#dialog-ok').click();await page.locator('#dialog').waitFor({state:'hidden'});
-    const sent=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/guest/invite'));assert.equal(sent.length,1);assert.deepEqual(sent[0].body,{conv,host:cora.address,share:['context'],note:''});assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/groups/invite').length),0,'Default human invite never grants membership');
-    if(skin==='classic'){await page.locator('#body').fill('@Cor');await page.locator('#body').press('End');await page.locator('#body').dispatchEvent('input');await page.getByRole('button',{name:/Invite Cora/}).click();assert.equal(await page.locator('#guest-host').inputValue(),cora.address,'@ routes exact human address to guest dialog');await page.keyboard.press('Escape');}
-    assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'No mobile action overflow');await settle(page);const shot=path.join(evidence,skin+'-'+variant+'-guest-controls-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);await context.close();
-   }
-   for(const variant of ['guest-active','guest-invited']){
-    const {page,context}=await openCase(variant);await people(page);
-    assert.equal(await page.getByRole('button',{name:'+ Add participants',exact:true}).filter({visible:true}).count(),0,'Guest cannot invite');assert.equal(await page.getByRole('button',{name:'Leave group…',exact:true}).filter({visible:true}).count(),0,'Guest cannot perform membership leave');
-    if(skin==='classic')await page.locator('#agents .human-participant').filter({visible:true}).click();
-    const join=page.getByRole('button',{name:'Join conversation…',exact:true}),leave=page.getByRole('button',{name:'Leave conversation…',exact:true});
-    if(variant==='guest-invited'){
-     assert(skin==='classic'?await page.locator('#send').isDisabled():await page.getByRole('button',{name:'Join before writing in this group',exact:true}).isDisabled(),'Invited guest cannot send');
-     await join.click();assert.match(await page.locator('#dialog').innerText(),/no membership or invitation rights/);await page.locator('#dialog-ok').click();
-     assert.equal(await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/dm/guest/decide').body.accept),true);await people(page);if(skin==='classic')await page.locator('#agents .human-participant').filter({visible:true}).click();
-    }
-    assert.match(await leave.locator('..').locator('..').innerText(),/no group membership or invitation rights/);
-    if(skin==='classic')await page.keyboard.press('Escape');
-    if(skin==='zoom'){await page.getByRole('button',{name:'Write in this group…',exact:true}).click();await page.locator('#write-body').fill('Guest dispatch test');await page.locator('#dialog-ok').click();}
-    else{assert(!await page.locator('#send').isDisabled());await page.locator('#body').fill('Guest dispatch test');await page.locator('#send').click();}
-    await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/dm/send'));const request=await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/dm/send').body);assert.equal(request.pid,'guest-1');assert.equal(request.conv,conv);assert.equal(request.body,'Guest dispatch test');assert(!await page.evaluate(()=>fixture.requests.some(r=>r.path==='/api/groups/change')),'Guest sends no membership operations');
-    await people(page);if(skin==='classic')await page.locator('#agents .human-participant').filter({visible:true}).click();
-    await leave.click();await page.locator('#dialog-ok').click();assert.deepEqual(await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/dm/guest/end').body),{pid:'guest-1'});await context.close();
-   }
-   for(const variant of ['admin','accepted','other-device','legacy-flags']){
-    const {page,context}=await openCase(variant);const retract=page.getByRole('button',{name:'Retract invitation…',exact:true}).filter({visible:true}).first(),refresh=page.getByRole('button',{name:'Refresh invitation…',exact:true}).filter({visible:true}).first();
-    if(variant==='other-device'||variant==='legacy-flags'){assert.equal(await retract.count(),0);assert.equal(await refresh.count(),0);await context.close();continue;}
-    await retract.click();assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/groups/cancel').length),0,'Opening control grants nothing');await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/groups/cancel').length),0,'Cancelling confirmation sends nothing');
-    await refresh.click();assert.match(await page.locator('#dialog').innerText(),/Join again/);await page.locator('#dialog-ok').click();assert.deepEqual(await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/groups/refresh').body),{id:'invite-1'});
-    await retract.click();await page.locator('#dialog-ok').click();assert.deepEqual(await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/groups/cancel').body),{id:'fresh-invite'});await context.close();
-   }
-   const {page,context}=await openCase('admin');await page.getByRole('button',{name:'Retract invitation…',exact:true}).filter({visible:true}).first().click();await page.evaluate(()=>disableInvite());await page.waitForTimeout(40);await page.locator('#dialog-ok').click();await page.getByText('This invitation can no longer be changed here. Refresh the conversation and review it again.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/groups/cancel').length),0,'Stale capability blocks action');await context.close();
   }
   if(process.env.AGENTNET_RENDERED_RETAIN){const keep=path.resolve(process.env.AGENTNET_RENDERED_RETAIN);assert(keep.startsWith('/tmp/'),'retained synthetic evidence must stay in /tmp');fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'All skins: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'Classic+Zoom source')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
  }finally{await browser?.close();server.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

@@ -15,8 +15,10 @@ export function shortLinkLabel(label: string, href: string): string {
 
 export type LinkPart = string | { href: string; label: string };
 
-// Classic/Zoom keep their plain-text formatting. Use the same Markdown lexer
-// as Comic to recognize raw links without touching code or descriptive links.
+// Plain-text skins (the Classic and Zoom packages in agentnet-skins) keep
+// their formatting and take this as skins/shared/link-text.mjs (build.sh).
+// Use the same Markdown lexer as Comic to recognize raw links without
+// touching code or descriptive links.
 export function rawLinkParts(text: string): LinkPart[] {
   if (text.length <= 64 || !/https?:\/\/|www\./i.test(text)) return [text];
   const links: { start: number; end: number; href: string; label: string }[] = [];

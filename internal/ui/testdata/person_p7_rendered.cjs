@@ -1,9 +1,9 @@
-// Actual bundled skins against the public inert Go host fixture.
+// The actual bundled skin (Comic) against the public inert Go host fixture.
 const { chromium }=require(process.env.AGENTNET_PLAYWRIGHT);
 const assert=require('node:assert/strict'),path=require('node:path');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium'});
- try{for(const skin of ['comic','classic','zoom'])for(const width of [1280,390]){
+ try{for(const skin of ['comic'])for(const width of [1280,390]){
   const origin=new URL(process.env.P7_URL).origin,context=await browser.newContext({viewport:{width,height:900}}),page=await context.newPage(),errors=[];
   const act=async(action,button)=>{
    const [response]=await Promise.all([page.waitForResponse(r=>{
@@ -20,10 +20,6 @@ const assert=require('node:assert/strict'),path=require('node:path');
   if(skin==='comic'){
    await page.locator('section[aria-label="Chats"]').waitFor();
    await page.getByRole('button',{name:/P7 person permission question/}).first().click();
-  }else{
-   await page.locator('#review-btn').waitFor();
-   await page.locator('#review-btn').click();
-   await page.locator('#review').getByRole('button',{name:/P7 person permission question/}).first().click();
   }
   const open=page.getByRole('button',{name:/Approve Sergey/}).first();await open.waitFor();await open.click();
   const confirm=page.getByRole('button',{name:'Approve Sergey',exact:true});await confirm.waitFor();

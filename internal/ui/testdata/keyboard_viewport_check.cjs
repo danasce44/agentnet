@@ -213,28 +213,27 @@ async function ios(browser, scheme) {
   await picker.getByRole('button', { name: 'Close emoji' }).tap();
   await picker.waitFor({ state: 'detached' });
 
-  // Classic and Zoom are sized by the same host. Classic's message box sits
-  // above the keyboard while typing; Zoom writes in a centred dialog of its
-  // own (unchanged here), so only its box is checked.
-  for (const skin of ['classic', 'zoom']) {
+  // An installed skin (the Notebook example, served from the skins
+  // directory) is sized by the same host: it fits above the keyboard, and
+  // its message box sits above the keyboard while typing.
+  for (const skin of ['notebook']) {
     await p.evaluate(() => window.__keyboard(0));
     await p.goto(origin + '/?skin=' + skin);
-    await p.waitForFunction((s) => !!document.getElementById('skin').shadowRoot?.querySelector('.' + s + '-root #conv-list'), skin, { timeout: 20000 });
-    if (skin === 'classic') {
-      await p.locator('#conv-list .conv-item').first().click();
-      const body = p.locator('#composer:not([hidden]) #body');
-      await body.waitFor({ timeout: 10000 });
-      await body.tap();
-    }
+    await p.getByRole('button', { name: 'Use this skin' }).click(); // a fresh context: trust is asked first
+    await p.getByRole('heading', { name: 'Notebook', exact: true }).waitFor({ timeout: 20000 });
+    await p.locator('.notebook nav button').first().click();
+    const body = p.getByRole('textbox', { name: 'Message' });
+    await body.waitFor({ timeout: 10000 });
+    await body.tap();
     await p.evaluate((px) => window.__keyboard(px), KEYBOARD);
     await frames(p);
     const k = await p.evaluate(() => {
       const sr = document.getElementById('skin').shadowRoot, bottom = (e) => (e && e.getClientRects().length ? Math.round(e.getBoundingClientRect().bottom) : null);
-      return { html: document.documentElement.getBoundingClientRect().height, root: bottom(sr.querySelector('.skin-root')),
-        composer: bottom(sr.querySelector('#composer:not([hidden])')), typing: sr.activeElement === sr.querySelector('#body') };
+      const field = sr.activeElement && sr.activeElement.matches('textarea, input') ? sr.activeElement : null;
+      return { html: document.documentElement.getBoundingClientRect().height, root: bottom(sr.querySelector('.skin-root')), field: bottom(field), typing: !!field };
     });
     assert.ok(k.html === visible && k.root <= visible, name + ' ' + skin + ': the skin fits above the keyboard: ' + JSON.stringify(k));
-    if (skin === 'classic') assert.ok(k.typing && k.composer !== null && k.composer <= visible, name + ' classic: typing, the message box sits above the keyboard: ' + JSON.stringify(k));
+    assert.ok(k.typing && k.field !== null && k.field <= visible, name + ' ' + skin + ': typing, the message box sits above the keyboard: ' + JSON.stringify(k));
     await snap(p, 'ios-' + scheme + '-' + skin);
     // The host's own sheets over these skins (the switcher's "Join a
     // workspace…": an invitation box and two fields) sit on the keyboard

@@ -20,7 +20,7 @@ func TestPreviewTopicRoutesAllSkinsRendered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	for _, skin := range []string{"comic", "classic", "zoom"} {
+	for _, skin := range []string{"comic"} {
 		for _, width := range []string{"1280", "390"} {
 			if !strings.Contains(string(out), "preview route "+skin+" "+width+" PASS") {
 				t.Fatalf("missing rendered result\n%s", out)

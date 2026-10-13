@@ -72,33 +72,3 @@ assert.equal(oldChanges,1);assert.equal(newChanges,1);assert.equal(newUI.merge('
 const otherUI=standalone.pendingSends({workspace:{id:'two'},workspaces:{state:()=>({})}});
 assert.equal(otherUI.merge('dm',[]).length,0,'pending previews stay in their own membership');newUI.dispose();
 console.log('queued engine send PASS: durable return, FIFO, retry, no duplicate post, Close drain; optimistic merge/failure/retry PASS');
-
-// Execute each legacy skin's actual captured-send functions: a second press
-// during a new device topic's local save must target its pending first turn.
-const {runInNewContext} = await import('node:vm');
-for (const skin of ['classic','zoom']) {
-  const src=await readFile(new URL(`../skins/${skin}/src/entry.mjs`,import.meta.url),'utf8');
-  const begin=src.slice(src.indexOf('function startSend('),src.indexOf('function failSend('));
-  const send=src.slice(src.indexOf('async function send(ev, retry)'),src.indexOf('function kindHint(',src.indexOf('async function send(ev, retry)')));
-  const host={workspace:{id:skin}}, sends=pendingSends(host), body={value:'new topic seed'}, error={textContent:''}, submitted=[], gates=[], opened=[];
-  const root='c'.repeat(32), state={sending:false,dm:null,data:{id:root,peer:'bob/desk',key:{pending:false},messages:[{id:root}]},draftKey:root,files:[],answering:null,mentions:[],overview:{}};
-  const noop=()=>{};
-  const scope={state,sends,sendID,alive:true,topicFresh:{[root]:true},currentHost:host,typingUI:null,
-    $:id=>id==='body'?body:error,kindValue:()=> 'question',wsNow:()=>skin,boundElsewhere:()=>'',overLimit:()=>'',receiverCapture:()=>({}),
-    prepareReplyReceiverSelection:async()=>null,preparedFiles:async()=>[],sentStaged:noop,grow:noop,setDMReply:noop,setAnswering:noop,renderPending:noop,keepDraft:noop,syncComposer:noop,announce:noop,loadThread:async()=>{},updated:noop,sentElsewhere:noop,
-    openThread:async id=>opened.push(id),failSend:()=>{throw Error('unexpected captured-send failure');},
-    api:async(path,draft)=>{assert.equal(path,'/api/send');submitted.push({...draft});const wait=deferred();gates.push(wait);await wait.promise;return {id:draft.id,state:'queued'};},
-  };
-  runInNewContext(begin+'\n'+send+'\nglobalThis.capturedSend=send;',scope);
-  const firstRun=scope.capturedSend();
-  for(let i=0;!submitted.length&&i<100;i++)await new Promise(r=>setTimeout(r,1));
-  assert.equal(submitted.length,1,skin+' first save started');assert.equal(body.value,'',skin+' instant clear');
-  body.value='rapid follow-up';const secondRun=scope.capturedSend();await new Promise(r=>setTimeout(r,10));
-  assert.equal(body.value,'',skin+' second press captured');assert.equal(submitted.length,1,skin+' follow-up waits only for prior local save');
-  gates[0].resolve();await firstRun;
-  for(let i=0;submitted.length<2&&i<100;i++)await new Promise(r=>setTimeout(r,1));
-  assert.equal(submitted.length,2);assert.equal(submitted[0].reply_to,'');assert.equal(submitted[1].reply_to,submitted[0].id,skin+' follows pending new topic');
-  assert.deepEqual(opened,[submitted[0].id]);gates[1].resolve();await secondRun;
-  const real=submitted.map(m=>({id:m.id,dir:'out',body:m.body}));assert.equal(sends.merge(submitted[0].id,real).length,2,skin+' topic previews merge once');assert.equal(sends.merge(root,[]).length,0,skin+' old topic has no stray preview');
-}
-console.log('classic/zoom captured device topic sends PASS: immediate clear, rapid follow-up parent, FIFO save, one bubble');

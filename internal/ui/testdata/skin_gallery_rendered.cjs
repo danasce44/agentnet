@@ -126,7 +126,7 @@ function digest(files) {
         await page.getByRole('button', { name: 'Use Later' }).click();
         await page.getByRole('dialog').getByRole('button', { name: 'Use Later' }).click();
         await page.getByText('This skin needs AgentNet v99.0.0 or newer. Update AgentNet first.').waitFor();
-        assert.equal(new URL(page.url()).searchParams.get('skin'), null, tag + ': no switch to a skin that needs a newer AgentNet');
+        assert.notEqual(new URL(page.url()).searchParams.get('skin'), 'local:later', tag + ': no switch to a skin that needs a newer AgentNet');
       }
       assert.deepEqual(outside, [], tag + ': no other external requests');
       assert.deepEqual(errors, [], tag + ': page errors');

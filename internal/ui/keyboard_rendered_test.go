@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,8 @@ import (
 // newest message stays in view. iOS (only the visual viewport shrinks, a
 // stand-in visualViewport here): the host sets --an-viewport-h and
 // --an-keyboard, the page and the message box fit above the keyboard, and
-// a sheet sits on it; Classic and Zoom fit too. No up-front execution
+// a sheet sits on it; an installed skin (the Notebook example) fits too,
+// and the host's own sheets over it. No up-front execution
 // toggle appears. Reply from a
 // message's sheet, or on the card of a task waiting for the person's OK,
 // puts the cursor in the field inside the tap itself; the phone emoji
@@ -54,10 +56,27 @@ func TestKeyboardViewportRendered(t *testing.T) {
 			waitTopic(t, bob, root)
 		}
 	}
+	// The Notebook example, installed, stands for any skin but Comic.
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "notebook"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"skin.json", "entry.mjs", "style.css"} {
+		data, err := os.ReadFile(filepath.Join("..", "..", "examples", "skins", "notebook", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "notebook", name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(home, 0700); err != nil {
+		t.Fatal(err)
+	}
 	var s *Server
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.Handler().ServeHTTP(w, r) }))
 	t.Cleanup(ts.Close)
-	s = New(live, ts.Listener.Addr().String(), testToken) // before the server starts: the browser is another process
+	s = New(live, ts.Listener.Addr().String(), testToken, home) // before the server starts: the browser is another process
 	ts.Start()
 	cmd := exec.Command(node, "testdata/keyboard_viewport_check.cjs")
 	cmd.Env = append(os.Environ(), "KEYBOARD_URL="+ts.URL+"/?t="+testToken, fmt.Sprintf("KEYBOARD_TOTAL=%d", total))

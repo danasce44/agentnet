@@ -92,7 +92,7 @@ fn main() {
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(380.0, 600.0)
                 .visible(!hidden)
-                // Comic, Classic and Zoom take dropped files themselves.
+                // Skins (Comic and installed ones) take dropped files themselves.
                 .disable_drag_drop_handler()
                 // Copy link / Copy invitation on Linux and Windows.
                 .enable_clipboard_access()

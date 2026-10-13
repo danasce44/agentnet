@@ -45,16 +45,18 @@ type skinAsset struct {
 
 // BuiltinSkins are the packages embedded in this program, in the order the
 // catalog offers them; the first is the default. Their trust comes from
-// this fixed list (and loader.js's copy of it), never from a manifest.
-var BuiltinSkins = []string{"comic", "classic", "zoom"}
+// this fixed list (and skin-choice.mjs's copy of it), never from a manifest.
+// Comic is the only one; other skins (Classic, Zoom) are packages from the
+// agentnet-skins collection, installed like any other.
+var BuiltinSkins = []string{"comic"}
 
 // ReservedSkinIDs are the ids no installed or browser-local package may
-// use: the built-in skins, those to come, and the old name of the default.
-var ReservedSkinIDs = []string{"comic", "classic", "zoom", "default"}
+// use: the built-in skin and "default", the default interface's old name.
+var ReservedSkinIDs = []string{"comic", "default"}
 
-// ReservedSkinName reports whether name is a built-in skin's (present or
-// to come), ignoring case and spacing: no installed or browser-local
-// package may show as Comic, Classic or Zoom (skin-choice.mjs takenName).
+// ReservedSkinName reports whether name is a built-in skin's, ignoring case
+// and spacing: no installed or browser-local package may show as Comic
+// (skin-choice.mjs takenName).
 func ReservedSkinName(name string) bool {
 	n := strings.ToLower(strings.Join(strings.Fields(name), " "))
 	return n != "default" && slices.Contains(ReservedSkinIDs, n)

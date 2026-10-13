@@ -69,21 +69,19 @@ const server=http.createServer((req,res)=>{
  let browser;try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
   browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium'});
-  for(const skin of (process.env.PERSON_TOPIC_SKINS||'comic,classic,zoom').split(','))for(const width of [1280,390]){
+  for(const skin of (process.env.PERSON_TOPIC_SKINS||'comic').split(','))for(const width of [1280,390]){
    const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce',isMobile:width===390,hasTouch:width===390});
    await context.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
    const page=await context.newPage(),errors=[];page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.stack));
    const shot=async(name)=>{if(evidence){await page.waitForTimeout(350);await page.screenshot({path:path.join(evidence,'person-topics-'+skin+'-'+width+'-'+name+'.png')});}};
    const all=()=>page.getByRole('navigation',{name:'Topics',exact:true}).getByRole('button',{name:/^All/});
-   const shown=text=>page.locator(skin==='comic'?'[role=log] [data-mid]':skin==='classic'?'.timeline .body':'.mini-chat .mc-text').filter({hasText:text}).first();
-   const field=()=>skin==='comic'?page.getByRole('textbox',{name:'Message Casey',exact:true}):page.locator('#body');
+   const shown=text=>page.locator('[role=log] [data-mid]').filter({hasText:text}).first();
+   const field=()=>page.getByRole('textbox',{name:'Message Casey',exact:true});
    const list=()=>page.getByRole('dialog',{name:'All topics',exact:true});
-   const edit=async text=>{if(skin==='zoom'){await page.getByRole('button',{name:'Write in this DM…',exact:true}).click();await page.locator('#write-body').fill(text);await page.locator('#dialog-cancel').click();}else await field().fill(text);};
+   const edit=async text=>{await field().fill(text);};
    const choose=async(pattern)=>{await all().click();await list().getByRole('button',{name:pattern}).click();};
    await page.goto(origin+'/?skin='+skin);await page.waitForFunction(()=>window.ready);
-   if(skin==='comic')await page.getByRole('list',{name:'Chats',exact:true}).getByRole('button',{name:/Casey/}).first().click();
-   else if(skin==='classic')await page.locator('.contact-item').getByRole('button',{name:/Casey/}).first().click();
-   else await page.locator('.zoom-content').getByRole('button',{name:/Casey/}).first().click();
+   await page.getByRole('list',{name:'Chats',exact:true}).getByRole('button',{name:/Casey/}).first().click();
    if(process.env.AGENTNET_TOPIC_REOPEN==='1'){
     await all().click();await list().getByRole('button',{name:/^Archived(?:\s|$)/}).click();await list().getByRole('button',{name:/Archived details/}).click();
     const reopen=page.getByRole('button',{name:'Reopen',exact:true});await reopen.waitFor();
@@ -100,7 +98,7 @@ const server=http.createServer((req,res)=>{
     assert.deepEqual(errors,[]);await context.close();continue;
    }
    if(process.env.AGENTNET_PREVIEW_ROUTE==='1'){
-    const exact=(id,text)=>skin==='comic'?page.locator('[data-mid="'+id+'"]'):skin==='classic'?page.locator('#m-'+id):page.locator('.zoom-message').filter({hasText:text});
+    const exact=(id,text)=>page.locator('[data-mid="'+id+'"]');
     await exact('other-native','Archived detail').waitFor();
     if(process.env.AGENTNET_TOPIC_UNREAD==='1'){
      await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.ids?.includes('other-native')));
@@ -113,7 +111,6 @@ const server=http.createServer((req,res)=>{
     await edit('Draft survives exact preview navigation');
     await page.evaluate(()=>{const m=fixture.views[fixture.ids.main].messages.find(m=>m.id==='main-native');m.id='canonical-native';m.lid='main-native';fixture.open('main-native','message',{conv:fixture.ids.main});});
     await exact('canonical-native','Invoice message').waitFor();
-    if(skin==='zoom')await page.keyboard.press('Escape');
     assert.equal(await field().inputValue(),'Draft survives exact preview navigation','exact focus keeps unsent text');
     // A missing target does not invent a topic or trigger an action. When
     // its history later arrives, the existing change feed resolves it.
@@ -121,7 +118,6 @@ const server=http.createServer((req,res)=>{
     await page.waitForTimeout(150);
     await page.evaluate(()=>{fixture.views[fixture.ids.main].messages.push({id:'delayed-native',lid:'delayed-native',topic:fixture.native,dir:'in',from:'casey/desktop',kind:'message',body:'History arrived later',at:'2026-10-06T12:00:00Z',state:'stored',actions:[]});fixture.tick();});
     await exact('delayed-native','History arrived later').waitFor();
-    if(skin==='zoom')await page.keyboard.press('Escape');
     await page.getByRole('navigation',{name:'Topics',exact:true}).getByRole('button',{name:'Main',exact:true}).click();
     await shown('Main planning').waitFor();
     await page.evaluate(()=>fixture.open('cancelled-native','message',{conv:fixture.ids.main}));
@@ -136,22 +132,12 @@ const server=http.createServer((req,res)=>{
     await exact('main-turn','Main planning').waitFor();
     await page.evaluate(()=>fixture.release());await page.waitForTimeout(150);
     await exact('main-turn','Main planning').waitFor();
-    if(skin==='zoom')await page.keyboard.press('Escape');
     await page.evaluate(()=>{fixture.delay=fixture.ids.other;fixture.open('other-native','message',{conv:fixture.ids.other});});
     await page.waitForFunction(()=>fixture.delay==='');
     await page.evaluate(()=>fixture.open('main-turn','message',{conv:fixture.ids.main}));
     await exact('main-turn','Main planning').waitFor();
     await page.evaluate(()=>fixture.release());await page.waitForTimeout(180);
     await exact('main-turn','Main planning').waitFor();
-    if(skin==='zoom'){
-     await page.evaluate(()=>fixture.open('left-native','message',{conv:fixture.ids.main}));
-     await page.waitForTimeout(150);await page.keyboard.press('Escape');
-     await page.locator('.zoom-content').getByRole('button',{name:/Casey/}).first().waitFor();
-     await page.evaluate(()=>{fixture.views[fixture.ids.main].messages.push({id:'left-native',lid:'left-native',topic:fixture.native,dir:'in',from:'casey/desktop',kind:'message',body:'History after leaving chat',at:'2026-10-06T12:00:00Z',state:'stored',actions:[]});fixture.tick();});
-     await page.waitForTimeout(180);
-     await page.locator('.zoom-content').getByRole('button',{name:/Casey/}).first().waitFor();
-     assert.equal(await page.locator('.zoom-message').count(),0,'late history does not reopen a chat left with Escape');
-    }
     assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.body&&['/api/dm/send','/api/operator/decide','/api/topic/done'].includes(r.path)).length),0,'preview navigation executes no message or permission action');
     await shot('preview-stale-load');assert.deepEqual(errors,[]);console.log('preview route '+skin+' '+width+' PASS: exact latest/archived/Main/copy alias/delayed/repeated/stale-load/draft');await context.close();continue;
    }
@@ -160,8 +146,8 @@ const server=http.createServer((req,res)=>{
     const reads=()=>page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act'&&r.body?.do==='read').flatMap(r=>r.body.ids));
     const readFlag=(conv,id)=>page.evaluate(([conv,id])=>fixture.views[fixture.ids[conv]].messages.find(m=>m.id===id).unread,[conv,id]);
     const closeList=()=>list().getByRole('button',{name:/^(Close|Close all topics|Back to the conversation)$/}).click();
-    const row=title=>skin==='comic'?list().getByRole('button',{name:new RegExp('^'+title)}):list().locator('.topic-row').filter({has:page.getByRole('button',{name:new RegExp('^'+title)})});
-    const rowRead=async(title,unread)=>{await row(title).waitFor();await page.waitForFunction(({skin,title,unread})=>{const shadow=document.querySelector('#skin').shadowRoot;const dialog=shadow.querySelector('[role=dialog]');if(!dialog)return false;const button=[...dialog.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent).startsWith(title));const text=skin==='comic'?button?.getAttribute('aria-label'):button?.closest('.topic-row')?.textContent;return !!text&&text.includes('unread')===unread;},{skin,title,unread});};
+    const row=title=>list().getByRole('button',{name:new RegExp('^'+title)});
+    const rowRead=async(title,unread)=>{await row(title).waitFor();await page.waitForFunction(({title,unread})=>{const shadow=document.querySelector('#skin').shadowRoot;const dialog=shadow.querySelector('[role=dialog]');if(!dialog)return false;const button=[...dialog.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent).startsWith(title));const text=button?.getAttribute('aria-label');return !!text&&text.includes('unread')===unread;},{title,unread});};
     await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/act'&&r.body?.do==='read'));
     assert.deepEqual(await reads(),['main-turn'],'opening Main reads only displayed messages');
     assert.equal(await readFlag('main','main-native'),true,'unseen topic remains unread');
@@ -196,7 +182,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(await readFlag('other','other-turn'),true,'stale view response remains unread');
     // Group topic chips change the displayed draft topic without reopening the DM.
     await page.evaluate(()=>{const v=fixture.views[fixture.ids.main];v.kind='group';v.title='Fictional group';v.messages.find(m=>m.id==='main-native').unread=true;Object.assign(fixture.overview.dms.find(d=>d.id===v.id),{kind:'group',title:v.title});fixture.unreadCounts();fixture.tick();});
-    const groupNav=page.getByRole('navigation',{name:skin==='comic'?/^Topics with /:'Topics',exact:skin!=='comic'});
+    const groupNav=page.getByRole('navigation',{name:/^Topics with /,exact:false});
     await groupNav.getByRole('button',{name:/^All/}).waitFor();
     assert.equal(await readFlag('main','main-native'),true,'group sibling stays unread before selection');
     await groupNav.getByRole('button',{name:/^All/}).click();await list().getByRole('button',{name:/Invoice review/}).click();
@@ -213,29 +199,24 @@ const server=http.createServer((req,res)=>{
     await shot('read-only-visible-topic');assert.deepEqual(errors,[]);console.log('topic unread '+skin+' '+width+' PASS: visible-only, sibling read refresh, selection, failed retry, late hidden arrival, stale view');await context.close();continue;
    }
    if(process.env.AGENTNET_OWN_REMIND==='1'){
-    const own=skin==='comic'?page.locator('[data-mid="waiting-turn"]'):skin==='classic'?page.locator('#m-waiting-turn'):shown('Waiting recipient proof');
-    if(skin==='comic'){
+    const own=page.locator('[data-mid="waiting-turn"]');
+    {
      if(width===390){await own.getByRole('button',{name:'Message actions',exact:true}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Remind me…',exact:true}).click();}
      else{await own.locator('[role="group"]').hover();await own.getByRole('button',{name:'More actions'}).click();await page.getByRole('menuitem',{name:'Remind me…'}).click();}
-    }else if(skin==='classic')await own.getByRole('button',{name:'Remind me…',exact:true}).click();
-    else{await own.click();await page.getByRole('button',{name:'Remind me…',exact:true}).click();}
+    }
     const sheet=page.getByRole('dialog',{name:'Remind me later',exact:true});await sheet.waitFor();await shot('own-reminder-open');
     assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/remind').length),0,'opening own reminder does not submit');
     await sheet.getByText(/In 30 minutes/).first().click();await sheet.getByRole('button',{name:'Remind me',exact:true}).click();await sheet.waitFor({state:'hidden'});
     const posted=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/remind').map(r=>r.body));assert.equal(posted.length,1);assert.equal(posted[0].id,'waiting-turn');assert(posted[0].due>Math.floor(Date.now()/1000),'future reminder');
     await page.reload();await page.waitForFunction(()=>window.ready);
-    if(skin==='comic')await page.getByRole('list',{name:'Chats',exact:true}).getByRole('button',{name:/Casey/}).first().click();
-    else if(skin==='classic'){const chat=page.locator('.contact-item').getByRole('button',{name:/Casey/}).first();if(await chat.isVisible())await chat.click();}
-    else {await page.getByRole('button',{name:'Everyone',exact:true}).click();await page.locator('.zoom-content .reminder-item').filter({hasText:'Waiting recipient proof'}).click();}
-    if(skin==='zoom')await page.locator('.zoom-message').getByText('Waiting recipient proof',{exact:true}).waitFor();else await shown('Main planning').waitFor();
-    const ownAgain=skin==='comic'?page.locator('[data-mid="waiting-turn"]'):skin==='classic'?page.locator('#m-waiting-turn'):page.locator('.zoom-content');
+    await page.getByRole('list',{name:'Chats',exact:true}).getByRole('button',{name:/Casey/}).first().click();
+    await shown('Main planning').waitFor();
+    const ownAgain=page.locator('[data-mid="waiting-turn"]');
     await ownAgain.getByRole('button',{name:'Change…',exact:true}).click();await page.getByRole('dialog',{name:'Move the reminder',exact:true}).waitFor();await shot('own-reminder-reopened');
     assert.equal(await page.evaluate(()=>fixture.overview.reminders.filter(r=>r.message==='waiting-turn').length),1,'own reminder remains after reload');
     await page.getByRole('dialog',{name:'Move the reminder',exact:true}).getByRole('button',{name:/^(Close|Cancel)$/,exact:true}).click();
-    if(skin==='zoom')await page.keyboard.press('Escape');
-    const incoming=skin==='comic'?page.locator('[data-mid="main-turn"]'):skin==='classic'?page.locator('#m-main-turn'):shown('Main planning');
-    if(skin==='comic'){if(width===390){await incoming.getByRole('button',{name:'Message actions',exact:true}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Remind me…',exact:true}).click();}else{await incoming.locator('[role="group"]').hover();await incoming.getByRole('button',{name:'More actions'}).click();await page.getByRole('menuitem',{name:'Remind me…'}).click();}}
-    else if(skin==='classic')await incoming.getByRole('button',{name:'Remind me…',exact:true}).click();else{await incoming.click();await page.getByRole('button',{name:'Remind me…',exact:true}).click();}
+    const incoming=page.locator('[data-mid="main-turn"]');
+    {if(width===390){await incoming.getByRole('button',{name:'Message actions',exact:true}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'Remind me…',exact:true}).click();}else{await incoming.locator('[role="group"]').hover();await incoming.getByRole('button',{name:'More actions'}).click();await page.getByRole('menuitem',{name:'Remind me…'}).click();}}
     await page.getByRole('dialog',{name:'Remind me later',exact:true}).waitFor();assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/remind').length),0,'incoming open unchanged; no accidental second submit');
     assert.deepEqual(errors,[]);console.log('Own/incoming reminder menu PASS '+skin+' '+width);await context.close();continue;
    }
@@ -250,20 +231,14 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.body&&['/api/dm/send','/api/action'].includes(r.path)).length),0,'rendering grants no action');
     await shot('agent-addressing');assert.deepEqual(errors,[]);console.log('Agent addressing/proposal PASS '+skin+' '+width);await context.close();continue;
    }
-   if(skin==='classic')assert.equal(await page.locator('#hub-back').isVisible(),false,'flat person chat has no intermediate DM hierarchy');
    assert.equal(await page.getByRole('button',{name:/Conversations \(/}).count(),0,'no competing Conversations navigation');
    const waitingBefore=await page.evaluate(()=>structuredClone(fixture.views[fixture.ids.main].messages.find(m=>m.id==='waiting-turn')));
-   if(skin==='comic'){
+   {
     await page.locator('[data-mid="waiting-turn"]').getByRole('button',{name:/Waiting for Casey to update AgentNet/}).click();
     const details=page.getByRole('dialog',{name:'Message details',exact:true});await details.waitFor();
     await details.getByText('Technical details',{exact:true}).click();
     assert((await details.innerText()).includes('casey/old-phone needs group-chat-v1'),'waiting Details exposes exact persisted recipient and feature');await shot('waiting-details');
     await details.getByRole('button',{name:'Close',exact:true}).click();await details.waitFor({state:'hidden'});
-   }else{
-    if(skin==='zoom')await shown('Waiting recipient proof').click();
-    const details=page.locator('details.tech').filter({hasText:'casey/old-phone needs group-chat-v1'}).first();
-    if(skin!=='zoom')await details.locator('summary').click();assert((await details.innerText()).includes('casey/old-phone needs group-chat-v1'),'waiting Details exposes exact persisted recipient and feature');await shot('waiting-details');
-    if(skin==='zoom')await page.keyboard.press('Escape');else await details.locator('summary').click();
    }
    assert.deepEqual(await page.evaluate(()=>fixture.views[fixture.ids.main].messages.find(m=>m.id==='waiting-turn')),waitingBefore,'Details does not mutate persisted message or copies');
    await edit('Main draft stays');
@@ -282,13 +257,12 @@ const server=http.createServer((req,res)=>{
    await list().getByRole('button',{name:/Other historical flow/}).click();await shown('Other historical flow').waitFor();
    await edit('Other root draft stays');await choose(/Invoice review/);
    await shown('Invoice message').waitFor();
-   if(skin==='comic'){await page.getByRole('button',{name:/Invoice review.*open topic, menu/}).click();await page.getByRole('menuitem',{name:'Mark done',exact:true}).click();}
-   else await page.getByRole('navigation',{name:'Topics',exact:true}).getByRole('button',{name:width===390?'Done':'Mark done',exact:true}).click();
+   {await page.getByRole('button',{name:/Invoice review.*open topic, menu/}).click();await page.getByRole('menuitem',{name:'Mark done',exact:true}).click();}
    await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/topic/done'));
    assert.deepEqual(await page.evaluate(()=>{const {conv,id}=fixture.requests.find(r=>r.path==='/api/topic/done').body;return{conv,id};}),{conv:'a'.repeat(64),id:'3'.repeat(32)},'native action keeps its original root');
    assert.equal(await field().inputValue(),'Main draft stays','root draft preserved when entering native topic');
    await edit('Exact native send');
-   if(skin==='comic')await page.getByRole('button',{name:'Send',exact:true}).click();else if(skin==='zoom'){await page.getByRole('button',{name:'Write in this DM…',exact:true}).click();await page.locator('#dialog-ok').click();}else await page.locator('#send').click();
+   await page.getByRole('button',{name:'Send',exact:true}).click();
    await page.waitForFunction(()=>fixture.requests.some(r=>r.path==='/api/dm/send'));
    assert.deepEqual(await page.evaluate(()=>{const {conv,topic,body}=fixture.requests.find(r=>r.path==='/api/dm/send').body;return{conv,topic,body};}),{conv:'a'.repeat(64),topic:'3'.repeat(32),body:'Exact native send'});
    await choose(/Other historical flow/);assert.equal(await field().inputValue(),'Other root draft stays');

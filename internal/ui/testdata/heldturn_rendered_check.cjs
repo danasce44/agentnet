@@ -3,7 +3,7 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM||'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
  try {
-  for(const skin of ['comic','classic','zoom']) for(const width of [1280,390]) {
+  for(const skin of ['comic']) for(const width of [1280,390]) {
    const ctx=await browser.newContext({reducedMotion:'reduce',viewport:{width,height:900}}),p=await ctx.newPage(),errors=[],posted=[];
    let handled=false,reportDone=false,failReport=true;p.setDefaultTimeout(6000);p.on('pageerror',e=>errors.push(String(e)));
    await p.route('**/api/overview*',async route=>{
@@ -21,7 +21,7 @@ const {chromium}=require(process.env.AGENTNET_PLAYWRIGHT);
     if(a.do==='resolve'&&a.id==='report')reportDone=true;
     await route.fulfill({json:{note:'Synthetic item handled on this device.'}});
    });
-   const open=async()=>{await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);if(skin==='comic')await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();else await p.locator('#review-btn').click();};
+   const open=async()=>{await p.goto(process.argv[2]);await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();};
    await open();
    const card=p.locator('li').filter({hasText:'Synthetic first human question'}).filter({has:p.getByRole('button',{name:'Mark as handled',exact:true})}).last();
    await card.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();

@@ -68,8 +68,9 @@ decide.
 
 Every feature the old app had stays reachable: `internal/ui/comicparity_test.go`
 pins each feature's route or act verb to a real use in Comic (a call site
-outside `api.ts`/`api.gen.ts`, an act verb written out, a field read) and
-to Classic and Zoom (some `src/*.mjs`). A defined but unused `api.ts` method
+outside `api.ts`/`api.gen.ts`, an act verb written out, a field read). (The
+Classic and Zoom packages, in agentnet-skins, are checked there.) A defined
+but unused `api.ts` method
 does not count. Removing or replacing a screen means checking that table
 first, and editing it only on purpose. Phone limits are the old app's: a
 browser shows no reminders, trust or standing answers (it says "on your
@@ -164,5 +165,5 @@ accepts `conv` for DM/group routes and `peer` for device threads. Bulk controls
 collect `ids`, show one confirmation, and delay the host call by
 `TOPICS.undoDelay` so Undo/close cancels before mutation. Shared Done/Reopen
 uses the verified sender's existing person/device display; local archive and
-delete scopes are stated beside the controls. Classic and Zoom copy the
-shared authored `skins/shared/topics.mjs` into their independent packages.
+delete scopes are stated beside the controls. The Classic and Zoom packages
+(agentnet-skins) copy the shared authored `skins/shared/topics.mjs`.

@@ -27,7 +27,7 @@ async function noHorizontalScroll(target, label) {
 (async () => {
   const browser = await chromium.launch({headless:true,executablePath:process.env.AGENTNET_CHROMIUM || '/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
   try {
-    for (const skin of ['comic','classic','zoom']) {
+    for (const skin of ['comic']) {
       const ctx = await browser.newContext({viewport:mode==='phone'?{width:390,height:844}:{width:1440,height:900},isMobile:mode==='phone',hasTouch:mode==='phone'});
       const p = await ctx.newPage(), errors=[];
       console.log('P13 rendering '+mode+' '+skin);
@@ -40,17 +40,15 @@ async function noHorizontalScroll(target, label) {
       // parameter, so the skin is chosen on a second visit.
       await p.goto(process.argv[2]);
       await p.goto(new URL(process.argv[2]).origin+'/?skin='+skin);
-      if(skin==='comic') await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
-      else await p.locator('#review-btn').click();
+      await p.getByRole('navigation',{name:'Main'}).getByRole('button',{name:/^OKs/}).click();
       const summary=p.locator('summary').filter({hasText:'Read the agent’s whole message'}).first();
       await summary.waitFor();await summary.focus();await summary.press('Enter');
       assert.equal(await p.locator('details[open] p').first().textContent(),full,skin+': expansion keeps every paragraph');
       if(skin==='comic') await noHorizontalScroll(summary,'Comic OKs '+mode);
       await snap('oks-expanded');
-      if(skin==='comic') await p.getByRole('button',{name:/^Your agent couldn’t finish/}).click();
-      else await p.locator('#review-list button').filter({hasText:'Your agent couldn’t finish'}).click();
+      await p.getByRole('button',{name:/^Your agent couldn’t finish/}).click();
       const turn=p.getByRole('region',{name:'Your agent says'});
-      // Zoom's motion keeps the old and new view for a moment: the turn must settle to one copy.
+      // Motion can keep the old and new view for a moment: the turn must settle to one copy.
       for(let i=0;i<50 && await turn.getByText(full,{exact:true}).count()!==1;i++) await p.waitForTimeout(100);
       if(skin==='comic' && mode==='desktop') await p.locator('[data-mid="needs-request"]').getByText(full,{exact:true}).waitFor();
       else await turn.getByText(full,{exact:true}).waitFor();
@@ -68,5 +66,5 @@ async function noHorizontalScroll(target, label) {
       await ctx.close();
     }
   } finally {await browser.close();}
-  console.log('P13 rendered PASS '+mode+': all skins, keyboard expansion, full chat text, actions/read-only, overflow');
+  console.log('P13 rendered PASS '+mode+': Comic, keyboard expansion, full chat text, actions/read-only, overflow');
 })().catch(e=>{console.error(e);process.exit(1);});

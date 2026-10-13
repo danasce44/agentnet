@@ -37,7 +37,7 @@ func TestP3ReviewSkinsRendered(t *testing.T) {
 	ts.Start()
 	defer ts.Close()
 	t.Setenv("AGENTNET_P3_REVIEW", "1")
-	out := browserCheck(t, "testdata/skin_contract_check.cjs", ts.URL+"/?t="+testToken, filepath.Join("static", "skins", "comic"), filepath.Join("static", "skins", "classic"), filepath.Join("static", "skins", "zoom"))
+	out := browserCheck(t, "testdata/skin_contract_check.cjs", ts.URL+"/?t="+testToken, filepath.Join("static", "skins", "comic"))
 	if !strings.Contains(out, "skin contract check PASS") {
 		t.Fatal(out)
 	}
