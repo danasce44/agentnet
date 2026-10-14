@@ -6,13 +6,18 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-Current qualification source9e7dc6e5: actual Codex concurrency/steering81.477s,
-mixed exactv0.8.27 57.701s, real IndexedDB race1.701s and native Linux/macOS
-client/UI succeed. Final client race has ten passing partitions; measured-budget
-correction preserves exact1206 coverage and reruns only2/4/9/10. Both UI race
-partitions pass. Original-key APK8bbcf474 build/units/lint/16KiB verify pass;
-synthetic retained Android recovery and final Windows remain pending. All-skins
-passes except three Zoom stored-message touch assertions under focused review.
+Qualification base6d936bdf has the same production code as9e7dc6e5. Actual Codex
+concurrency/steering81.477s, mixed exactv0.8.27 57.701s, real IndexedDB
+race1.701s and native Linux/macOS client/UI succeed. Ten client race partitions
+and both UI partitions pass; client9/10 still exhaust600s in CI and are being
+qualified locally with unchanged selection and bounds. The focused native
+Windows gate still fails T5's fresh10s bulk flush. Its reviewed test-only
+correction removes redundant carriers for already-current readers; the focused
+Linux race case passes23.631s, with native Windows verification pending.
+Original-key APK8bbcf474
+build/units/lint/16KiB verification passes; Android recovery remains unqualified.
+All-skins still fails three Zoom stored-message touch assertions; automatic
+review refused its test-only page-global probe and an owner exception is pending.
 MEL587 remains an owner release hold with no causal fix. No tag/publication.
 
 
@@ -49,9 +54,11 @@ Codex, Pi, Claude and OMP; their child responder is synthetic. Antigravity stopp
 for sign-in and is not a pass. The native exact-file test observed one genuine
 approval callback and completed in12.563s with setup unchanged. Its strict display
 and private rejection diagnostics now pass10 focused cases. Actual Codex steering
-still refuses its readiness-file write under the inherited filesystem policy;
-no override or denied-operation retry was made. Mixed-version against exactv27
-passes83.898s. Full source/platform and all-skin gates remain separate.
+subsequently passed81.477s through the existing exact native readiness approval,
+with concurrency, cancellation, steering and signed-result checks preserved.
+Earlier refusals remain recorded; native configuration and permissions are
+unchanged. Final mixed-version against exactv27 passes57.701s. Remaining
+platform, Android recovery and all-skin gates are recorded above.
 
 Do not tag or publish the next release until these are fixed and verified:
 

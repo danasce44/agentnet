@@ -856,6 +856,14 @@ func TestGroupTurnsT5StaleFanAndUnsupportedOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Bob and Carol already have this head; only the new phone needs carriers.
+	copies = slices.DeleteFunc(copies, func(copy outCopy) bool {
+		if copy.env.To == phone.Address {
+			return false
+		}
+		w.alice.releaseGroupCopies([]outCopy{copy})
+		return true
+	})
 	if err = w.alice.store.addConvOutbox(copies, envelope.Inner{}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
