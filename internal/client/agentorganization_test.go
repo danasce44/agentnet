@@ -100,6 +100,20 @@ func TestAgentTopicOrganizationAdmittedRun(t *testing.T) {
 			if row.TopicEvent == nil || row.TopicEvent.Request == nil || row.TopicEvent.Request.LID != q.LID {
 				t.Fatal("signed action lost exact request")
 			}
+			realm, err := w.bob.RealmID()
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantLink, err := protocol.ConversationLink(realm, conv, row.Topic)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if link, err := w.bob.OrganizationLink(sent); err != nil || link != wantLink {
+				t.Fatalf("stored organization destination: %q, %v; want %q", link, err, wantLink)
+			}
+			if _, err := w.bob.OrganizationLink(ConvSent{ID: sent.ID, LID: q.LID}); err == nil {
+				t.Fatal("another result obtained the destination")
+			}
 			in := envelope.Inner{V: envelope.Version2, Conv: conv, Kind: envelope.KindMessage, Topic: row.Topic, TopicEvent: row.TopicEvent, PID: pid, AgentID: p.AgentID, Origin: envelope.OriginAgentOrganization}
 			if reason, e := w.alice.topicOrganizationAdmission(w.alice.store.db, in, w.bob.Address, w.bob.Self().Fingerprint(), false); e != nil {
 				t.Fatalf("other reader rejected actual authority (%s): %v", reason, e)

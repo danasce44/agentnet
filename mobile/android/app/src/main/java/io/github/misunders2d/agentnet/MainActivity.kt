@@ -74,7 +74,7 @@ class MainActivity : Activity() {
         // Stale plaintext from interrupted exports is never a retained attachment.
         File(cacheDir, "attachment-exports").listFiles()?.forEach { it.delete() }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
-        destination = WebPolicy.notificationDestination(intent.getStringExtra("workspace").orEmpty(), intent.getStringExtra("destination").orEmpty()).orEmpty()
+        destination = intentDestination(intent)
         showOpening()
         host.observe(observer)
     }
@@ -100,8 +100,11 @@ class MainActivity : Activity() {
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
-        destination = WebPolicy.notificationDestination(intent.getStringExtra("workspace").orEmpty(), intent.getStringExtra("destination").orEmpty()).orEmpty(); routeNotification()
+        destination = intentDestination(intent); routeNotification()
     }
+    private fun intentDestination(intent: Intent): String =
+        if(intent.action == Intent.ACTION_VIEW)WebPolicy.externalLink(intent.dataString.orEmpty()).orEmpty()
+        else WebPolicy.notificationDestination(intent.getStringExtra("workspace").orEmpty(),intent.getStringExtra("destination").orEmpty()).orEmpty()
     private fun showOpening(error: String = "") {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(32, 48, 32, 32); setBackgroundColor(Color.rgb(242, 239, 255))

@@ -9,7 +9,8 @@ pub const MAX_FRAGMENT: usize = 8192;
 
 /// What a fragment may start with: an invitation, a device link from
 /// another device of the person, or a destination of a notification click.
-pub const ALLOWED: [&str; 7] = [
+pub const ALLOWED: [&str; 8] = [
+    "realm=",
     "agentnet-invite-v1:",
     "agentnet-link-v2:",
     "google-signin=",
@@ -34,11 +35,36 @@ pub fn fragment(link: &str) -> Option<String> {
     if frag.len() > MAX_FRAGMENT || !frag.bytes().all(fragment_byte) {
         return None;
     }
+    if frag.starts_with("realm=") || frag.contains("&realm=") || frag.contains("topic=") || frag.contains("thread=") {
+        if link.strip_prefix("agentnet://open#") != Some(frag) || !portable_fragment(frag) { return None; }
+        return Some(frag.to_string());
+    }
     if ALLOWED.iter().any(|p| frag.starts_with(p)) {
         Some(frag.to_string())
     } else {
         None
     }
+}
+
+fn portable_fragment(fragment: &str) -> bool {
+    if fragment.len() > 240 { return false; }
+    let mut realm = None; let mut conv = None; let mut topic = None; let mut thread = None;
+    for part in fragment.split('&') {
+        let Some((key, value)) = part.split_once('=') else { return false; };
+        let field = match key { "realm" => &mut realm, "conv" => &mut conv, "topic" => &mut topic, "thread" => &mut thread, _ => return false };
+        if field.is_some() { return false; } *field = Some(value);
+    }
+    let hex = |value: &str, length: usize| value.len() == length && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !realm.is_some_and(|v| hex(v, 32)) { return false; }
+    if let Some(root) = thread { conv.is_none() && topic.is_none() && hex(root, 32) }
+    else { conv.is_some_and(|v| hex(v, 64)) && topic.is_some_and(|v| v == "main" || hex(v, 32)) }
+}
+
+/// Warm portable entry stays on the existing local page so a refused link
+/// cannot reload it and discard draft files. Validated fields contain no JS
+/// string delimiters; the page's shared router performs destination checks.
+pub fn portable_script(fragment: &str) -> Option<String> {
+    portable_fragment(fragment).then(|| format!("location.hash=\"{fragment}\";"))
 }
 
 /// Bytes a fragment keeps as they are in a URL: visible ASCII without
@@ -88,5 +114,20 @@ mod tests {
         }
         let long = format!("agentnet://open#review{}", "a".repeat(MAX_FRAGMENT));
         assert_eq!(fragment(&long), None);
+    }
+
+    #[test]
+    fn portable_destinations_are_exact() {
+        let r = "a".repeat(32); let c = "b".repeat(64); let t = "c".repeat(32);
+        for fragment in [format!("realm={r}&conv={c}&topic=main"), format!("realm={r}&conv={c}&topic={t}"), format!("realm={r}&thread={t}")] {
+            assert_eq!(portable_script(&fragment), Some(format!("location.hash=\"{fragment}\";")));
+            assert_eq!(super::fragment(&format!("agentnet://open#{fragment}")), Some(fragment.clone()));
+            assert_eq!(super::fragment(&format!("agentnet://open/#{fragment}")), None);
+            assert_eq!(super::fragment(&format!(" agentnet://open#{fragment}")), None);
+        }
+        for fragment in [format!("realm={r}&conv={c}"), format!("realm={r}&conv={c}&topic=main&realm={r}"), format!("realm={r}&thread={t}&topic=main"), format!("realm={r}&conv={c}&topic=%6dain"), format!("realm={r}&conv={c}&topic=main&extra=1")] {
+            assert_eq!(portable_script(&fragment), None);
+            assert_eq!(super::fragment(&format!("agentnet://open#{fragment}")), None);
+        }
     }
 }

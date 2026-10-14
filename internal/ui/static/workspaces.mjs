@@ -48,7 +48,7 @@ export class WorkspaceShell {
  }
  // list gives each binding with hub_name, the workspace's own name its admin
  // set (a browser workspace's engine keeps it; the daemon's list carries it).
- list(){return [...this.members.values()].map(e=>e.engine?Object.freeze({...e.binding,hub_name:e.engine.workspaceName||undefined}):e.binding);}
+ list(){return [...this.members.values()].map(e=>e.engine?Object.freeze({...e.binding,realm:e.binding.realm||e.engine.realm,hub_name:e.engine.workspaceName||undefined}):e.binding);}
  state(id=this.active){if(!this.states.has(id))throw new Error("Unknown workspace");return this.states.get(id);}
  select(id) {const e=this.members.get(id);if(!e?.connected)throw new Error("Disconnected workspace");const previous=this.active;this.active=id;for(const f of this.listeners)f({id,previous,host:this.bind(id),state:this.state(id)});}
  onChange(fn){this.listeners.add(fn);return()=>this.listeners.delete(fn);}

@@ -51,8 +51,9 @@ export interface Gallery {
 }
 
 /** Where a notification or link asks the skin to go (host.onOpen). */
-export type OpenKind = "channel" | "conversation" | "message" | "review";
-export interface OpenContext { conv?: string; dir?: "in" | "out" }
+export type OpenKind = "channel" | "conversation" | "message" | "review" | "topic" | "thread";
+export interface OpenContext { conv?: string; dir?: "in" | "out"; topic?: string }
+export type LinkTarget = {conv: string; topic: string} | {thread: string};
 
 /** Project-space operations use the host's captured membership. Google files
  *  remain outside AgentNet encryption; the core/provider enforces consent. */
@@ -125,7 +126,9 @@ export interface Host {
   drive?: DriveProvider;
   /** Registers notification routing; kinds lists the destinations handled
    *  beyond channel and conversation (the host offers the rest itself). */
-  onOpen(fn: (target: string, kind?: OpenKind, context?: OpenContext) => void, kinds?: OpenKind[]): void;
+  onOpen(fn: (target: string, kind?: OpenKind, context?: OpenContext) => void | Promise<void>, kinds?: OpenKind[]): void;
+  linkTo?(target: LinkTarget): string;
+  openLink?(link: string): Promise<void>;
   skins: SkinEntry[];
   /** Calls fn whenever host.skins changes (a package imported or removed). */
   onSkinsChange(fn: () => void): () => void;

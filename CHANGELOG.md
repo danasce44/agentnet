@@ -23,6 +23,9 @@ This record starts with v0.8.1; earlier releases remain on the
   explanations. Native settings and permissions stay unchanged.
 - Allow admitted agents to attach files in their own-device DMs, matching
   existing group and external-agent sends, with current participation checks.
+- Copy and open exact chat/topic links across enrolled devices. Refused or
+  unavailable destinations preserve drafts and files; organization results
+  return their actual stored destination.
 
 ## [0.8.27] — 2026-10-14
 

@@ -101,7 +101,7 @@ async function workspaces(engine) {
   try {
     memberships = new ws.BrowserMemberships({ shell, Engine, openIDB, locks: navigator.locks, storage: localStorage, fetch: (u, o) => fetch(u, o),
       decodeInvite, newID, allowOrigin, pushFor: (id) => { const a = ws.workspacePush(id); pushAdapters.set(id, a); return a; } });
-    memberships.adoptDefault(engine, { name: "" }); // the device enrolled here, as it is: its store, lock and stream stay; no label of its own (the workspace's name shows)
+    memberships.adoptDefault(engine, { name: "", realm: engine.realm }); // already checked by this enrollment's version path; no link supplies it
   } catch (e) {
     problems.push("Joined workspaces could not be read here: " + e.message); memberships = null;
     // A broken secondary entry need not hide the default's local history.

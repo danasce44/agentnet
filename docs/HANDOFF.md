@@ -23,8 +23,8 @@ Source progress: cache repair, exact model/reasoning reports, legacy lists and
 request cards are integrated with the rebuilt Comic bundle. Moved-topic sharing
 and truthful destination notices passed independent focused checks on the
 combined source, preserving model-reader and attachment admission guards.
-Comic preview/time formatting and literal topic names also pass combined
-desktop/phone rendering. Steering and links remain under review. These are source checks; packaged
+Comic preview/time formatting, literal topic names and portable link navigation
+also pass combined desktop/phone rendering. Steering remains under review. These are source checks; packaged
 Android recovery, all-skins/native/platform and release gates remain pending.
 The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
 `3599582f`; exact file bytes, limits and removal guards pass the four-case
@@ -35,8 +35,9 @@ Do not tag or publish the next release until these are fixed and verified:
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
 - [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
 - [MEL-591](https://linear.app/mellanni/issue/MEL-591): reopened as **Urgent** by the owner. Ordinary follow-up/goal inputs waited behind active group work while agents requested baseline evidence already shared. Trace the exact continuing run, native input acceptance and authorized evidence availability; repair and qualify the actual flow. Eventual completion does not close this blocker; permanent deadlock is unproved.
+- [MEL-633](https://linear.app/mellanni/issue/MEL-633): **Urgent owner release blocker**. Invited agents must receive admitted live chat/topic messages and peer-agent replies while preserving unshared older history, topics, replicas and dismissal. ThinkPad owns the source fix. Policy commit `11ce9800` is documentation, not implementation or qualification.
 
-All three Linear issues remain open (MEL-591 Urgent, MEL-587/620 High). This is the owner's release
+All four Linear issues remain open (MEL-591/633 Urgent, MEL-587/620 High). This is the owner's release
 hold, not a claim that the new evidence or either fix is already qualified.
 
 ## Linear status audit — October 14, 2026

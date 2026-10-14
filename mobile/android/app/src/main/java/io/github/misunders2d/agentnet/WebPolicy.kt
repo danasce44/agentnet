@@ -27,6 +27,26 @@ class WebPolicy(val origin: String) {
     }.getOrDefault(false)
     fun bridge(source: String, mainFrame: Boolean) = mainFrame && internal(source) && runCatching { URI(source).rawPath.isNullOrEmpty() || URI(source).rawPath == "/" }.getOrDefault(false)
     companion object {
+        /** A portable link only supplies validated identifiers to the trusted
+         * local page. It never supplies a URL for WebView navigation. */
+        fun externalLink(value: String): String? = runCatching {
+            require(value.length <= 256)
+            val uri = URI(value)
+            require(uri.scheme == "agentnet" && uri.rawAuthority == "open" && uri.rawPath.isNullOrEmpty() && uri.rawQuery == null)
+            val fragment = uri.rawFragment ?: error("missing destination")
+            require(fragment.matches(Regex("[a-z0-9=&]+")))
+            val fields = linkedMapOf<String,String>()
+            fragment.split('&').forEach { part ->
+                val pieces = part.split('=')
+                require(pieces.size == 2 && pieces[0] in setOf("realm","conv","topic","thread") && !fields.containsKey(pieces[0]))
+                fields[pieces[0]] = pieces[1]
+            }
+            val id = Regex("[0-9a-f]{32}")
+            require(fields["realm"]?.matches(id) == true)
+            if(fields.containsKey("thread"))require(fields.keys == setOf("realm","thread") && fields["thread"]?.matches(id) == true)
+            else require(fields.keys == setOf("realm","conv","topic") && fields["conv"]?.matches(Regex("[0-9a-f]{64}")) == true && (fields["topic"] == "main" || fields["topic"]?.matches(id) == true))
+            fragment
+        }.getOrNull()
         /** Scanner output is untrusted text, never a URL to open or enrollment authority. */
         fun scanText(text: String): String {
             require(text.isNotBlank() && text.length <= 16 * 1024 && text.toByteArray(Charsets.UTF_8).size <= 16 * 1024)

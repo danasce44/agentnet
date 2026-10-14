@@ -62,4 +62,12 @@ class WebPolicyTest {
         assertTrue(policy.external("https://example.com/docs"))
         for (url in listOf("intent://x", "file:///x", "javascript:alert(1)", "https://user@example.com", "https://localhost/x", "https://127.0.0.1/x")) assertFalse(policy.external(url))
     }
+    @Test fun portableExternalLinksNeverWidenWebViewNavigation() {
+        val r="a".repeat(32);val c="b".repeat(64);val t="c".repeat(32)
+        for(fragment in listOf("realm=$r&conv=$c&topic=main","realm=$r&conv=$c&topic=$t","realm=$r&thread=$t")){
+            val link="agentnet://open#$fragment"
+            assertEquals(fragment,WebPolicy.externalLink(link));assertFalse(policy.internal(link));assertFalse(policy.bridge(link,true))
+        }
+        for(link in listOf("https://open#realm=$r&conv=$c&topic=main","agentnet://open/path#realm=$r&conv=$c&topic=main","agentnet://open?extra=1#realm=$r&conv=$c&topic=main","agentnet://user@open#realm=$r&conv=$c&topic=main","agentnet://open#realm=$r&conv=$c","agentnet://open#realm=$r&thread=$t&topic=main","agentnet://open#realm=$r&conv=$c&topic=main&realm=$r","agentnet://open#realm=$r&conv=$c&topic=%6dain","agentnet://open#realm=$r&conv=$c&topic=main&extra=1"))assertNull(link,WebPolicy.externalLink(link))
+    }
 }

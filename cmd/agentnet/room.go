@@ -42,6 +42,11 @@ func runRoom(ctx context.Context, a *client.Agent, args []string, out io.Writer)
 			return err
 		}
 		fmt.Fprintln(out, sent.LID, sent.State)
+		if link, e := a.OrganizationLink(sent); e == nil {
+			fmt.Fprintln(out, link)
+		} else {
+			fmt.Fprintln(out, "Destination link unavailable; the move remains stored.")
+		}
 		return nil
 	}
 	if args[0] == "react" {

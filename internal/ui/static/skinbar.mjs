@@ -200,6 +200,7 @@ export function mountSkinBar(parent, { skins, selected, home, choose, host, work
     const radio = (s, g) => item("menuitemradio", g, s.name, lineOf(s), () => pickSkin(s.id), { checked: s.id === selected.id });
     const own = all.filter((s) => s.id === home.id || s.builtin), others = all.filter((s) => s.id !== home.id && !s.builtin);
     panel.replaceChildren(el("h2", "", "Skins"), el("p", "lead", "The same chats and settings, a different look."),
+      ...(host()?.openLink ? [item('menuitem',glyph(icon('box',20)),'Open link…','An exact chat or topic on this device',()=>{skinMenu.close(false);const value=window.prompt('Paste an AgentNet link');if(value)void host().openLink(value).catch(()=>{});})] : []),
       ...group("Built in", own.map((s) => radio(s, glyph(s.id === home.id ? "Co" : icon("box", 20), s.id === home.id ? "comic" : "")))),
       ...(others.length ? group("From other people", others.map((s) => radio(s, glyph(icon("brush", 20))))) : []),
       ...(manage ? [el("hr", "sep"), item("menuitem", glyph(icon("plus", 20), "dashed"), "Import or remove skins…", "Skins stored in this browser", () => { skinMenu.close(false); managerDialog(); })] : []));

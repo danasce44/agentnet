@@ -1,0 +1,47 @@
+// Run against an esbuild bundle of the actual Comic Store, not a copied model.
+const assert=require('node:assert/strict');
+const {File}=require('node:buffer');
+global.localStorage={getItem:()=>null,setItem:()=>{}};
+global.document={visibilityState:'visible',hasFocus:()=>false};
+const {Store}=require(process.argv[2]);
+const conv='b'.repeat(64),topic='c'.repeat(32),root='d'.repeat(32),saved={};
+let view={id:conv,role:'member',topics:[{id:topic}],messages:[]};
+const calls=[],host={workspace:{id:'default',handle:'a'.repeat(32)},platform:'daemon',workspaces:{state:()=>saved},listen:()=>()=>{},api:async(path,body)=>{calls.push({path,body});return view;}};
+(async()=>{
+ const s=new Store(host),bytes=new File(['unsent attachment'],'draft.txt'),token={id:'owned-staged-token'},file={key:'f1',name:'draft.txt',file:bytes,staged:token},draft={text:'unsent',agent:'chosen-agent',replyTo:'e'.repeat(32),files:[file],topic};
+ s.setDraft(conv,draft);
+ await s.openLinkTarget(conv,'topic',{topic:'main'});
+ assert.equal(s.get().open.id,conv);assert.deepEqual(s.draft(conv),{...draft,topic:'',newTopic:false});
+ assert.equal(s.draft(conv).files[0],file);
+ await s.openLinkTarget(conv,'topic',{topic});assert.equal(s.draft(conv).topic,topic);
+ let before=s.get();view={...view,topics:[]};
+ await assert.rejects(s.openLinkTarget(conv,'topic',{topic}),/not available/);
+ assert.equal(s.get(),before,'failed landing leaves every state value intact');
+ for(const role of ['visitor','human_guest']){
+  view={id:conv,role,frozen:'',topics:[{id:topic}],messages:[]};
+  await s.openLinkTarget(conv,'topic',{topic});
+  before=s.get();const kept=before.drafts[conv];
+  await assert.rejects(s.openLinkTarget(conv,'topic',{topic:'main'}),/not available/);
+  assert.equal(s.get(),before,role+': Main refusal preserves exact state');
+  assert.equal(s.get().open,before.open);assert.equal(s.get().views[conv],before.views[conv]);
+  assert.equal(s.draft(conv),kept);assert.equal(kept.text,draft.text);assert.equal(kept.topic,topic);
+  assert.equal(kept.agent,draft.agent);assert.equal(kept.replyTo,draft.replyTo);
+  assert.equal(kept.files[0],file);assert.equal(kept.files[0].file,bytes);assert.equal(kept.files[0].staged,token);
+  view={...view,main_topic:{id:'main',state:'active'}};
+  await s.openLinkTarget(conv,'topic',{topic:'main'});
+  assert.equal(s.draft(conv).topic,'');assert.equal(s.draft(conv).text,draft.text);
+  assert.equal(s.draft(conv).agent,draft.agent);assert.equal(s.draft(conv).replyTo,draft.replyTo);
+  assert.equal(s.draft(conv).files[0].file,bytes);assert.equal(s.draft(conv).files[0].staged,token);
+ }
+ before=s.get();
+ view={id:root,peer:'bob/desk',topic:{id:root},messages:[{id:root,deleted:true}]};
+ await assert.rejects(s.openLinkTarget(root,'thread'),/root/);assert.equal(s.get(),before);
+ view={...view,messages:[{id:root}]};await s.openLinkTarget(root,'thread');assert.equal(s.get().open.id,root);
+ assert(calls.every(c=>c.body===undefined&&/^\/api\/(dm|thread)\?id=/.test(c.path)),'no send, approval, or history refresh');
+ const open=s.get().open;s.stop();const back=new Store(host);
+ assert.equal(back.draft(conv).files[0],file,'same binding remount retains staged file');assert.equal(back.draft(conv).agent,draft.agent);assert.equal(back.get().open,open);
+ const rebound=new Store({...host,workspace:{...host.workspace,handle:'f'.repeat(32)}});
+ assert.equal(rebound.draft(conv).files,undefined,'retired binding never reuses staged files');assert.equal(rebound.get().open,null);
+ back.stop();rebound.stop();
+ console.log('conversation link store check PASS: exact local landing, failure identity, draft/agent/reply/files, remount binding, no action/history refresh');
+})().catch(e=>{console.error(e);process.exitCode=1;});

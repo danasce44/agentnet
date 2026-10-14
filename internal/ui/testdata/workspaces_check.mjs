@@ -45,6 +45,16 @@ const args={shell:browserShell,Engine:FixtureEngine,openIDB,locks,storage,
  fetch:async(url,options)=>{assert.equal(options.credentials,"omit");assert.equal(options.redirect,"error");assert.equal(options.mode,"cors");const info={realm_id:(url.includes("a.example")?"a":"b").repeat(32)};return{ok:true,json:async()=>info,clone:()=>({json:async()=>info})};},
  decodeInvite:code=>({hub:code}),newID:()=>String(nextID++).repeat(32),allowOrigin:async origin=>assert(origin.startsWith("https://"))};
 const browser=new BrowserMemberships(args);
+// The default engine learns its checked realm after its shell is adopted.
+// Expose that existing engine value for portable navigation without another
+// network request, enrollment or state record. Offline pins remain usable.
+const learnedShell=new WorkspaceShell(),learnedEngine={api:async()=>({}),realm:undefined};
+learnedShell.register({...a,realm:undefined},learnedEngine);
+assert.equal(learnedShell.list()[0].realm,undefined);
+learnedEngine.realm=a.realm;
+assert.equal(learnedShell.list()[0].realm,a.realm);
+const pinnedShell=new WorkspaceShell();pinnedShell.register(a,{realm:b.realm});
+assert.equal(pinnedShell.list()[0].realm,a.realm,'recorded workspace pin always wins over an engine value');
 const browserA=await browser.join({name:"Same",invite:"https://a.example",agent:"laptop"});
 const browserB=await browser.join({name:"Same",invite:"https://b.example",agent:"laptop"});
 assert.equal(locked.size,2);assert.equal(dbs.size,2);

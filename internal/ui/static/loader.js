@@ -23,6 +23,8 @@
   "use strict";
   const page = document.getElementById("skin");
   const browser = window.agentnetEngine;
+  const { parseLink, linkTo, matchingWorkspace, checkTarget } = await import('/assets/conversation-links.mjs');
+  let openPortable;
 
   // ---- what the page waits for, and how long
   //
@@ -146,6 +148,7 @@
   let runningVersion = "", newerRelease = null;
   const common = {
     version: 1,
+    openLink: (value) => openPortable(value),
     ...(window.__agentnetPlatform === "android" ? { platform: "android", android: window.__agentnetAndroid, onBack: window.__agentnetOnBack } : {}),
     ...(typeof window.__agentnetNativeClipboardImage === "function" ? { clipboardImage: () => window.__agentnetNativeClipboardImage() } : {}),
     // Computer-wide app actions stay on this loopback origin; switching a
@@ -156,7 +159,7 @@
     appReplaceCommand: () => appJSON("/api/app/cli", { replace: true }),
     onOpen(fn, kinds) {
       openHandler = typeof fn === "function" ? fn : null;
-      openKinds = new Set(["channel", "conversation", ...(Array.isArray(kinds) ? kinds.filter((k) => k === "message" || k === "review") : [])]);
+      openKinds = new Set(["channel", "conversation", ...(Array.isArray(kinds) ? kinds.filter((k) => k === "message" || k === "review" || k === "topic" || k === "thread") : [])]);
       if (openHandler && pendingChannel !== undefined) { const c = pendingChannel; pendingChannel = undefined; openHandler(c, "channel"); }
     },
     skins: [],
@@ -255,7 +258,7 @@
       }
       return r;
     };
-    const host = Object.freeze(Object.assign({}, bound, common, { api, workspaces }, canRebind && bound.platform === "daemon" ? { reconnect: () => rebind(host) } : {}));
+    const host = Object.freeze(Object.assign({}, bound, common, { api, workspaces, linkTo: (target) => linkTo(workspaces?.list().find(w=>w.id===wid)?.realm || bound.workspace.realm, target) }, canRebind && bound.platform === "daemon" ? { reconnect: () => rebind(host) } : {}));
     return host;
   };
   // rebind: this computer's program restarted and retired the membership's
@@ -439,8 +442,43 @@
     // or #review, each with an optional &workspace=<id>. The workspace must
     // be one registered here; an unknown one opens nothing (never the
     // current workspace instead).
-    const notice = (words, action) => { if (bar) bar.notify(words, action ? { label: action, run: () => go(HOME, location.hash) } : null); };
+    let routeNotice;
+    const notice = (words, action, fragment = location.hash) => {
+      if (bar) { bar.notify(words, action ? { label: action, run: () => go(HOME, fragment) } : null); return; }
+      if (!routeNotice) { routeNotice = text('div', '', 'skin-route-notice'); routeNotice.setAttribute('role', 'alert'); document.body.append(routeNotice); }
+      routeNotice.replaceChildren();routeNotice.hidden=!words;
+      if(words){routeNotice.append(text('span',words));if(action)routeNotice.append(button(action,()=>go(HOME,fragment)));routeNotice.append(button('Dismiss',()=>notice('')));}
+    };
     const clear = () => history.replaceState(null, "", location.pathname + location.search);
+    let linkSequence=0;
+    openPortable = async (value) => {
+      const sequence=++linkSequence, previous=shell?.active;
+      let selectedByLink;
+      try {
+        const target=parseLink(value), binding=matchingWorkspace(target,workspaces?workspaces.list():[window.agentnet.workspace]);
+        if(workspaces&&!workspaces.has(binding.id))throw new Error('This workspace is not connected on this device.');
+        const bound=hostFor(binding.id);
+        await checkTarget(target,bound.api);
+        if(sequence!==linkSequence||shell?.active!==previous)throw new Error('The workspace changed while opening this link. Try it again.');
+        const kind=target.thread?'thread':'topic', exact=target.thread||target.conv;
+        if(!openKinds.has(kind)){notice('This skin cannot open this exact destination.', 'Open it in '+homeName, '#'+(value.startsWith('#')?value.slice(1):value.slice(16)));return;}
+        if(shell&&binding.id!==shell.active){selectedByLink=binding.id;switchTo(binding.id);await mounting;}
+        if(sequence!==linkSequence||window.agentnet.workspace.id!==binding.id)throw new Error('The workspace changed while opening this link. Try it again.');
+        if(!openHandler||!openKinds.has(kind))throw new Error('This skin cannot open this exact destination.');
+        notice('');
+        await openHandler(exact,kind,Object.freeze(target.thread?{}:{topic:target.topic}));
+      }catch(e){
+        if(selectedByLink&&sequence===linkSequence&&shell.active===selectedByLink&&workspaces.has(previous)){switchTo(previous);await mounting;}
+        notice(e.message||'This destination could not be opened.');throw e;
+      }
+    };
+    document.addEventListener('click',event=>{
+      const anchor=event.composedPath().find(node=>node?.tagName==='A'), value=anchor?.getAttribute('href');
+      if(!value||!/^agentnet:\/\//i.test(value)||!value.includes('#'))return;
+      const fields=new URLSearchParams(value.slice(value.indexOf('#')+1));
+      if(!['realm','topic','thread'].some(key=>fields.has(key)))return;
+      event.preventDefault();void openPortable(value).catch(()=>{});
+    });
     // An invitation or device link opened in the AgentNet app once this
     // computer has joined (agentnet://open#…): taken out of the address at
     // once (it is a secret), never acted on. The same server needs no
@@ -465,10 +503,14 @@
       const hash = location.hash || "";
       notice("");
       if (invitation()) return;
+      const destinationFields=new URLSearchParams(hash.slice(1));
+      if(['realm','topic','thread'].some(key=>destinationFields.has(key))){clear();void openPortable(hash).catch(()=>{});return;}
       const review = hash === "#review" || hash.startsWith("#review&"), msg = hash.startsWith("#msg="), conv = hash.startsWith("#conv=");
       const chats = /^#workspace=[^&]+$/.test(hash);
       if (!review && !msg && !conv && !chats) return;
-      const q = new URLSearchParams(hash.slice(1)), wid = q.get("workspace");
+      const q = destinationFields, wid = q.get("workspace");
+      const keys=[...q.keys()];
+      if(new Set(keys).size!==keys.length||keys.some(key=>!['review','msg','conv','dir','workspace'].includes(key))){clear();notice('This AgentNet link is invalid.');return;}
       let target = "", kind = chats ? "channel" : "review", context;
       if (conv) {
         target = q.get("conv") || ""; kind = "conversation";

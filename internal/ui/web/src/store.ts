@@ -125,6 +125,8 @@ export class Store {
       tab: "chats", overview: null, open: null, pending: null, views: {}, dm: null, thread: null, typing: null, invitations: [],
       conn: "loading", version: "", newVersion: "", unsent: false, drafts: this.loadDrafts(), toasts: [], loadError: "", invite: null, topicBusy: {}, panel: false, section: "", agentNames: {},
     };
+    const saved=host.workspaces?.state?.(host.workspace.id)?.comicDrafts as {handle?:string;open:Open;dm:T.DMThread|null;thread:T.Thread|null;tab:State['tab']}|undefined;
+    if(saved&&saved.handle===host.workspace.handle)Object.assign(this.state,{open:saved.open,dm:saved.dm,thread:saved.thread,tab:saved.tab});
   }
 
   // ---- subscription
@@ -154,6 +156,8 @@ export class Store {
   }
 
   stop() {
+    const saved=this.host.workspaces?.state?.(this.host.workspace.id);
+    if(saved)saved.comicDrafts={handle:this.host.workspace.handle,drafts:this.state.drafts,open:this.state.open,dm:this.state.dm,thread:this.state.thread,tab:this.state.tab};
     this.alive = false;
     if (this.host.platform === "android") {
       document.removeEventListener("visibilitychange", this.mobileVisible);
@@ -324,6 +328,22 @@ export class Store {
   }
 
   // viewPatch: the state that shows o with view v (null: not loaded yet).
+  async openLinkTarget(id: string, kind: 'topic' | 'thread', context?: OpenContext) {
+    const view=kind==='topic'?await this.api.dm(id):await this.api.thread(id);
+    if(!this.alive||view.id!==id)throw new Error('That exact conversation is not available on this device.');
+    if(kind==='topic'){
+      const dm=view as T.DMThread, topic=context?.topic;
+      if(dm.frozen||(topic!=='main'&&!dm.topics?.some(t=>t.id===topic))||(topic==='main'&&(dm.role==='visitor'||dm.role==='human_guest')&&!dm.main_topic))throw new Error('That exact topic is not available on this device.');
+      this.setDraft(id,{...this.draft(id),topic:topic==='main'?'':topic,newTopic:false});
+    }else{
+      const thread=view as T.Thread;
+      if(thread.topic?.id!==id||!thread.messages?.some(m=>m.id===id&&!m.deleted))throw new Error('That exact conversation root is not available on this device.');
+    }
+    const o: NonNullable<Open>=kind==='topic'?{kind:'dm',id}:{kind:'thread',id,peer:(view as T.Thread).peer};
+    this.set({...this.viewPatch(o,view,this.state.open?.id===id),open:o,pending:null,tab:'chats'});
+    // Link landing never invokes ordinary open's remote history refresh.
+  }
+
   private viewPatch(o: NonNullable<Open>, v: View | null, same: boolean): Partial<State> {
     if (same && !v) return {};
     if (v) v = { ...v, messages: this.sends.merge<T.DMMessage | T.Message>(o.id, v.messages || []) } as View;
@@ -495,6 +515,8 @@ export class Store {
 
   // ---- drafts, kept per workspace and conversation; File objects stay in memory
   private loadDrafts(): Record<string, Draft> {
+    const saved=this.host.workspaces?.state?.(this.host.workspace.id)?.comicDrafts as {handle?:string;drafts:Record<string,Draft>}|undefined;
+    if(saved&&saved.handle===this.host.workspace.handle)return saved.drafts;
     try {
       const raw = JSON.parse(localStorage.getItem(draftsKey(this.host.workspace.id)) || "{}");
       const out: Record<string, Draft> = {};

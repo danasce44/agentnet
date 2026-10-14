@@ -358,10 +358,14 @@ fn take_link(app: &AppHandle, link: &str, raise: bool) {
     let page = shell.page.lock().unwrap().clone();
     match page {
         Some(mut u) if !fragment.is_empty() => {
-            u.set_query(None); // the session cookie is set: same page, new destination
-            u.set_fragment(Some(&fragment));
             if let Some(w) = window(app) {
-                let _ = w.navigate(u);
+                if let Some(script) = deeplink::portable_script(&fragment) {
+                    let _ = w.eval(&script); // preserve the warm page until host validation
+                } else {
+                    u.set_query(None); // the session cookie is set: same page, new destination
+                    u.set_fragment(Some(&fragment));
+                    let _ = w.navigate(u);
+                }
             }
         }
         None if !fragment.is_empty() => *shell.pending.lock().unwrap() = Some(fragment),

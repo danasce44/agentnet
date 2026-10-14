@@ -92,7 +92,13 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 			if e != nil {
 				return "", e
 			}
-			return fmt.Sprintf("topic move %s stored (%s)", sent.LID, sent.State), nil
+			result := fmt.Sprintf("topic move %s stored (%s)", sent.LID, sent.State)
+			if link, err := a.OrganizationLink(sent); err == nil {
+				result += "\nDestination: " + link
+			} else {
+				result += "\nDestination link unavailable; the move remains stored."
+			}
+			return result, nil
 		}
 		if p.Action == "react" {
 			sent, e := a.SendAgentReaction(ctx, pid, ControlRef{Conv: conv, ID: p.ID, Fingerprint: p.Author}, p.Emoji, p.Remove)

@@ -23,6 +23,7 @@ import { agentLabel, eventKind, hostOf, roomTitle, threadAgentName, type Ctx } f
 import { usePortal } from "../owned";
 import { ProjectSpaceSheet } from "./Drive";
 import { AgentModelReport } from "./AgentModelReport";
+import { copyText } from './Settings.parts';
 
 // ---- who is helping -------------------------------------------------------------------
 
@@ -106,6 +107,7 @@ const presenceTitle = "Whether the server sees their AgentNet running now. It do
 export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: boolean; helpers: Helper[]; canInvite: boolean }) {
   const portal = usePortal();
   const store = useApp();
+  const currentTopic=useStore(store,s=>s.drafts[ctx.conv]?.topic||'main');
   const overview = ctx.overview;
   const t = ctx.dm, th = ctx.thread;
   const [del, setDel] = useState(false);
@@ -165,6 +167,12 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
   });
 
   const item = "flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-[15px] font-medium outline-none data-[highlighted]:bg-sunken";
+  const copyLink=async(topic:string)=>{
+    try {
+      const value=store.host.linkTo!(t?{conv:t.id,topic}:{thread:th!.id});
+      const ok=await copyText(value,store.host.android);store.toast(ok?'Link copied':'Couldn’t copy here',ok?'ok':'error');
+    }catch(e){store.toast(e instanceof Error?e.message:'Could not create this link');}
+  };
   return (
     <><header data-part="conversation-head" className={"flex shrink-0 items-center gap-2 border-b-[1.5px] border-outline bg-surface " + (wide ? "h-[76px] px-5" : "h-16 pl-1 pr-1.5")}>
       {!wide && (
@@ -203,6 +211,11 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
           <Menu.Positioner side="bottom" align="end" sideOffset={6} collisionPadding={12} className="z-50">
             <Menu.Popup className="min-w-60 rounded-2xl bg-surface p-1.5 text-ink outline-none stroke shadow-pop transition-[opacity,scale] duration-150 data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-opacity">
               {t && <Menu.Item className={item} onClick={() => store.setPanel(true)}><IconUsers size={20} />In this chat</Menu.Item>}
+              {store.host.linkTo && <>
+                <Menu.Item className={item} onClick={()=>void copyLink('main')}>Copy chat link</Menu.Item>
+                {t && <Menu.Item className={item} onClick={()=>void copyLink(currentTopic)}>Copy topic link</Menu.Item>}
+              </>}
+              {store.host.openLink && <Menu.Item className={item} onClick={()=>{const value=window.prompt('Paste an AgentNet link');if(value)void store.host.openLink!(value).catch(()=>{});}}>Open link…</Menu.Item>}
               {t?.peer.person && <Menu.Item className={item} onClick={() => setSpace(true)}><IconUsers size={20} />Project space</Menu.Item>}
               {t && notify?.available && (
                 <Menu.Item className={item} onClick={() => void store.run((a) => a.notify("mute", { conv: t.id, muted: !muted }), muted ? "Notifications on for this chat" : "This chat won’t notify you")}>

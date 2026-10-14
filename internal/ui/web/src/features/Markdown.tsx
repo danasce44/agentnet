@@ -1,8 +1,9 @@
 import { parseCollective } from '../collective-mentions.mjs';
 // Markdown: a message's text as React elements, built from marked's lexer.
 // Nothing becomes an HTML string: raw HTML in a message reads as the text
-// it is, pictures stay links, and only web and mail links are live (they
-// open in a new tab). Mentions ([@Name](agentnet:person/ID)) are handed to
+// it is, pictures stay links, and web and mail links open in a new tab.
+// Exact portable AgentNet destinations use the host's guarded navigation.
+// Mentions ([@Name](agentnet:person/ID)) are handed to
 // the caller, who knows who is in the conversation.
 import { Lexer, type Token, type Tokens } from "marked";
 import { createContext, Fragment, useContext, useMemo, type ReactNode } from "react";
@@ -13,6 +14,7 @@ export type RenderMention = (kind: MentionKind, id: string, name: string) => Rea
 
 const mentionHref = /^agentnet:(person|guest|agent)\/([A-Za-z0-9_-]{1,64})$/;
 const safeHref = /^(https?:\/\/|mailto:)/i;
+const portableHref = /^agentnet:\/\/open#realm=[0-9a-f]{32}&(?:conv=[0-9a-f]{64}&topic=(?:main|[0-9a-f]{32})|thread=[0-9a-f]{32})$/;
 const sourceHref = /^agentnet:message\/([0-9a-f]{32})(?:\?conv=([0-9a-f]{64}))?$/;
 export const MessageLinks = createContext<((id: string, conv?: string) => void) | null>(null);
 
@@ -121,11 +123,12 @@ function span(t: Tokens.Generic, mention?: RenderMention): ReactNode {
       if (ref && mention && l.text.startsWith("@")) return mention(ref[1] as MentionKind, ref[2], l.text.slice(1));
       const source = sourceHref.exec(l.href);
       if (source) return <SourceLink id={source[1]} conv={source[2]}>{inline(l.tokens, mention)}</SourceLink>;
-      if (!safeHref.test(l.href)) return inline(l.tokens, mention);
+      const portable = portableHref.test(l.href);
+      if (!portable && !safeHref.test(l.href)) return inline(l.tokens, mention);
       const label = shortLinkLabel(l.text, l.href);
       const shortened = label !== l.text;
       return (
-        <a href={l.href} target="_blank" rel="noopener noreferrer" title={shortened ? l.href : l.title || undefined} aria-label={shortened ? l.href : undefined}
+        <a href={l.href} target={portable ? undefined : "_blank"} rel="noopener noreferrer" title={shortened ? l.href : l.title || undefined} aria-label={shortened ? l.href : undefined}
           className="font-medium underline decoration-current/40 decoration-[1.5px] underline-offset-2 hover:decoration-current">
           {shortened ? label : l.autolink ? l.text : inline(l.tokens, mention)}
         </a>

@@ -30,12 +30,13 @@ export async function mount(root: HTMLElement, host: Host): Promise<void> {
   // A notification click opens its exact conversation; it never accepts
   // or approves anything (the host routes #conv=, #msg= and #review here).
   host.onOpen((target, kind, context) => {
+    if (kind === 'topic' || kind === 'thread') return store.openLinkTarget(target,kind,context);
     if (kind === "conversation" && /^[0-9a-f]{64}$/.test(target)) void store.open({ kind: "dm", id: target });
     else if (kind === "message" && target) void store.openMessage(target, context);
     else if (kind === "review") store.showTab("oks");
     else if (target) void store.openChannel(target); // a browser notification's channel
     else { store.close(); store.showTab("chats"); } // news in more than one conversation
-  }, ["channel", "conversation", "message", "review"]);
+  }, ["channel", "conversation", "message", "review", "topic", "thread"]);
   const stopBack = host.onBack?.(() => {
     // Let the composer consume Escape for its inline picker, even when no
     // candidates remain. Otherwise continue through the visible navigation.
