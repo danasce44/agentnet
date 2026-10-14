@@ -30,6 +30,17 @@ func TestLiveNativeHarnessGroupTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("native %s via %s (%s)", name, launch.Path, launch.Installation)
+	if os.Getenv("AGENTNET_LIVE_NATIVE_ACTION") == "delegate" {
+		switch name {
+		case "pi", "claude", "omp", "codex", "agy":
+		default:
+			t.Fatal("native task delegation is not qualified for this harness")
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
+		defer cancel()
+		actualNativeRoomQuestionSmoke(t, ctx, name, envelope.KindTask)
+		return
+	}
 	w, carol, packet, _ := groupTurnsFixture(t)
 	dir := t.TempDir()
 	source := filepath.Join(dir, "read-fixture.txt")

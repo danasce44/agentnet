@@ -27,7 +27,9 @@ This record starts with v0.8.1; earlier releases remain on the
   explanations. Native settings and permissions stay unchanged.
 - Let active helpers see new human messages and verified peer-agent replies
   in their invited DM, group or topic. Preserve selected earlier history,
-  dismissal, exact reply binding and existing native execution routes.
+  dismissal, exact reply binding and existing native execution routes. Recover
+  retained native context without treating clock order as access authority;
+  unprovable old unindexed incoming turns still require exact selection.
 
 - Allow admitted agents to attach files in their own-device DMs, matching
   existing group and external-agent sends, with current participation checks.

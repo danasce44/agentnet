@@ -1199,19 +1199,53 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int, e
 	return a.agentContextForRun(info, before, limit, nil, nil, excluded...)
 }
 
+// Selection already proved either exact captured scope or a later native
+// LOCAL parent. The ordinary reply verifier alone also accepts inbox/imported
+// parents, which cannot establish the local acceptance boundary.
+func (a *Agent) retainedContextProof(msg ConvMessage, members dmMembers) (bool, error) {
+	in := envelope.Inner{Conv: members.root.ID(), LID: msg.LID, From: msg.From, Kind: msg.Kind, Sub: msg.Sub, Body: msg.Body, PID: msg.PID, AgentID: msg.AgentID, ReplyTo: msg.ReplyTo, Target: msg.Target, Human: msg.Human, Topic: msg.Topic, Status: msg.status, Origin: msg.Origin}
+	if msg.Human != nil {
+		if humanTurnAuthorization(a.store.db, in, msg.From, msg.Key, a.Address, a.Self().Fingerprint(), false) != nil {
+			return false, nil
+		}
+		if !msg.VerifiedAgent || msg.Kind != envelope.KindAnswer && msg.Kind != envelope.KindResult {
+			return true, nil
+		}
+	}
+	if msg.Dir == "out" && msg.Via == "" {
+		return msg.From == a.Address && msg.Key == a.Self().Fingerprint(), nil
+	}
+	if !msg.VerifiedAgent {
+		return false, nil
+	}
+	peer, err := a.participation(members.root.ID(), msg.PID)
+	if err != nil || !peer.Claimable() {
+		return false, err
+	}
+	_, err = externalOutputRequest(a.store.db, in, peer, members, a.Address, a.Self().Fingerprint())
+	return err == nil, nil
+}
+
 func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit int, delivered agentContextCursor, filesOnly *protocol.GrantRef, excluded ...[]protocol.GrantRef) (ParticipationContext, error) {
 	if limit <= 0 {
 		limit = defaultContextBytes
 	}
-	var selection []*contextMessageSelection
-	if len(excluded) > 0 {
-		selection = []*contextMessageSelection{{PID: info.PID, Grant: info.Grant}}
-	}
-	msgs, err := a.conversationMessages(info.Conv, "", selection...)
+	m, err := a.dmMembers(info.Conv)
 	if err != nil {
 		return ParticipationContext{}, err
 	}
-	m, err := a.dmMembers(info.Conv)
+	selection := &contextMessageSelection{PID: info.PID, Grant: info.Grant, Partial: len(excluded) > 0}
+	if m.group == nil && info.Claimable() && info.HostHere && info.Host.Address == a.Address && info.Host.Fingerprint == a.Self().Fingerprint() {
+		selection.Invite, selection.Decision = info.Invite, info.Decision
+		// The exact native acceptance is a retained original in this outbox.
+		// Its earliest copy is the boundary; neither another table's ordinal
+		// nor a signed/local timestamp can order conversation access.
+		err = a.store.db.QueryRow(`SELECT coalesce(min(o.rowid),0) FROM outbox o JOIN participation_events e ON e.hash=? AND e.conv=o.conv AND e.pid=o.pid AND e.type=? AND e.author=? AND e.event=o.body WHERE o.conv=? AND o.pid=? AND o.sub=? AND o.ref_id IS NULL`, info.Decision, protocol.EventAccept, info.Host.Fingerprint, info.Conv, info.PID, envelope.SubEvent).Scan(&selection.After)
+		if err != nil {
+			return ParticipationContext{}, err
+		}
+	}
+	msgs, err := a.conversationMessages(info.Conv, "", selection)
 	if err != nil {
 		return ParticipationContext{}, err
 	}
@@ -1264,27 +1298,23 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 	found := map[protocol.GrantRef]bool{}
 	var selected []ConvMessage
 	var lines []string
-	// Old DM clients did not index live context. Recover only after this
-	// exact host's original signed acceptance in local admission order;
-	// sender-claimed times alone never create access. Replicas and snapshots
-	// cannot supply the boundary or become live turns.
-	legacyDM := m.group == nil && info.Claimable()
-	accepted := false
-	var acceptedMS int64
+	// Old DM clients may lack the ledger. The projection carries only exact
+	// native-order / captured-audience proof; time and view sort are irrelevant.
 	for _, msg := range msgs {
 		if before != "" && msg.ID == before {
 			break
 		}
-		if legacyDM && msg.Sub == envelope.SubEvent && !msg.History && !msg.Replica &&
-			msg.From == info.Host.Address && msg.Key == info.Host.Fingerprint {
-			if ev, e := protocol.ParseParticipationEvent([]byte(msg.Body)); e == nil &&
-				ev.Type == protocol.EventAccept && ev.Hash() == info.Decision {
-				accepted, acceptedMS = true, msg.admittedMS
-			}
-		}
 		ref := contextRef(msg)
 		if len(excluded) > 0 && slices.Contains(excluded[0], ref) {
 			continue
+		}
+		// Unchanged, already supplied legacy text needs no repeated reply
+		// lookup. Newly ready file bytes still require current authority.
+		if msg.liveContext && !roomRefs[ref] && (!delivered.textSent(msg) || !msg.Deleted && slices.ContainsFunc(msg.Attachments, func(f FileInfo) bool { return f.Openable && !delivered.fileSent(msg, f) })) {
+			msg.liveContext, err = a.retainedContextProof(msg, m)
+			if err != nil {
+				return ParticipationContext{}, err
+			}
 		}
 		_, frozen := grantSnapshot(ref, info.Snapshots)
 		if frozen && msg.ExcerptPID == "" {
@@ -1326,7 +1356,7 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 			} else {
 				c.Unrelated++
 			}
-		case (roomRefs[ref] || legacyDM && accepted && msg.admittedMS > acceptedMS) && msg.Sub == "" && (!msg.Replica || info.Member) && !msg.History && msg.ExcerptPID == "":
+		case (roomRefs[ref] || msg.liveContext) && msg.Sub == "" && (!msg.Replica || info.Member) && !msg.History && msg.ExcerptPID == "":
 			c.Addressed++
 			authorPID := msg.PID
 			if msg.Human != nil && msg.Human.AgentAuthor() {

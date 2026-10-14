@@ -724,9 +724,15 @@ Repair the admission transition using the existing `room_context` ledger, and
 send outside DM hosts recipient-encrypted copies with exact signed scope and
 acceptance evidence. Native execution routes, request IDs and reply bindings
 remain authoritative. No new public operation, service or database migration
-is needed. Existing DM invitations recover only native originals admitted
-strictly after their exact host's native signed acceptance; copied history,
-snapshots and sender timestamps cannot establish that boundary.
+is needed. Existing DM invitations recover exact captured audiences or native
+local originals ordered after their exact host's retained signed acceptance,
+using the earliest logical outbox copy. Verified peer replies also require an
+exact later native-local parent and its current author/key/PID/target binding.
+Inbox and outbox ordinals are independent; signed and local wall times cannot
+grant scope. Old unindexed, unbound incoming member turns remain selected-only
+when their order cannot be proved. Copied history and snapshots supply no live
+boundary. Native prompt and explicit refresh use the same partial selection and
+retain revision/deletion/file cursor checks.
 
 This supersedes the earlier selected-and-addressed-only DM context wording.
 The existing group captured-audience model remains in place. Source tests are

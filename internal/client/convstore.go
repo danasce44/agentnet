@@ -739,7 +739,7 @@ type ConvMessage struct {
 	SendStopped       bool                 `json:"send_stopped,omitempty"`
 	DeliveryUncertain bool                 `json:"delivery_uncertain,omitempty"`
 	At                int64                `json:"at"` // received or created here, unix seconds (listed in that order, to the millisecond)
-	admittedMS        int64                // local storage time; never the sender's timestamp
+	liveContext       bool                 // exact retained DM proof, derived while selecting; never a clock comparison
 
 	// An agent's turn (agentTurn) sent by its participation's exact host
 	// key, as admission checks it (checkConversationAgent): for history,
@@ -784,30 +784,62 @@ func (m ConvMessage) Status() string { return m.status }
 // chain): received messages from them are this person's own, sent from
 // another device.
 type contextMessageSelection struct {
-	PID   string
-	Grant []protocol.GrantRef
+	PID      string
+	Grant    []protocol.GrantRef
+	Partial  bool
+	Invite   string
+	Decision string
+	After    int64 // earliest original native outbox acceptance; no cross-table comparison
 }
 
 func (s *store) convMessages(conv, self, selfFP string, own map[string]bool, selection ...*contextMessageSelection) ([]ConvMessage, error) {
 	// Scope narrows candidate bodies, but never excludes a previously supplied
 	// ref: verified revisions/deletions must be projected before deduplication.
-	partial := len(selection) > 0 && selection[0] != nil
+	scoped := len(selection) > 0 && selection[0] != nil
+	partial := scoped && selection[0].Partial
 	cursorIn, cursorOut := "", ""
-	args := []any{conv}
+	prefix, join, liveIn, liveOut := "", "", "0", "0"
+	var args []any
+	if scoped {
+		selected := selection[0]
+		prefix = `WITH context_scope AS (SELECT ? AS reader_pid,? AS invite,? AS decision,? AS after) `
+		join = ` CROSS JOIN context_scope c`
+		args = append(args, selected.PID, selected.Invite, selected.Decision, selected.After)
+		// Ordinary outbox rows are retained (erasure blanks bodies, not rows).
+		// Compare the EARLIEST logical copy, including erased/late copies;
+		// history/archive carriers cannot stand in for a native original.
+		later := `c.after>0 AND (SELECT min(f.rowid) FROM outbox f WHERE f.conv=o.conv AND f.lid=o.lid)>c.after`
+		captured := func(table string) string {
+			return `EXISTS(SELECT 1 FROM json_each(` + table + `.human,'$.audience') a WHERE json_extract(a.value,'$.pid')=c.reader_pid AND json_extract(a.value,'$.invite')=c.invite AND json_extract(a.value,'$.decision')=c.decision)`
+		}
+		liveOut = `c.invite<>'' AND coalesce(o.sub,'')='' AND NOT EXISTS(SELECT 1 FROM room_context r WHERE r.conv=o.conv AND r.pid=c.reader_pid AND r.lid=o.lid AND r.fingerprint=?) AND (` + later + ` OR ` + captured("o") + `)`
+		// A received copy proves no outbox order. Its exact captured audience,
+		// or a reply to a later native LOCAL request, supplies separate proof.
+		parent := `o.conv=i.conv AND o.pid=i.pid AND coalesce(o.sub,'')='' AND o.ref_id IS NULL AND ((o.kind='question' AND i.kind='answer') OR (o.kind='task' AND i.kind='result')) AND json_extract(o.target,'$.address')=i.sender AND json_extract(o.target,'$.fingerprint')=i.verified_by AND coalesce(json_extract(o.target,'$.agent_id'),'')=coalesce(i.agent_id,'') AND ` + later
+		// Separate probes use the physical-ID and (conv,LID) indexes. An OR
+		// predicate makes SQLite scan the conversation for every legacy reply.
+		boundParent := `SELECT 1 FROM outbox o WHERE o.id=i.reply_to AND ` + parent + ` UNION ALL SELECT 1 FROM outbox o WHERE o.conv=i.conv AND o.lid=i.reply_to AND ` + parent
+		liveIn = `c.invite<>'' AND coalesce(i.sub,'')='' AND i.replica=0 AND coalesce(i.via,'')='' AND i.verified_by IS NOT NULL AND NOT EXISTS(SELECT 1 FROM room_context r WHERE r.conv=i.conv AND r.pid=c.reader_pid AND r.lid=i.lid AND r.fingerprint=i.verified_by) AND (` + captured("i") + ` OR (i.kind IN ('answer','result') AND i.target IS NULL AND EXISTS(` + boundParent + `)))`
+	}
+	args = append(args, conv)
 	if partial {
 		selected := selection[0]
 		granted, _ := json.Marshal(selected.Grant)
-		cursorIn = ` AND (i.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=i.conv AND r.pid=? AND r.lid=i.lid AND r.fingerprint=i.verified_by)
+		cursorIn = ` AND (` + liveIn + ` OR i.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=i.conv AND r.pid=? AND r.lid=i.lid AND r.fingerprint=i.verified_by)
 		 OR EXISTS(SELECT 1 FROM json_each(?) x WHERE json_extract(x.value,'$.lid')=coalesce(i.lid,i.id) AND json_extract(x.value,'$.fingerprint')=coalesce(i.verified_by,i.claimed_fp,'')))`
 		args = append(args, selected.PID, selected.PID, string(granted))
-		cursorOut = ` AND (o.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=o.conv AND r.pid=? AND r.lid=o.lid AND r.fingerprint=?)
+		cursorOut = ` AND (` + liveOut + ` OR o.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=o.conv AND r.pid=? AND r.lid=o.lid AND r.fingerprint=?)
 		 OR EXISTS(SELECT 1 FROM json_each(?) x WHERE json_extract(x.value,'$.lid')=coalesce(o.lid,o.id) AND json_extract(x.value,'$.fingerprint')=?))`
 	}
-	args = append(args, self, selfFP, conv, selfFP)
+	args = append(args, self, selfFP)
+	if scoped {
+		args = append(args, selfFP) // liveOut in SELECT
+	}
+	args = append(args, conv, selfFP)
 	if partial {
 		selected := selection[0]
 		granted, _ := json.Marshal(selected.Grant)
-		args = append(args, selected.PID, selected.PID, selfFP, string(granted), selfFP)
+		args = append(args, selfFP, selected.PID, selected.PID, selfFP, string(granted), selfFP)
 	}
 	persons, err := s.devicePersons()
 	if err != nil {
@@ -816,19 +848,19 @@ func (s *store) convMessages(conv, self, selfFP string, own map[string]bool, sel
 	suspended := s.suspendedDevices()
 	// A received request's agent_id is its local executor stamp. The
 	// request remains its human sender's turn; only replies name an author.
-	rows, err := s.db.Query(`
+	rows, err := s.db.Query(prefix+`
 		SELECT id, lid, 'in', sender, coalesce(verified_by, ''), kind, body, coalesce(reply_to, ''), coalesce(sub, ''), replica, coalesce(origin, ''),
 		       coalesce(emotion, ''), coalesce(target, ''), state, coalesce(detail, ''), received_at, received_ms AS ms, coalesce(pid, ''),
 		       CASE WHEN pid IS NOT NULL AND state != '' THEN state ELSE '' END, CASE WHEN pid IS NOT NULL AND state != '' THEN coalesce(detail, '') ELSE '' END, coalesce(via, ''),
 		       CASE WHEN verified_by IS NULL THEN coalesce(claimed_fp, '') ELSE '' END,
-		       CASE WHEN kind IN ('question', 'task') THEN '' ELSE coalesce(agent_id, '') END, coalesce(status, ''), coalesce(quote,''), ts, '', coalesce(topic,''),coalesce(topic_event,''),topic_done,0,0,send_group
-		  FROM inbox i WHERE conv = ? AND local = 0 AND ref_id IS NULL AND coalesce(sub, '') NOT IN `+recordSubs+`
+		       CASE WHEN kind IN ('question', 'task') THEN '' ELSE coalesce(agent_id, '') END, coalesce(status, ''), coalesce(quote,''), ts, '', coalesce(topic,''),coalesce(topic_event,''),topic_done,0,0,send_group,`+liveIn+`
+		  FROM inbox i`+join+` WHERE conv = ? AND local = 0 AND ref_id IS NULL AND coalesce(sub, '') NOT IN `+recordSubs+`
 		   AND NOT `+erasedIn+cursorIn+`
 		UNION ALL
 		SELECT o.id, o.lid, 'out', ?, ?, o.kind, o.body, coalesce(o.reply_to, ''), coalesce(o.sub, ''), 0, coalesce(o.origin, ''),
 		       coalesce(o.emotion, ''), coalesce(o.target, ''), o.state, coalesce(o.error, ''), o.created_at, o.created_ms, coalesce(o.pid, ''),
-		       coalesce(j.state, ''), coalesce(j.detail, ''), o.recipient, '', coalesce(o.agent_id, ''), coalesce(o.status, ''),coalesce(o.quote,''),json_extract(o.envelope,'$.ts'),coalesce(o.recipient_person,''),coalesce(o.topic,''),coalesce(o.topic_event,''),o.topic_done,o.send_stopped,o.send_stopped=1 AND o.state='not_delivered' AND coalesce(o.handover_started,1)=1,o.send_group
-		  FROM outbox o LEFT JOIN inbox j ON j.id = o.id AND j.local = 1 WHERE o.conv = ? AND coalesce(o.sub, '') NOT IN ('read-sync', 'root-sync', 'history', 'file', 'drive-space', 'group-proof', 'group-context','group-invite','group-consent','group-withdrawal') AND o.ref_id IS NULL
+		       coalesce(j.state, ''), coalesce(j.detail, ''), o.recipient, '', coalesce(o.agent_id, ''), coalesce(o.status, ''),coalesce(o.quote,''),json_extract(o.envelope,'$.ts'),coalesce(o.recipient_person,''),coalesce(o.topic,''),coalesce(o.topic_event,''),o.topic_done,o.send_stopped,o.send_stopped=1 AND o.state='not_delivered' AND coalesce(o.handover_started,1)=1,o.send_group,`+liveOut+`
+		  FROM outbox o LEFT JOIN inbox j ON j.id = o.id AND j.local = 1`+join+` WHERE o.conv = ? AND coalesce(o.sub, '') NOT IN ('read-sync', 'root-sync', 'history', 'file', 'drive-space', 'group-proof', 'group-context','group-invite','group-consent','group-withdrawal') AND o.ref_id IS NULL
 		   AND NOT `+erasedOut+cursorOut+`
 		ORDER BY ms, 1`, args...)
 	if err != nil {
@@ -842,10 +874,9 @@ func (s *store) convMessages(conv, self, selfFP string, own map[string]bool, sel
 		var target, to, person, topicEvent string
 		var ms int64
 		if err := rows.Scan(&m.ID, &m.LID, &m.Dir, &m.From, &m.Key, &m.Kind, &m.Body, &m.ReplyTo, &m.Sub, &m.Replica, &m.Origin,
-			&m.Emotion, &target, &m.State, &m.Detail, &m.At, &ms, &m.PID, &m.Job, &m.JobDetail, &to, &m.Claimed, &m.AgentID, &m.status, &m.Quote, &m.Sent, &person, &m.Topic, &topicEvent, &m.TopicDone, &m.SendStopped, &m.DeliveryUncertain, &m.SendGroup); err != nil {
+			&m.Emotion, &target, &m.State, &m.Detail, &m.At, &ms, &m.PID, &m.Job, &m.JobDetail, &to, &m.Claimed, &m.AgentID, &m.status, &m.Quote, &m.Sent, &person, &m.Topic, &topicEvent, &m.TopicDone, &m.SendStopped, &m.DeliveryUncertain, &m.SendGroup, &m.liveContext); err != nil {
 			return nil, err
 		}
-		m.admittedMS = ms
 		if topicEvent != "" {
 			json.Unmarshal([]byte(topicEvent), &m.TopicEvent)
 		}

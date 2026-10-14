@@ -102,14 +102,25 @@ func TestDMLiveAgentContext(t *testing.T) {
 				}
 				return false
 			})
-			check := func(label string) {
+			var nativeRequest ConvSent
+			var nativeReply ConvMessage
+			check := func(label string, retained bool) {
 				t.Helper()
 				c, err := host.ParticipationContext(p.PID, 0)
 				if err != nil {
 					t.Fatal(err)
 				}
 				text := strings.Join(c.lines, "\n")
-				for _, want := range []string{"deploy failed at step 3", "DAVID_AGENT_FEEDBACK", "NEW_HUMAN_FEEDBACK"} {
+				wants := []string{"deploy failed at step 3", "DAVID_AGENT_FEEDBACK", "NEW_HUMAN_FEEDBACK"}
+				answer, request := peerAnswer, peerAsk
+				if retained && !external {
+					wants = []string{"deploy failed at step 3", "PROVEN_LOCAL_FEEDBACK"}
+					answer, request = nativeReply, nativeRequest
+					if strings.Contains(text, "DAVID_AGENT_FEEDBACK") || strings.Contains(text, "NEW_HUMAN_FEEDBACK") || strings.Contains(text, peerAnswer.LID) {
+						t.Fatalf("%s inferred unbound incoming order across stores:\n%s", label, text)
+					}
+				}
+				for _, want := range wants {
 					if !strings.Contains(text, want) {
 						t.Fatalf("%s context lacks %q:\n%s", label, want, text)
 					}
@@ -122,8 +133,8 @@ func TestDMLiveAgentContext(t *testing.T) {
 				}
 				foundAnswer, foundRequest := false, false
 				for _, m := range c.Messages {
-					foundAnswer = foundAnswer || m.LID == peerAnswer.LID && m.VerifiedAgent && m.PID == peer.PID
-					foundRequest = foundRequest || m.LID == peerAsk.LID && m.PID == peer.PID && m.Target != nil
+					foundAnswer = foundAnswer || m.LID == answer.LID && m.VerifiedAgent && m.PID == peer.PID
+					foundRequest = foundRequest || m.LID == request.LID && m.PID == peer.PID && m.Target != nil
 				}
 				if !foundAnswer {
 					t.Fatalf("%s lacks the verified peer's actual answer:\n%s", label, text)
@@ -132,20 +143,43 @@ func TestDMLiveAgentContext(t *testing.T) {
 					t.Fatalf("%s lacks the peer's new request:\n%s", label, text)
 				}
 			}
-			check("new")
-			// Existing invitations recover from the exact native
-			// acceptance record, even if the old client never indexed live refs.
-			if _, err = host.store.db.Exec(`DELETE FROM room_context WHERE conv=? AND pid=?`, conv, p.PID); err != nil {
-				t.Fatal(err)
-			}
-			check("retained invitation")
-			q, err := w.alice.AskAgent(tctx(t), p.PID, envelope.KindQuestion, "use the peer feedback")
+			check("new", false)
+			// All four newly indexed cases reach a genuine native harness.
+			q, err := w.alice.AskAgent(tctx(t), p.PID, envelope.KindQuestion, "use the indexed peer feedback")
 			if err != nil {
 				t.Fatal(err)
 			}
 			replyAt(t, w.alice, conv, q.ID)
 			if prompt := stub.last(); !strings.Contains(prompt, "DAVID_AGENT_FEEDBACK") || !strings.Contains(prompt, "NEW_HUMAN_FEEDBACK") {
-				t.Fatalf("native harness did not receive live feedback:\n%s", prompt)
+				t.Fatalf("new native harness did not receive live feedback:\n%s", prompt)
+			}
+			if !external {
+				if err = w.alice.Approve(host.Address); err != nil {
+					t.Fatal(err)
+				}
+				nativeRequest, err = host.AskAgent(tctx(t), peer.PID, envelope.KindQuestion, "PROVEN_NATIVE_PEER_REQUEST")
+				if err != nil {
+					t.Fatal(err)
+				}
+				nativeReply = replyAt(t, host, conv, nativeRequest.ID)
+				if _, err = host.SendConv(tctx(t), conv, ConvOutgoing{Body: "PROVEN_LOCAL_FEEDBACK"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Existing invitations recover from the exact native
+			// acceptance record, even if the old client never indexed live refs.
+			if _, err = host.store.db.Exec(`DELETE FROM room_context WHERE conv=? AND pid=?`, conv, p.PID); err != nil {
+				t.Fatal(err)
+			}
+			check("retained invitation", true)
+			q, err = w.alice.AskAgent(tctx(t), p.PID, envelope.KindQuestion, "use the peer feedback")
+			if err != nil {
+				t.Fatal(err)
+			}
+			replyAt(t, w.alice, conv, q.ID)
+			prompt := stub.last()
+			if external && (!strings.Contains(prompt, "DAVID_AGENT_FEEDBACK") || !strings.Contains(prompt, "NEW_HUMAN_FEEDBACK")) || !external && (!strings.Contains(prompt, "PROVEN_LOCAL_FEEDBACK") || !strings.Contains(prompt, nativeReply.LID)) {
+				t.Fatalf("retained native harness did not receive proven feedback:\n%s", prompt)
 			}
 			if _, err = w.alice.DismissParticipation(tctx(t), p.PID); err != nil {
 				t.Fatal(err)
