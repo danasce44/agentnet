@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -10,10 +11,18 @@ import (
 	"github.com/misunders2d/agentnet/internal/envelope"
 )
 
-func p6Member(t *testing.T, inviter, host *Agent, conv string) ParticipationInfo {
+func p6Member(t *testing.T, inviter, host *Agent, conv string, inviteContext ...context.Context) ParticipationInfo {
 	t.Helper()
-	p, err := inviter.InviteAgent(tctx(t), conv, host.Address, nil, nil, "")
+	var ctx context.Context
+	reportInvite := func(error) {}
+	if len(inviteContext) == 0 {
+		ctx = tctx(t)
+	} else {
+		ctx, reportInvite = traceFixtureHTTP(t, inviteContext[0])
+	}
+	p, err := inviter.InviteAgent(ctx, conv, host.Address, nil, nil, "")
 	if err != nil {
+		reportInvite(err)
 		t.Fatal(err)
 	}
 	eventually(t, "group agent invitation", func() bool {

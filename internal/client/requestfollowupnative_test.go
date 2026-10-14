@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -208,7 +209,7 @@ func TestNativeRequestFollowupUnsupportedAndUnknownDoNotReplay(t *testing.T) {
 				t.Fatal("native correction lacks one staged file", err, text)
 			}
 			stagedPath := filepath.Join(a.home, "runs", id, "in", entries[0].Name())
-			if !strings.Contains(text, stagedPath) {
+			if !strings.Contains(text, fmt.Sprintf("%q", stagedPath)) {
 				t.Fatal("native input did not contain the readable staged path", text)
 			}
 			state, err := a.store.jobState(id)

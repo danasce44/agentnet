@@ -2,16 +2,19 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +22,49 @@ import (
 	"github.com/misunders2d/agentnet/internal/protocol"
 	"github.com/misunders2d/agentnet/internal/sqlitedb"
 )
+
+// Trace only this fixture operation; never retain request or connection data.
+func traceFixtureHTTP(t *testing.T, ctx context.Context) (context.Context, func(error)) {
+	t.Helper()
+	started := time.Now()
+	var mu sync.Mutex
+	first, last := "none", "none"
+	var counts [4]int
+	record := func(phase int) {
+		mu.Lock()
+		defer mu.Unlock()
+		last = fmt.Sprintf("%s@%dms", [4]string{"connect", "connected", "request", "response"}[phase], time.Since(started).Milliseconds())
+		if first == "none" {
+			first = last
+		}
+		counts[phase]++
+	}
+	trace := &httptrace.ClientTrace{
+		ConnectStart: func(_, _ string) { record(0) },
+		GotConn:      func(httptrace.GotConnInfo) { record(1) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			if info.Err == nil {
+				record(2)
+			}
+		},
+		GotFirstResponseByte: func() { record(3) },
+	}
+	return httptrace.WithClientTrace(ctx, trace), func(err error) {
+		if err == nil {
+			return
+		}
+		class := "other"
+		if errors.Is(err, context.DeadlineExceeded) {
+			class = "deadline"
+		} else if errors.Is(err, context.Canceled) {
+			class = "canceled"
+		}
+		deadline, _ := ctx.Deadline()
+		mu.Lock()
+		defer mu.Unlock()
+		t.Logf("fixture HTTP trace elapsed_ms=%d first=%s last=%s counts[connect,connected,request,response]=%v deadline_remaining_ms=%d ctx_deadline=%t ctx_canceled=%t error_class=%s", time.Since(started).Milliseconds(), first, last, counts, time.Until(deadline).Milliseconds(), ctx.Err() == context.DeadlineExceeded, ctx.Err() == context.Canceled, class)
+	}
+}
 
 func groupTurnsFixture(t *testing.T, beforeRun ...func(*Agent)) (*world, *Agent, GroupContext, map[*Agent]func()) {
 	t.Helper()
@@ -147,7 +193,9 @@ func TestGroupTurnsT1ThreePeopleAndLinkedCopies(t *testing.T) {
 	if err = w.alice.store.addConvOutbox(copies, envelope.Inner{}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err = w.alice.FlushOutbox(tctx(t)); err != nil {
+	flushCtx, reportFlush := traceFixtureHTTP(t, tctx(t))
+	if err = w.alice.FlushOutbox(flushCtx); err != nil {
+		reportFlush(err)
 		t.Fatal(err)
 	}
 	for _, a := range all {
@@ -811,7 +859,9 @@ func TestGroupTurnsT5StaleFanAndUnsupportedOperations(t *testing.T) {
 	if err = w.alice.store.addConvOutbox(copies, envelope.Inner{}, nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err = w.alice.FlushOutbox(tctx(t)); err != nil {
+	flushCtx, reportFlush := traceFixtureHTTP(t, tctx(t))
+	if err = w.alice.FlushOutbox(flushCtx); err != nil {
+		reportFlush(err)
 		t.Fatal(err)
 	}
 	eventually(t, "stale current own-device forwarding", func() bool { return len(groupTurns(t, phone, p.State.Conv)) == 1 })

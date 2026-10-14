@@ -12,7 +12,7 @@ import (
 func TestHistoryCatchupPreservesPIDTopicAndFileSource(t *testing.T) {
 	w, _, packet, stops := groupTurnsFixture(t)
 	a, conv := w.alice, packet.State.Conv
-	part := p6Member(t, a, w.bob, conv)
+	part := p6Member(t, a, w.bob, conv, tctx(t))
 	phone, awaited, _ := linkPhone(t, a, "pid-topic-phone")
 	request := pendingLink(t, a)
 	stops[a]()
