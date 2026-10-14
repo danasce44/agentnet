@@ -848,7 +848,14 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 			}
 			addressed = info.Claimable() && m.Target.Address == info.Host.Address && m.Target.Fingerprint == info.Host.Fingerprint && m.Target.AgentID == info.AgentID
 		}
-		if m.sub != "" || m.claim != nil || (m.PID != "" || m.selfJob) && !addressed {
+		// SendAgentMessage supplies an atomic admission claim and rechecks it
+		// at handover. Its files use the ordinary encrypted attachment path;
+		// an incoming/public origin marker alone cannot authorize this case.
+		proactive := m.claim != nil && envelope.ProactiveAgent(envelope.Inner{
+			Conv: conv, Kind: m.Kind, Sub: m.sub, Status: m.status,
+			ReplyTo: m.ReplyTo, Target: m.Target, PID: m.PID, Origin: m.Origin,
+		})
+		if m.sub != "" || (m.claim != nil || (m.PID != "" || m.selfJob) && !addressed) && !proactive {
 			return ConvSent{}, errors.New("files go only with a message, question or task a person sends")
 		}
 		if len(m.Files) > envelope.MaxAttachments {

@@ -16,6 +16,8 @@ This record starts with v0.8.1; earlier releases remain on the
 - Show the exact own agent's reported model and reasoning in the picker,
   details and active agent chat, with timestamps and clear missing-report
   explanations. Native settings and permissions stay unchanged.
+- Allow admitted agents to attach files in their own-device DMs, matching
+  existing group and external-agent sends, with current participation checks.
 
 ## [0.8.27] — 2026-10-14
 
