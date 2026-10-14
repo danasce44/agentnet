@@ -69,11 +69,12 @@ func (s TeamStep) Hash() string                 { return hashHex(s.Canonical()) 
 func (s *TeamStep) Sign(key ed25519.PrivateKey) { s.Sig = ed25519.Sign(key, s.Canonical()) }
 
 func (s TeamStep) Validate() error {
-	if (s.V != 1 && s.V != 2) || !ValidID(s.RealmID) || !ValidID(s.Team) || s.Seq < 0 || s.TS <= 0 {
+	if (s.V != 1 && s.V != 2 && s.V != 3) || !ValidID(s.RealmID) || !ValidID(s.Team) || s.Seq < 0 || s.TS <= 0 {
 		return errors.New("team: invalid version, identity, sequence or timestamp")
 	}
 	if s.V == 1 && (s.Agent != nil || s.Op == TeamAdd || s.Op == TeamAgentAdd || s.Op == TeamAgentRemove) ||
-		s.V == 2 && (s.Op == TeamJoin || s.Op == TeamLeave) {
+		s.V == 2 && (s.Op == TeamJoin || s.Op == TeamLeave) ||
+		s.V == 3 && (s.Agent != nil || s.Op == TeamCreate || s.Op == TeamAgentAdd || s.Op == TeamAgentRemove) {
 		return errors.New("team: operation does not belong to this list version")
 	}
 	if (s.Op == TeamAgentAdd || s.Op == TeamAgentRemove) != (s.Agent != nil) {
@@ -138,16 +139,17 @@ func ParseTeamStep(raw []byte) (TeamStep, error) {
 }
 
 type TeamState struct {
-	Version  int         `json:"version,omitempty"` // absent for existing v1 people lists
-	RealmID  string      `json:"realm_id"`
-	ID       string      `json:"id"`
-	Name     string      `json:"name"`
-	Seq      int64       `json:"seq"`
-	Hash     string      `json:"hash"`
-	Managers []string    `json:"managers"`
-	Members  []string    `json:"members"`
-	Agents   []TeamAgent `json:"agents,omitempty"`
-	Archived bool        `json:"archived"`
+	LegacyHead *TeamRef    `json:"legacy_head,omitempty"` // derived only at the signed v1 -> v3 transition
+	Version    int         `json:"version,omitempty"`     // absent for existing v1 people lists
+	RealmID    string      `json:"realm_id"`
+	ID         string      `json:"id"`
+	Name       string      `json:"name"`
+	Seq        int64       `json:"seq"`
+	Hash       string      `json:"hash"`
+	Managers   []string    `json:"managers"`
+	Members    []string    `json:"members"`
+	Agents     []TeamAgent `json:"agents,omitempty"`
+	Archived   bool        `json:"archived"`
 }
 
 // An agent reference binds the named agent to its host key. A matching label
@@ -190,7 +192,14 @@ func (s TeamStep) Apply(prev *TeamState, roster PersonRoster) (TeamState, error)
 			out.Version, out.Members = 2, []string{}
 		}
 	} else {
-		if (prev.Version == 2) != (s.V == 2) {
+		// V3 extends a retained people list with manager add; it retains every
+		// V1 membership rule. Only that signed operation can cross the boundary.
+		upgrade := (prev.Version == 0 || prev.Version == 1) && s.V == 3 && s.Op == TeamAdd
+		version := prev.Version
+		if version == 0 {
+			version = 1
+		}
+		if version != s.V && !upgrade {
 			return out, errors.New("team: list version cannot change")
 		}
 		if prev.RealmID != s.RealmID || prev.ID != s.Team || s.Seq != prev.Seq+1 || s.Prev != prev.Hash {
@@ -200,6 +209,17 @@ func (s TeamStep) Apply(prev *TeamState, roster PersonRoster) (TeamState, error)
 		out.Managers = slices.Clone(prev.Managers)
 		out.Members = slices.Clone(prev.Members)
 		out.Agents = slices.Clone(prev.Agents)
+		if prev.Version == 3 {
+			ref := prev.LegacyHead
+			if ref == nil || ref.ID != prev.ID || ref.Seq < 0 || ref.Seq >= prev.Seq || !ValidHash(ref.Hash) {
+				return TeamState{}, errors.New("team: invalid legacy predecessor reference")
+			}
+			copy := *ref
+			out.LegacyHead = &copy
+		} else if prev.LegacyHead != nil {
+			return TeamState{}, errors.New("team: unexpected legacy predecessor reference")
+		}
+
 		person := s.Author.Person
 		if s.Op == TeamJoin || s.Op == TeamLeave {
 			if out.Archived {
@@ -210,6 +230,15 @@ func (s TeamStep) Apply(prev *TeamState, roster PersonRoster) (TeamState, error)
 		}
 		switch s.Op {
 		case TeamAdd:
+			if s.V == 3 {
+				if out.Archived {
+					return TeamState{}, ErrTeamArchived
+				}
+				if upgrade {
+					out.LegacyHead = &TeamRef{ID: prev.ID, Seq: prev.Seq, Hash: prev.Hash}
+				}
+				out.Version = 3
+			}
 			if !out.Member(s.Target) {
 				out.Members = append(out.Members, s.Target)
 			}
@@ -284,7 +313,7 @@ type TeamDirectory struct {
 }
 
 func (d TeamDirectory) Validate() error {
-	if (d.Version != 0 && d.Version != 2) || !ValidID(d.RealmID) || len(d.Teams) > MaxTeams {
+	if (d.Version != 0 && d.Version != 2 && d.Version != 3) || !ValidID(d.RealmID) || len(d.Teams) > MaxTeams {
 		return errors.New("team directory: invalid realm or size")
 	}
 	seen := map[string]bool{}

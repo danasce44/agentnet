@@ -19,6 +19,13 @@ overthinking/overengineering; disputed designs have two evidence-backed rounds.
 MEL-628 adds independent conversations for the same agent using fresh native
 sessions, preserving actual same-session exclusion and cancellation isolation.
 
+Source progress: the cache repair and exact model/reasoning report changes are
+integrated. The legacy-list and request-card slice passed independent focused
+protocol/Hub/client/UI checks, including directory invalidation during roster
+refresh, and is being integrated with the rebuilt Comic bundle. These are source
+checks; packaged Android recovery, all-skins/native/platform and release gates
+remain pending. Topic-sharing and steering candidates are still under review.
+
 Do not tag or publish the next release until these are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
@@ -31,14 +38,15 @@ hold, not a claim that the new evidence or either fix is already qualified.
 ## Linear status audit — October 14, 2026
 
 The project had 117 open tickets. Release records, full ticket scope and relevant
-comments establish 26 shipped completions; their Linear statuses are now Done
-and were read back after the updates:
+comments established 26 shipped completions at the audit; their Done updates
+were read back. MEL-591 was subsequently reopened by the owner, as recorded above.
+The following is the historical audit list:
 
 MEL-427, 476, 477, 478, 529, 541, 548, 571, 574, 575, 581, 584, 585, 586,
 589, 591, 592, 595, 597, 600, 601, 603, 609, 611, 616 and 618.
 
 With the newly recorded [MEL-624](https://linear.app/mellanni/issue/MEL-624),
-92 tickets remain open. MEL-624 corrects the misleading “Moved selected messages
+the audit counted 92 open tickets before later additions/reopening. MEL-624 corrects the misleading “Moved selected messages
 to this topic” notice when the actual destination is Main flow. Existing current
 defects are [MEL-622](https://linear.app/mellanni/issue/MEL-622) (inviting an agent
 with moved topic history) and [MEL-623](https://linear.app/mellanni/issue/MEL-623)

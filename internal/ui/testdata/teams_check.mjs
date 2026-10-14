@@ -55,6 +55,22 @@ assert.deepEqual(state.managers, [rosterB.person]);
 state = await applyTeam(await step(rosterB, keysB, state, 'archive'), state, rosterB);
 await assert.rejects(applyTeam(await step(rosterA, keys, state, 'join'), state, rosterA), /archived/);
 
+// A v3 add extends only legacy membership semantics, retaining signed identity.
+let legacy=await applyTeam(create,null,rosterA);
+const add3=await step(rosterA,keys,legacy,'add',{v:3,target:rosterB.person});
+legacy=await applyTeam(add3,legacy,rosterA);
+assert.equal(legacy.version,3);assert.equal(legacy.id,id);assert.equal(legacy.name,'Ops');
+assert.deepEqual(legacy.managers,[rosterA.person]);assert.deepEqual(legacy.members,[rosterA.person,rosterB.person].sort());
+await assert.rejects(applyTeam(await step(rosterB,keysB,legacy,'add',{v:3,target:rosterA.person}),legacy,rosterB),/manager/);
+await assert.rejects(applyTeam(await step(rosterA,keys,legacy,'leave',{v:3}),legacy,rosterA),/last manager/);
+await assert.rejects(applyTeam(await step(rosterA,keys,legacy,'archive',{v:1}),legacy,rosterA),/version/);
+await assert.rejects(step(rosterA,keys,null,'create',{v:3,name:'New'}),/version/);
+legacy=await applyTeam(await step(rosterB,keysB,legacy,'leave',{v:3}),legacy,rosterB);
+assert.deepEqual(legacy.members,[rosterA.person]);
+legacy=await applyTeam(await step(rosterB,keysB,legacy,'join',{v:3}),legacy,rosterB);
+legacy=await applyTeam(await step(rosterA,keys,legacy,'archive',{v:3}),legacy,rosterA);
+await assert.rejects(applyTeam(await step(rosterA,keys,legacy,'add',{v:3,target:rosterB.person}),legacy,rosterA),/archived/);
+
 // V2 tags have explicit people/agent targets, independent of management.
 const tagged = await step(rosterA,keys,null,'create',{v:2,name:'Reviewers'});
 let tagState=await applyTeam(tagged,null,rosterA);
@@ -77,7 +93,7 @@ tagState=await applyTeam(await step(rosterA,keys,tagState,'agent-remove',{v:2,ag
 assert.equal(tagState.agents,undefined);assert.deepEqual(immutableTag.agents,[ref]);
 
 const chains = new Map([[id, [create, join]]]);
-let calls = [], offline = false, conflictOnce = false, failPut = false, duringGet = null, tagsSupported=false;
+let calls = [], offline = false, conflictOnce = false, failPut = false, duringGet = null, tagsSupported=false,legacySupported=false;
 const store = memoryStore();
 const before = { s: 'kv', k: 'unrelated-grant', v: { allow: true } }; await store.write([before]);
 const engine = { store, keys, address: 'alice/desk', fp: await wire.fingerprint(rosterA.devices[0]),
@@ -89,11 +105,11 @@ const engine = { store, keys, address: 'alice/desk', fp: await wire.fingerprint(
   async chain(person) { return [proofMap.get(person)]; },
   async call(method, path, body) {
     calls.push([method, path]); if (offline) throw Error('offline');
-    if (path === '/v1/teams' || path === '/v1/teams?version=2') {
+    if (path === '/v1/teams' || path === '/v1/teams?version=2&legacy_teams=3') {
       const teams = [];
       for (const [id, records] of chains) teams.push({ id, seq: records.length - 1, hash: await teamHash(records.at(-1)) });
       if (duringGet) { const f = duringGet; duringGet = null; f(); }
-      return { realm_id: realm, teams, truncated: false,...(tagsSupported?{version:2}:{}) };
+      return { realm_id: realm, teams, truncated: false,...(legacySupported?{version:3}:tagsSupported?{version:2}:{}) };
     }
     if (method === 'DELETE') { chains.delete(path.split('/')[3]); return null; }
     if (method === 'GET') {
@@ -194,4 +210,19 @@ await tagBrowser.team({team:shared.id,op:'add',target:rosterB.person});
 const refreshed=await browserTeams(tagEngine,realm).teams();
 assert.equal(refreshed.tags,true);assert.deepEqual(refreshed.teams.find(t=>t.id===shared.id).agents,[ref]);
 assert.deepEqual((await tagBrowser.teamsSnapshot([shared.id])).persons.map(p=>p.id),[rosterB.person]);
+const legacyID='e'.repeat(32);
+chains.set(legacyID,[await step(rosterA,keys,null,'create',{name:'Retained'},legacyID)]);
+const legacyEngine={...engine,store:memoryStore()},legacyBrowser=browserTeams(legacyEngine,realm);
+await assert.rejects(legacyBrowser.team({team:legacyID,op:'add',target:rosterB.person}),/Update the server/);
+legacySupported=true;
+const extended=await legacyBrowser.team({team:legacyID,op:'add',target:rosterB.person});
+assert.equal(extended.version,3);assert.equal(extended.id,legacyID);assert.equal(extended.name,'Retained');
+assert.deepEqual(extended.managers,[rosterA.person]);assert.deepEqual(extended.members,[rosterA.person,rosterB.person].sort());
+const legacyView=await browserTeams(legacyEngine,realm).teams();
+assert.equal(legacyView.legacy_add,true);assert.equal(legacyView.tags,true);
+assert.deepEqual((await legacyBrowser.teamsSnapshot([legacyID])).sources,[{id:legacyID,seq:extended.seq,hash:extended.hash}]);
+legacySupported=false;
+await assert.rejects(legacyBrowser.teamsSnapshot([legacyID]),/unsupported/);
+legacySupported=true;
+assert.equal(calls.filter(([m,p])=>m==='POST'&&/agent|grant|invite/.test(p)).length,0);
 console.log('PASS teams: Go canonical/hash/signature, real-key authority, transfer/archive, CAS, snapshot isolation, offline/generation and authenticated fork');

@@ -309,7 +309,7 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 				}
 				sentMembersSum = sum
 			}
-			if dir, err := h.teamDirectoryVersion(r.URL.Query().Get("teams") == "2"); err == nil { // the same generation moves both
+			if dir, err := h.teamDirectoryFor(teamReaderVersion(r, "teams")); err == nil { // the same generation moves both
 				data, _ := json.Marshal(dir)
 				if sum := sha256.Sum256(data); sum != sentTeamsSum || again != sentAgain {
 					if !write("event: teams\ndata: %s\n\n", data) {

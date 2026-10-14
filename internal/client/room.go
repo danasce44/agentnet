@@ -191,6 +191,14 @@ func roomCauseIn(q dbq, conv, ref, self, fp string) (roomCause, error) {
 	return c, err
 }
 
+const roomOriginStopped = "originating local run stopped"
+
+// Shared by the execution verifier and the narrow retry-card hint. The hint
+// cannot replace the verifier's current membership, target and grant checks.
+func stoppedLocalRoomCause(c roomCause, request, self string, completedOutput bool) bool {
+	return c.target != nil && c.target.Address == self && c.state != stateRunning && c.id != request && !completedOutput
+}
+
 // roomChain checks each cause before using local standing grants. Each
 // upstream key needs its own permission at the final host: an intermediary
 // never lends its owner's authority. No depth/count cap; actual cycles stop.
@@ -231,8 +239,8 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 		// remaining copies leave the outbox. Normal completion does not revoke
 		// that completed output; new/running work and stopped origins stay fenced.
 		completedOutput := output && r.State == stateAnswered && c.state == stateAnswered
-		if target.Host.Address == self && c.state != stateRunning && c.id != r.ID && !completedOutput {
-			return verdictStop, "originating local run stopped", nil
+		if stoppedLocalRoomCause(c, r.ID, self, completedOutput) {
+			return verdictStop, roomOriginStopped, nil
 		}
 		if c.kind != envelope.KindQuestion && c.kind != envelope.KindTask || c.target == nil {
 			return verdictStop, "agent cause is not an addressed request", nil

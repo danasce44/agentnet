@@ -255,6 +255,16 @@ if(variant==='held-flood'){
  fixture.retainedHeld=structuredClone(fixture.overview.quarantine);
 }
 if(variant==='team-tags'){fixture.teams=[];fixture.overview.people=[...fixture.overview.people,fixture.thread.members[1]];}
+if(variant==='team-legacy'){
+ fixture.teams=[{id:'e'.repeat(32),name:'Retained legacy',members:[fixture.overview.person.person],managers:[fixture.overview.person.person],agents:[],manager:true,member:true,listed:true,conflict:false,archived:false}];
+ fixture.overview.people=[...fixture.overview.people,fixture.thread.members[1]];
+}
+if(variant==='agent-child'){
+ fixture.thread.guests=[];fixture.overview.group_invitations=[];
+ fixture.thread.agents=['source','target'].map((pid,i)=>({pid,host:fixture.overview.person,agent_id:String(i+1).repeat(32),state:'active',host_here:true,shared:[],can_ask:true,inviter:fixture.overview.person,tasks_from:[]}));
+ fixture.thread.messages.push({id:'agent-child',lid:'agent-child',from:fixture.overview.me.address,dir:'out',kind:'question',body:'Child request from a verified agent',at:'2026-10-05T10:01:00Z',pid:'target',agent_author_pid:'source',verified_agent:true,target:{address:fixture.overview.me.address,agent_id:'2'.repeat(32)},exec:{state:'interrupted',host:fixture.overview.me.address},job_detail:'Cannot run this request again: originating local run stopped. Mark it as handled if no more work is needed.',actions:['resolve'],state:'delivered'});
+}
+
 let open;
 const changeListeners=new Set(),changed=event=>{for(const fn of [...changeListeners])fn(event);};
 const host={version:1,platform:'daemon',workspace:{id:'default',name:'P6 fixture',endpoint:location.origin,address:seed.overview.me.address,realm:'',state:'enrolled'},workspaces:null,skins:[],onSkinsChange(){return()=>{};},onOpen(fn){open=fn;},listen(fn){changeListeners.add(fn);return()=>changeListeners.delete(fn);},stage:async f=>{if(variant==='followup'){if(fixture.followupStageFailure&&f.name==='fail-second.md'){fixture.followupStageFailure=false;throw Error('Synthetic second stage failure');}const id='followup-staged-'+(fixture.followupStages.length+1);fixture.followupStages.push({id,name:f.name,size:f.size,text:await f.text()});if(fixture.followupStagePause){fixture.followupStagePause=false;await new Promise(resolve=>{window.finishFollowupStage=resolve;});}return id;}if(variant==='multi-agent'){const id='multi-stage-'+(fixture.stages.length+1);fixture.stages.push({id,name:f.name,size:f.size});return {id};}if(variant==='oks'){fixture.staged={name:f.name,size:f.size};return {id:'staged-1'};}throw Error('fixture accepts no files');},file:async(id,index,dir)=>{if(variant==='direct-files'){fixture.download={id,index,dir};return {bytes:new TextEncoder().encode('hello')};}throw Error('fixture contains no files');},api:async(p,body)=>{
@@ -335,11 +345,11 @@ if(variant==='heldback'&&p==='/api/act'){
  fixture.overview.quarantine=fixture.overview.quarantine.filter(q=>q.id!==body.id);
  return {note:'Notice archived on this device. Its envelope remains blocked.'};
 }if(variant==='multi-agent'&&p==='/api/dm/agent/ask'){if(body.pid==='agent-b'&&!fixture.failedOnce){fixture.failedOnce=true;throw Error('Synthetic exact participation failure');}return {id:body.id,lid:body.id,state:'custody',state_text:'Stored for delivery'};}if(p.startsWith('/api/overview'))return structuredClone(fixture.overview);if(p.startsWith('/api/dm?'))return structuredClone(fixture.thread);
-if(variant==='team-tags'&&p==='/api/teams')return {status:'available',current:true,tags:true,teams:structuredClone(fixture.teams)};
-if(variant==='team-tags'&&p==='/api/team'){
+if(['team-tags','team-legacy'].includes(variant)&&p==='/api/teams')return {status:'available',current:true,tags:true,legacy_add:true,teams:structuredClone(fixture.teams)};
+if(['team-tags','team-legacy'].includes(variant)&&p==='/api/team'){
  if(body.op==='create'){const t={id:'f'.repeat(32),version:body.v,name:body.name,members:[],agents:[],managers:[fixture.overview.person.person],manager:true,member:false,listed:true,conflict:false,archived:false};fixture.teams.push(t);return structuredClone(t);}
  const t=fixture.teams.find(t=>t.id===body.team);if(!t)throw Error('Unknown tag');
- if(body.op==='add')t.members.push(body.target);else if(body.op==='agent-add')t.agents.push(body.agent);else if(body.op==='agent-remove')t.agents=t.agents.filter(a=>a.id!==body.agent.id);else if(body.op==='rename')t.name=body.name;else throw Error('Unexpected tag change');
+ if(body.op==='add'){t.members.push(body.target);if(t.version!==2)t.version=3;}else if(body.op==='agent-add')t.agents.push(body.agent);else if(body.op==='agent-remove')t.agents=t.agents.filter(a=>a.id!==body.agent.id);else if(body.op==='rename')t.name=body.name;else throw Error('Unexpected tag change');
  return structuredClone(t);
 }
 if(p==='/api/teams')return {status:'available',current:true,tags:true,teams:variant==='multi-agent'?[{id:'f'.repeat(32),name:fixture.teamSnapshotEdited?'Changed reviewers':'Reviewers',version:2,members:fixture.teamSnapshotEdited?[]:[fixture.thread.members[1].person],agents:fixture.teamSnapshotEdited?[]:fixture.thread.agents.map(a=>({id:a.agent_id,host:a.host.address,host_key:a.host.fingerprint})),listed:true,conflict:false,archived:false,managers:[fixture.overview.person.person]}]:[]};
@@ -348,7 +358,7 @@ if(p==='/api/device/link')return {url:'https://workspace.example/#agentnet-link-
 if((variant==='direct-files'||variant==='device-oks'||variant.startsWith('delivery-'))&&p.startsWith('/api/thread?'))return structuredClone(new URL(p,location.origin).searchParams.get('id')==='8'.repeat(32)?fixture.otherDeviceThread:fixture.deviceThread);
 if(variant==='direct-files'&&p==='/api/file/request'){if(body.id!==fixture.deviceThread.id||body.index!==0)throw Error('wrong original file');fixture.deviceThread.messages[0].files[0].availability='requested';return {};}
 if(variant==='device-oks'&&p==='/api/act'){if(body.do==='cancel')setDeviceState('cancel_requested');return {note:'Fixture action recorded'};}
-if(p.startsWith('/api/agents'))return {host:body?.host||new URL(p,location.origin).searchParams.get('host')||seed.overview.me.address,local:!p.includes('host='),agents:fixture.thread.agents.filter(a=>a.agent_id&&a.host.address===(new URL(p,location.origin).searchParams.get('host')||seed.overview.me.address)).map(a=>({record:{id:a.agent_id,label:a.host.address===seed.overview.me.address?'Prospect':'Analyst',host:a.host.address,host_key:a.host.fingerprint},enabled:true})),sessions:[]};
+if(p.startsWith('/api/agents'))return {host:body?.host||new URL(p,location.origin).searchParams.get('host')||seed.overview.me.address,local:!p.includes('host='),agents:fixture.thread.agents.filter(a=>a.agent_id&&a.host.address===(new URL(p,location.origin).searchParams.get('host')||seed.overview.me.address)).map(a=>({record:{id:a.agent_id,label:variant==='agent-child'?(a.pid==='source'?'Codex':'Claude'):a.host.address===seed.overview.me.address?'Prospect':'Analyst',host:a.host.address,host_key:a.host.fingerprint},enabled:true})),sessions:[]};
 if(p==='/api/dm/agent/invite'){fixture.thread.agents[0].shared=body.share;changed?.({type:'change',seq:++fixture.overview.seq});return structuredClone(fixture.thread.agents[0]);}
 if(p==='/api/notify/allow'){fixture.overview.notify.allowed=body.allowed?['brin/desktop','brin/phone']:[];return {};}
 if(p==='/api/notify/mute'){fixture.overview.notify.mutes=body.muted?[...fixture.overview.notify.mutes,body.conv]:fixture.overview.notify.mutes.filter(id=>id!==body.conv);return {};}
@@ -910,6 +920,45 @@ if(process.env.AGENTNET_DECLINE_INVITATION_REGRESSION==='1'){
  }
  continue;
 }
+if(process.env.AGENTNET_LEGACY_LIST_REGRESSION==='1'){
+ const {page,context}=await openCase('team-legacy');
+ try{
+  if(width===390)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:width===1280?'Settings':'You',exact:true}).click();
+  await page.getByRole('button',{name:'People lists',exact:true}).click();
+  const reads=await page.evaluate(()=>fixture.requests.filter(r=>r.path.startsWith('/api/agents')).length);
+  await page.getByRole('button',{name:/Retained legacy/}).click();
+  const dialog=page.getByRole('dialog');await dialog.getByText(/Adding a person keeps this list/).waitFor();
+  assert.equal(await dialog.getByRole('combobox',{name:'Agent',exact:true}).count(),0,'legacy list never offers agent targets');
+  assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path.startsWith('/api/agents')).length),reads,'opening the legacy editor loads no agent catalog');
+  await dialog.getByRole('combobox',{name:'Person',exact:true}).selectOption(brin.person);
+  await dialog.getByRole('button',{name:'Add person',exact:true}).click();
+  await dialog.getByRole('list',{name:'Members',exact:true}).getByText('Brin',{exact:true}).waitFor();
+  const list=await page.evaluate(()=>fixture.teams[0]);assert.equal(list.id,'e'.repeat(32));assert.equal(list.version,3);assert.deepEqual(list.managers,[me.person]);assert.deepEqual(list.members,[me.person,brin.person]);
+  assert.equal(await dialog.getByRole('button',{name:'Leave list',exact:true}).count(),1);
+  assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>['/api/dm/agent/ask','/api/dm/agent/invite','/api/groups/invite','/api/dm/send'].includes(r.path)).length),0);
+  await settle(page);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+  const shot=path.join(evidence,'comic-legacy-add-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+  await page.evaluate(()=>{fixture.teams[0].manager=false;reloadFixture();});await settle(page);
+  assert.equal(await dialog.getByRole('button',{name:'Add person',exact:true}).count(),0);await dialog.getByText('Only a manager can add people to this list.',{exact:true}).waitFor();
+ }finally{await context.close();}
+ continue;
+}
+if(process.env.AGENTNET_AGENT_CHILD_REGRESSION==='1'){
+ const {page,context}=await openCase('agent-child');
+ try{
+  const row=page.locator('[data-mid="agent-child"]'),card=row.locator('[data-terminal-request]');
+  await card.waitFor();await card.locator('summary').click();
+  await card.getByText(/originating local run stopped/).waitFor();
+  assert.equal(await card.getByRole('button',{name:'Run it again',exact:true}).count(),0);
+  await card.getByRole('button',{name:'Mark as handled',exact:true}).waitFor();
+  assert.doesNotMatch(await card.innerText(),/You asked|Running it again starts fresh/);assert.match(await card.innerText(),/Your Codex asks your Claude/);
+  assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/act'&&r.body?.do!=='read').length),0,'expanding never replays or resolves');
+  await settle(page);
+  const shot=path.join(evidence,'comic-agent-child-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+ }finally{await context.close();}
+ continue;
+}
 if(process.env.AGENTNET_TEAM_EDIT_REGRESSION==='1'){
  const {page,context}=await openCase('team-tags');
  try{
@@ -1348,6 +1397,6 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
    }
   }
   if(process.env.AGENTNET_RENDERED_RETAIN){const keep=path.resolve(process.env.AGENTNET_RENDERED_RETAIN);assert(keep.startsWith('/tmp/'),'retained synthetic evidence must stay in /tmp');fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_TOPIC_INVITE_REGRESSION==="1"?"Comic DM/group Main/named topic: Recent/Selected/Since, private files excluded, stable scope after rename/archive/arrival, broad grant disclosure; desktop/mobile":process.env.AGENTNET_REPORT_HISTORY_REGRESSION==="1"?"Comic exact blocker history: arbitrary follow-up success stays separate; confirmed/refused/new attempt and newest empty snapshots; desktop/mobile":completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_LEGACY_LIST_REGRESSION==='1'?'Comic retained legacy list: exact identity/manager, add person, preserved leave, no agent catalog/control/grants; desktop/mobile':process.env.AGENTNET_AGENT_CHILD_REGRESSION==='1'?'Comic verified Codex author to Claude recipient, exact stopped-parent reason, no retry or replay, retained handling; desktop/mobile':process.env.AGENTNET_TOPIC_INVITE_REGRESSION==="1"?"Comic DM/group Main/named topic: Recent/Selected/Since, private files excluded, stable scope after rename/archive/arrival, broad grant disclosure; desktop/mobile":process.env.AGENTNET_REPORT_HISTORY_REGRESSION==="1"?"Comic exact blocker history: arbitrary follow-up success stays separate; confirmed/refused/new attempt and newest empty snapshots; desktop/mobile":completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
  }finally{await browser?.close();server.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

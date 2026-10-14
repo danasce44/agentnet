@@ -42,6 +42,7 @@ type TeamView struct {
 }
 type TeamsView struct {
 	Tags      bool       `json:"tags"`
+	LegacyAdd bool       `json:"legacy_add"`
 	RealmID   string     `json:"realm_id,omitempty"`
 	Status    string     `json:"status"` // available, unknown, unsupported, unavailable, conflict
 	Current   bool       `json:"current"`
@@ -117,7 +118,8 @@ func (a *Agent) TeamView() (TeamsView, error) {
 	}
 	v.RealmID = realm
 	a.teams.mu.Lock()
-	v.Tags = a.teams.directory.Version == 2
+	v.Tags = a.teams.directory.Version >= 2
+	v.LegacyAdd = a.teams.directory.Version == 3
 	v.Status = a.teams.supported
 	v.Current = a.teams.current
 	v.At = a.teams.at
@@ -177,7 +179,7 @@ func (a *Agent) Teams(ctx context.Context) (TeamsView, error) {
 		known, err = a.store.teamIDs(realm)
 		if err == nil {
 			var d protocol.TeamDirectory
-			err = a.hub.do(ctx, http.MethodGet, "/v1/teams?version=2", nil, &d)
+			err = a.hub.do(ctx, http.MethodGet, "/v1/teams?version=2&legacy_teams=3", nil, &d)
 			if err == nil {
 				err = a.pinTeamDirectory(ctx, realm, d, true, known)
 			}
@@ -302,7 +304,7 @@ func (a *Agent) fetchTeam(ctx context.Context, realm, team string) error {
 	after := int64(-1)
 	for {
 		var page protocol.TeamChain
-		if err := a.hub.do(ctx, http.MethodGet, fmt.Sprintf("/v1/teams/%s/chain?after=%d", team, after), nil, &page); err != nil {
+		if err := a.hub.do(ctx, http.MethodGet, fmt.Sprintf("/v1/teams/%s/chain?version=3&after=%d", team, after), nil, &page); err != nil {
 			return err
 		}
 		if page.RealmID != realm || page.Team != team || len(page.Records) > protocol.TeamChainPage {
@@ -539,8 +541,19 @@ func (a *Agent) ChangeTeam(ctx context.Context, c TeamChange) (protocol.TeamStat
 		if version == 0 {
 			version = 1
 		}
-		if prev != nil && prev.Version == 2 {
-			version = 2
+		if prev != nil {
+			if prev.Version >= 2 {
+				version = prev.Version
+			}
+			if prev.Version != 2 && c.Op == protocol.TeamAdd {
+				a.teams.mu.Lock()
+				supported := a.teams.directory.Version == 3
+				a.teams.mu.Unlock()
+				if !supported {
+					return none, errors.New("update the server to add people to retained legacy lists")
+				}
+				version = 3
+			}
 		}
 		step := protocol.TeamStep{V: version, Agent: c.Agent, RealmID: realm, Team: c.Team, Author: protocol.EventAuthor{Person: me.info.Person, Roster: me.info.Roster, Address: a.Address, Fingerprint: a.Self().Fingerprint()}, Op: c.Op, Name: c.Name, Target: c.Target, TS: time.Now().Unix()}
 		if prev != nil {
@@ -594,12 +607,26 @@ func (a *Agent) TeamSnapshot(ctx context.Context, ids []string) (protocol.TeamSn
 		}
 		wanted[id] = true
 	}
+	heads := map[string]protocol.TeamRef{}
+	a.teams.mu.Lock()
+	generation, version := a.teams.generation, a.teams.directory.Version
+	current := a.teams.current && a.teams.pending == nil && a.teams.directory.RealmID == v.RealmID &&
+		v.Tags == (version >= 2) && v.LegacyAdd == (version == 3)
+	for _, ref := range a.teams.directory.Teams {
+		if wanted[ref.ID] {
+			heads[ref.ID] = ref
+		}
+	}
+	a.teams.mu.Unlock()
+	if !current {
+		return out, ErrTeamStale
+	}
 	people := map[string]bool{}
 	for _, t := range v.Teams {
 		if !wanted[t.ID] {
 			continue
 		}
-		if !t.Listed || t.Conflict {
+		if ref := heads[t.ID]; !t.Listed || t.Conflict || ref.Seq != t.Seq || ref.Hash != t.Hash || t.Version == 3 && !v.LegacyAdd {
 			return out, ErrTeamStale
 		}
 		if t.Archived {
@@ -645,6 +672,24 @@ func (a *Agent) TeamSnapshot(ctx context.Context, ids []string) (protocol.TeamSn
 		}
 		return 0
 	})
+	// Roster refreshes yield to transport/push changes. Only a still-current
+	// directory with the captured capability and selected heads can authorize
+	// this snapshot; a verified change to another list does not invalidate it.
+	a.teams.mu.Lock()
+	current = a.teams.current && a.teams.pending == nil && a.teams.generation == generation &&
+		a.teams.directory.Version == version && a.teams.directory.RealmID == out.RealmID
+	matched := 0
+	if current {
+		for _, ref := range a.teams.directory.Teams {
+			if head, ok := heads[ref.ID]; ok && head == ref {
+				matched++
+			}
+		}
+	}
+	a.teams.mu.Unlock()
+	if !current || matched != len(out.Sources) {
+		return out, ErrTeamStale
+	}
 	return out, nil
 }
 

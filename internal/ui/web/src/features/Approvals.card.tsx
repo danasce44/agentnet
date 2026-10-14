@@ -209,7 +209,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
             {(longer(m) || files > 0) && <Fact icon={<IconFileText size={18} />} k="What"><FullText text={requestText(m)} long={longer(m)} files={files} /></Fact>}
             {dm?.kind === "group" && <Fact icon={<IconUser size={18} />} k="From">{asker.name}, {placeOf(dm, null, o)}</Fact>}
             {part && <Fact icon={<IconEye size={18} />} k="Sees">{seesWords(part)}</Fact>}
-            <Fact icon={<IconSparkles size={18} />} k="Effect">{effectWords(m.kind, phase, agent)}</Fact>
+            <Fact icon={<IconSparkles size={18} />} k="Effect">{effectWords(m.kind, phase, agent, can("accept"))}</Fact>
           </dl>
         )}
 
@@ -306,8 +306,8 @@ function seesWords(a: T.AgentView) {
   return (n === 1 ? "1 shared message" : n + " shared messages") + " and what’s asked of it here";
 }
 
-function effectWords(kind: string, phase: Phase, agent: string) {
-  if (phase === "stopped") return "Running it again starts fresh; it doesn’t pick up where it stopped.";
+function effectWords(kind: string, phase: Phase, agent: string, canRetry: boolean) {
+  if (phase === "stopped") return canRetry ? "Running it again starts fresh; it doesn’t pick up where it stopped." : "This request stays stopped. Handling it does not run it again.";
   if (kind === "task") return "Runs once here, with " + agent + "’s usual permissions. It can change files.";
   return capital(agent) + " answers with your native tools, skills and permissions unchanged. Tools you already allow keep their effects.";
 }

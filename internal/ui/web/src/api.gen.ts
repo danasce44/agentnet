@@ -1183,6 +1183,7 @@ export interface TeamSnapshot {
 }
 
 export interface TeamState {
+  legacy_head?: TeamRef;
   version?: number;
   realm_id: string;
   id: string;
@@ -1196,6 +1197,7 @@ export interface TeamState {
 }
 
 export interface TeamView {
+  legacy_head?: TeamRef;
   version?: number;
   realm_id: string;
   id: string;
@@ -1214,6 +1216,7 @@ export interface TeamView {
 
 export interface TeamsView {
   tags: boolean;
+  legacy_add: boolean;
   realm_id?: string;
   status: string;
   current: boolean;

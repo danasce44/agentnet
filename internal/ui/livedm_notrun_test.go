@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -131,6 +132,61 @@ func TestLiveDMOwnNestedNotRunKeepsExactCause(t *testing.T) {
 			want := "Your agent: not run: the agent request that started this request finished or stopped first."
 			if m.StateText != want || strings.Contains(m.StateText, "part in this DM ended") {
 				t.Fatalf("state_text=%q; want %q", m.StateText, want)
+			}
+			// The real signed child retains agent authorship when a stopped
+			// daemon's two local jobs are staged as interrupted. Rendering must
+			// not offer a retry the unchanged full Accept guard will reject.
+			if _, err = db.Exec(`UPDATE inbox SET state='interrupted' WHERE id IN (?,?)`, root.LID, child.LID); err != nil {
+				t.Fatal(err)
+			}
+			live := NewLive(a)
+			stopped, err := live.DM(group.State.Conv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var card *DMMessage
+			for i := range stopped.Messages {
+				if stopped.Messages[i].LID == child.LID {
+					card = &stopped.Messages[i]
+				}
+			}
+			if card == nil || card.AgentAuthorPID != from.PID || !card.VerifiedAgent || slices.Contains(card.Actions, DoAccept) || !slices.Contains(card.Actions, DoResolve) || !strings.Contains(card.JobDetail, "originating local run stopped") {
+				t.Fatalf("interrupted child actions/author: %+v", card)
+			}
+			overview, err := live.Overview()
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, item := range overview.NeedsYou {
+				if item.ID == child.LID {
+					found = true
+					if slices.Contains(item.Actions, DoAccept) || !slices.Contains(item.Actions, DoResolve) || !strings.Contains(item.Why, "originating local run stopped") {
+						t.Fatalf("overview offered impossible retry: %+v", item)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("interrupted child lost explicit handling")
+			}
+			if err = a.Accept(child.LID); err == nil || !strings.Contains(err.Error(), "originating local run stopped") {
+				t.Fatalf("click-time ancestry guard changed: %v", err)
+			}
+			if err = a.Resolve(child.LID); err != nil {
+				t.Fatal(err)
+			}
+			var parentState string
+			if err = db.QueryRow(`SELECT state FROM inbox WHERE id=?`, root.LID).Scan(&parentState); err != nil || parentState != "interrupted" {
+				t.Fatalf("handling child changed its parent: %s %v", parentState, err)
+			}
+			overview, err = live.Overview()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range overview.NeedsYou {
+				if item.ID == child.LID {
+					t.Fatalf("handled child still blocks: %+v", item)
+				}
 			}
 			return
 		}

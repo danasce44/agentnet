@@ -80,6 +80,13 @@ export function askerOf(m: Req, o: T.Overview | null, names: Record<string, stri
     const a = peerAgent(m.from, o, names, m.agent_id);
     return { name: a.name, title: a.title, sub: a.sub, person: a.owner || a.name, seed: m.agent_id || m.from, agent: true, you: false };
   }
+  // Verified agent authorship wins over an own host's address/direction.
+  // The target participation is distinct from the asking agent's PID.
+  const author = m.agent_author_pid && m.verified_agent ? dm?.agents?.find(a => a.pid === m.agent_author_pid) : undefined;
+  if (author && (author.host.address === m.from || author.host.devices?.some(d => d.address === m.from))) {
+    const name = agentName(author.agent_id, names, author.host, o?.person);
+    return { name, title: name, sub: agentWhere(author.host, m.from, o?.person), person: name, seed: author.agent_id || m.from, agent: true, you: false };
+  }
   const you = m.dir === "out" || isMine(m.from, o);
   const p = you ? o?.person : [dm?.peer, ...(dm?.members || []), ...(o?.people || [])].find((x) => x && (x.address === m.from || (x.devices || []).some((d) => d.address === m.from)));
   const name = you ? "You" : p ? personName(p) : niceDevice(m.from);

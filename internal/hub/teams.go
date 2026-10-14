@@ -33,34 +33,72 @@ func (h *Hub) teamDirectory() (protocol.TeamDirectory, error) {
 }
 
 func (h *Hub) teamDirectoryVersion(tags bool) (protocol.TeamDirectory, error) {
-	out := protocol.TeamDirectory{RealmID: h.RealmID(), Teams: []protocol.TeamRef{}}
+	version := 1
 	if tags {
-		out.Version = 2
+		version = 2
 	}
-	rows, err := h.store.db.Query(`SELECT team,seq,hash FROM teams WHERE realm_id = ? AND (? OR coalesce(json_extract(state,'$.version'),1) = 1) ORDER BY team LIMIT ?`, h.RealmID(), tags, protocol.MaxTeams+1)
+	return h.teamDirectoryFor(version)
+}
+
+// Current readers use the existing head query. Only old readers of an
+// extended legacy list need a compatible signed prefix; omission would be
+// mistaken for permanent deletion by their retained-directory logic.
+func (h *Hub) teamDirectoryFor(version int) (protocol.TeamDirectory, error) {
+	out := protocol.TeamDirectory{RealmID: h.RealmID(), Teams: []protocol.TeamRef{}}
+	if version >= 2 {
+		out.Version = version
+	}
+
+	rows, err := h.store.db.Query(`SELECT team,seq,hash,CASE WHEN ?<3 AND coalesce(json_extract(state,'$.version'),1)=3 THEN coalesce(json_extract(state,'$.legacy_head'),'invalid') ELSE '' END FROM teams WHERE realm_id=? AND (? >= 2 OR coalesce(json_extract(state,'$.version'),1) != 2) ORDER BY team LIMIT ?`, version, h.RealmID(), version, protocol.MaxTeams+1)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var ref protocol.TeamRef
-		if err := rows.Scan(&ref.ID, &ref.Seq, &ref.Hash); err != nil {
+		var prefix string
+		if err := rows.Scan(&ref.ID, &ref.Seq, &ref.Hash, &prefix); err != nil {
 			return out, err
 		}
+		if prefix != "" {
+			var legacy protocol.TeamRef
+			if err := json.Unmarshal([]byte(prefix), &legacy); err != nil || !validLegacyHead(&legacy, ref.ID, ref.Seq) {
+				return out, errors.New("team: invalid legacy predecessor reference")
+			}
+			ref = legacy
+		}
 		out.Teams = append(out.Teams, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return out, err
 	}
 	if len(out.Teams) > protocol.MaxTeams {
 		out.Teams = out.Teams[:protocol.MaxTeams]
 		out.Truncated = true
 	}
-	return out, rows.Err()
+
+	return out, nil
+}
+
+func validLegacyHead(ref *protocol.TeamRef, team string, seq int64) bool {
+	return ref != nil && ref.ID == team && ref.Seq >= 0 && ref.Seq < seq && protocol.ValidHash(ref.Hash)
+}
+
+func teamReaderVersion(r *http.Request, key string) int {
+	if r.URL.Query().Get(key) == "3" || r.URL.Query().Get("legacy_teams") == "3" {
+		return 3
+	}
+	if r.URL.Query().Get(key) == "2" {
+		return 2
+	}
+	return 1
 }
 
 func (h *Hub) handleTeams(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authenticate(w, r); !ok {
 		return
 	}
-	d, err := h.teamDirectoryVersion(r.URL.Query().Get("version") == "2")
+	d, err := h.teamDirectoryFor(teamReaderVersion(r, "version"))
 	if err != nil {
 		writeError(w, 500, "", "team directory unavailable")
 		return
@@ -229,7 +267,8 @@ func (h *Hub) handleTeamChain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, found, err := teamHeadIn(h.store.db, h.RealmID(), team); err != nil {
+	head, found, err := teamHeadIn(h.store.db, h.RealmID(), team)
+	if err != nil {
 		writeError(w, 500, "", "team storage unavailable")
 		return
 	} else if !found {
@@ -237,7 +276,18 @@ func (h *Hub) handleTeamChain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := protocol.TeamChain{RealmID: h.RealmID(), Team: team, Records: []json.RawMessage{}}
-	rows, err := h.store.db.Query(`SELECT record FROM team_chain WHERE realm_id=? AND team=? AND seq>? ORDER BY seq LIMIT ?`, h.RealmID(), team, after, protocol.TeamChainPage+1)
+	query := `SELECT record FROM team_chain WHERE realm_id=? AND team=? AND seq>?`
+	args := []any{h.RealmID(), team, after}
+	if head.Version == 3 && teamReaderVersion(r, "version") < 3 {
+		if !validLegacyHead(head.LegacyHead, team, head.Seq) {
+			writeError(w, 500, "", "team chain unavailable")
+			return
+		}
+		query += ` AND seq<=?`
+		args = append(args, head.LegacyHead.Seq)
+	}
+	args = append(args, protocol.TeamChainPage+1)
+	rows, err := h.store.db.Query(query+` ORDER BY seq LIMIT ?`, args...)
 	if err != nil {
 		writeError(w, 500, "", "team chain unavailable")
 		return

@@ -252,9 +252,19 @@ assistants. Use your linked agent computer." An unknown verb gives 409
 | `POST /api/groups/cancel` | D B | Cancel an invitation you sent (`can_cancel`). | `{id}` | `{cancelled}` |
 | `POST /api/groups/refresh` | D B | Renew an invitation you sent (`can_refresh`). | `{id}` | group invitation |
 | `POST /api/groups/manage` | D B | Rename the group, promote, demote or remove a member, or leave. | `{conv, action, title?, person?}`, where `action` is rename, promote, demote, remove or leave | `{queued}` |
-| `GET /api/teams` | D B | This realm's teams. B answers `status:"unsupported"` when the relay publishes no realm, without `tags` and `realm_id`. | — | `{tags, realm_id?, status, current, reason?, at, truncated, teams:[{…TeamState, member, manager, conflict, listed}]}` |
+| `GET /api/teams` | D B | This realm's teams. B answers `status:"unsupported"` when the relay publishes no realm, without `tags` and `realm_id`. | — | `{tags, legacy_add?, realm_id?, status, current, reason?, at, truncated, teams:[{…TeamState, member, manager, conflict, listed}]}` |
 | `POST /api/team` | D B | Change a team. `op` is create, join, leave, rename, archive, restore, remove, manager-add, manager-remove, add, agent-add or agent-remove. Without a realm, B refuses "Teams are not available on this server." | `{op, team?, name?, target?, agent?:{id, host, host_key}, v?}` | `{realm_id, id, name, seq, hash, managers, members, agents?, archived, version?}` |
 | `POST /api/teams/snapshot` | D B | A reviewable snapshot of the selected teams. It adds no one to a conversation. | `{teams:[id]}` | `{realm_id, sources:[{id, seq, hash}], persons:[{id, seq, hash}], at}` |
+
+Legacy people lists retain version-1 join/leave and manager rules. With
+`legacy_add:true`, a current manager may add a person; that signed transition
+uses version3 and keeps the same list identity and chain. Version2 tags keep
+managed person/agent-target semantics. Version3 is a legacy-list extension,
+not conversion to a tag; do not offer agent targets or remove Join/Leave.
+`legacy_head`, when present in TeamState, is a replay-derived compatible signed
+prefix reference for old readers, never an incoming membership proof. Selection
+requires a current matching head and is rechecked after roster refresh. No list
+operation grants conversation or task access.
 
 ## Notifications and typing
 

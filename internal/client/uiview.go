@@ -270,19 +270,20 @@ const (
 // Resolve), an invitation by its PID (AcceptParticipation,
 // DeclineParticipation), as anywhere else.
 type ConvReview struct {
-	Target *envelope.Target `json:"target,omitempty"`
-	Role   string           `json:"role,omitempty"`
-	Reason string           `json:"reason"`
-	Conv   string           `json:"conv"`
-	PID    string           `json:"pid,omitempty"`
-	ID     string           `json:"id,omitempty"` // the request or turn; an invitation has none (its PID names it)
-	From   string           `json:"from"`         // the asking or inviting device
-	Kind   string           `json:"kind,omitempty"`
-	State  string           `json:"state,omitempty"`
-	Body   string           `json:"body"`             // the request or turn, or the invitation's note
-	Detail string           `json:"detail,omitempty"` // why it waits, as recorded here
-	At     time.Time        `json:"at"`
-	Unread bool             `json:"unread,omitempty"`
+	AgentAuthor bool             `json:"-"` // admitted author role; only for local retry presentation
+	Target      *envelope.Target `json:"target,omitempty"`
+	Role        string           `json:"role,omitempty"`
+	Reason      string           `json:"reason"`
+	Conv        string           `json:"conv"`
+	PID         string           `json:"pid,omitempty"`
+	ID          string           `json:"id,omitempty"` // the request or turn; an invitation has none (its PID names it)
+	From        string           `json:"from"`         // the asking or inviting device
+	Kind        string           `json:"kind,omitempty"`
+	State       string           `json:"state,omitempty"`
+	Body        string           `json:"body"`             // the request or turn, or the invitation's note
+	Detail      string           `json:"detail,omitempty"` // why it waits, as recorded here
+	At          time.Time        `json:"at"`
+	Unread      bool             `json:"unread,omitempty"`
 }
 
 // ReviewPage is what waits for the person, as the page lists it: device
@@ -367,7 +368,7 @@ func (a *Agent) stillDecidable(requests []ConvReview) []ConvReview {
 // convReview lists the received conversation rows (alias i) matching where,
 // oldest first; selected local receiver input is never among them.
 func (s *store) convReview(where string, args ...any) ([]ConvReview, error) {
-	rows, err := s.db.Query(`SELECT i.id, i.conv, coalesce(i.pid, ''), i.sender, i.kind, i.state, i.body, coalesce(i.detail, ''), i.received_at, i.read_at IS NULL, coalesce(i.target, '')
+	rows, err := s.db.Query(`SELECT i.id, i.conv, coalesce(i.pid, ''), i.sender, i.kind, i.state, i.body, coalesce(i.detail, ''), i.received_at, i.read_at IS NULL, coalesce(i.target, ''), coalesce(i.human, '')
 		FROM inbox i WHERE i.conv IS NOT NULL AND `+where+` AND NOT EXISTS (SELECT 1 FROM reply_receiver_inputs ri WHERE ri.inbox_id = i.id)
 		ORDER BY i.received_at, i.id`, args...)
 	if err != nil {
@@ -378,14 +379,21 @@ func (s *store) convReview(where string, args ...any) ([]ConvReview, error) {
 	for rows.Next() {
 		var r ConvReview
 		var at int64
-		var target string
-		if err := rows.Scan(&r.ID, &r.Conv, &r.PID, &r.From, &r.Kind, &r.State, &r.Body, &r.Detail, &at, &r.Unread, &target); err != nil {
+		var target, human string
+		if err := rows.Scan(&r.ID, &r.Conv, &r.PID, &r.From, &r.Kind, &r.State, &r.Body, &r.Detail, &at, &r.Unread, &target, &human); err != nil {
 			return nil, err
 		}
 		if target != "" {
 			if err := json.Unmarshal([]byte(target), &r.Target); err != nil {
 				return nil, err
 			}
+		}
+		if human != "" && (r.State == stateInterrupt || r.State == stateNeedHuman) {
+			var h envelope.HumanTurn
+			if err := json.Unmarshal([]byte(human), &h); err != nil {
+				return nil, err
+			}
+			r.AgentAuthor = h.AgentAuthor()
 		}
 		r.At = time.Unix(at, 0)
 		switch r.State {

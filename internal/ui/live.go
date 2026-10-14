@@ -121,6 +121,13 @@ func (l *Live) overview(listArchived bool) (Overview, error) {
 	}
 	for _, c := range review.Conv {
 		item := convItem(c, words)
+		if c.AgentAuthor && c.From == l.a.Address && (c.State == "interrupted" || c.State == "needs_human") {
+			var detail string
+			item.Actions, detail = l.agentRequestActions(c.Conv, c.ID, c.Kind, c.State, "", true)
+			if detail != "" {
+				item.Why += "\n" + detail
+			}
+		}
 		item.Continuation, err = l.a.ContinuationFor(c.ID, "", nil)
 		if err != nil {
 			return Overview{}, err

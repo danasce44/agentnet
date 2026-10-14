@@ -453,9 +453,9 @@ func (l *Live) DM(id string) (DMThread, error) {
 			// (received), or the local job's (this person asking their own agent).
 			switch {
 			case m.PID != "" && m.Dir == "in" && m.Target != nil && m.Target.Address == l.a.Address && !m.Replica:
-				dm.Actions, dm.JobDetail = AgentActions(m.Kind, m.State), m.JobDetail
+				dm.Actions, dm.JobDetail = l.agentRequestActions(id, m.ID, m.Kind, m.State, m.JobDetail, m.From == l.a.Address && m.Human != nil && m.Human.AgentAuthor())
 			case m.PID != "" && m.Dir == "out" && m.Job != "":
-				dm.Actions, dm.JobDetail = AgentActions(m.Kind, m.Job), m.JobDetail
+				dm.Actions, dm.JobDetail = l.agentRequestActions(id, m.ID, m.Kind, m.Job, m.JobDetail, m.From == l.a.Address && m.Human != nil && m.Human.AgentAuthor())
 				// This device executes its own request. Its local job is the
 				// execution state; the outgoing row still keeps transport state.
 				dm.Exec = &client.ExecView{State: m.Job, Host: l.a.Address}

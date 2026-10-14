@@ -10,12 +10,12 @@ export function validateTeam(s) {
   const a = s.author;
   if ((s.name !== undefined && typeof s.name !== 'string') || (s.target !== undefined && typeof s.target !== 'string') ||
       (s.sig !== undefined && typeof s.sig !== 'string' && !(s.sig instanceof Uint8Array))) fail('team: invalid optional field');
-  if (![1,2].includes(s.v) || !wire.validID(s.realm_id) || !wire.validID(s.team) ||
+  if (![1,2,3].includes(s.v) || !wire.validID(s.realm_id) || !wire.validID(s.team) ||
       !Number.isSafeInteger(s.seq) || s.seq < 0 || !Number.isSafeInteger(s.ts) || s.ts <= 0 ||
       !a || Object.keys(a).some(k => !['person', 'roster', 'address', 'fingerprint'].includes(k)) ||
       !wire.validID(a.person) || !wire.validHash(a.roster) || !wire.validAddress(a.address) ||
       !wire.validFingerprint(a.fingerprint) || !ops.has(s.op)) fail('team: invalid fields');
-  if (s.v === 1 && (s.agent || ['add','agent-add','agent-remove'].includes(s.op)) || s.v === 2 && ['join','leave'].includes(s.op)) fail('team: wrong operation version');
+  if (s.v === 1 && (s.agent || ['add','agent-add','agent-remove'].includes(s.op)) || s.v === 2 && ['join','leave'].includes(s.op) || s.v === 3 && (s.agent || ['create','agent-add','agent-remove'].includes(s.op))) fail('team: wrong operation version');
   if (['agent-add','agent-remove'].includes(s.op) !== !!s.agent) fail('team: unexpected agent target');
   if (s.seq === 0 ? s.op !== 'create' || s.prev !== '' : s.op === 'create' || !wire.validHash(s.prev)) fail('team: invalid predecessor');
   if (['create', 'rename'].includes(s.op)) {
@@ -63,8 +63,12 @@ export async function applyTeam(s, prev, roster) {
     st = { realm_id: s.realm_id, id: s.team, name: s.name, managers: [person], members: s.v===2?[]:[person], archived: false, ...(s.v===2?{version:2}:{}) };
   } else {
     if (prev.realm_id !== s.realm_id || prev.id !== s.team || s.seq !== prev.seq + 1 || s.prev !== prev.hash) fail('team: wrong predecessor');
-    if ((prev.version===2)!==(s.v===2)) fail('team: list version cannot change');
+    const upgrade = [undefined,0,1].includes(prev.version) && s.v===3 && s.op==='add';
+    if ((prev.version||1)!==s.v && !upgrade) fail('team: list version cannot change');
     st = structuredClone(prev);
+    if(prev.version===3){const ref=prev.legacy_head;if(!ref||ref.id!==prev.id||!Number.isSafeInteger(ref.seq)||ref.seq<0||ref.seq>=prev.seq||!wire.validHash(ref.hash))fail('team: invalid legacy predecessor reference');}
+    else if(prev.legacy_head)fail('team: unexpected legacy predecessor reference');
+    if(upgrade)st.legacy_head={id:prev.id,seq:prev.seq,hash:prev.hash};
     if (['join', 'leave'].includes(s.op)) {
       if (st.archived) fail('team is archived; a manager must explicitly restore it');
     } else if (!st.managers.includes(person)) fail('this team operation requires a manager');
@@ -72,7 +76,9 @@ export async function applyTeam(s, prev, roster) {
     const remove = (list, p) => list.filter(x => x !== p);
     const agentKey=a=>a.host+'/'+a.host_key+'/'+a.id;
     switch (s.op) {
-      case 'add': add(st.members,s.target); break;
+      case 'add':
+        if(s.v===3){if(st.archived)fail('team is archived; a manager must explicitly restore it');st.version=3;}
+        add(st.members,s.target); break;
       case 'agent-add': st.agents ||= []; if(!st.agents.some(a=>agentKey(a)===agentKey(s.agent))) st.agents.push({...s.agent}); break;
       case 'agent-remove': st.agents=(st.agents||[]).filter(a=>agentKey(a)!==agentKey(s.agent)); break;
       case 'join': add(st.members, person); break;
@@ -101,7 +107,7 @@ export async function applyTeam(s, prev, roster) {
 }
 
 function directory(d, realm) {
-  if (!d || (d.version!==undefined && ![0,2].includes(d.version)) || d.realm_id !== realm || !Array.isArray(d.teams) || d.teams.length > 1000 || typeof d.truncated !== 'boolean') fail('team: invalid directory');
+  if (!d || (d.version!==undefined && ![0,2,3].includes(d.version)) || d.realm_id !== realm || !Array.isArray(d.teams) || d.teams.length > 1000 || typeof d.truncated !== 'boolean') fail('team: invalid directory');
   const seen = new Set();
   for (const r of d.teams) {
     if (!wire.validID(r.id) || !wire.validHash(r.hash) || !Number.isSafeInteger(r.seq) || r.seq < 0 || seen.has(r.id)) fail('team: invalid directory ref');
@@ -171,7 +177,7 @@ export function browserTeams(engine, realmID) {
   async function fetchTeam(id) {
     let after = -1, records = [];
     for (;;) {
-      const page = await call('GET', '/v1/teams/' + id + '/chain?after=' + after);
+      const page = await call('GET', '/v1/teams/' + id + '/chain?version=3&after=' + after);
       if (page.realm_id !== realmID || page.team !== id || !Array.isArray(page.records) || page.records.length > 100 || typeof page.more !== 'boolean') fail('team: invalid chain page');
       for (const raw of page.records) {
         const s = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -204,7 +210,7 @@ export function browserTeams(engine, realmID) {
   async function view() {
     await load();
     const listed = new Set(data.directory.teams.map(r => r.id)), self = engine.me?.person;
-    return { realm_id: realmID, status, current, reason, tags: data.directory.version===2, at: data.at, truncated: data.directory.truncated,
+    return { realm_id: realmID, status, current, reason, tags: data.directory.version>=2, legacy_add: data.directory.version===3, at: data.at, truncated: data.directory.truncated,
       teams: Object.keys(data.chains).filter(id => !data.deleted?.[id]).sort().map(id => {
         const st = data.chains[id].at(-1).state;
         return { ...structuredClone(st), member: st.members.includes(self), manager: st.managers.includes(self), conflict: !!data.conflicts[id], listed: listed.has(id) };
@@ -213,7 +219,7 @@ export function browserTeams(engine, realmID) {
   async function refresh() {
     const gen = generation; current = false;
     try {
-      await accept(await call('GET', '/v1/teams?version=2'), true);
+      await accept(await call('GET', '/v1/teams?version=2&legacy_teams=3'), true);
       if (gen === generation && !pending) { current = true; status = 'available'; reason = ''; }
     } catch (e) {
       current = false; status = (Object.values(data?.conflicts || {}).some(Boolean) || /person conflict|pinned person fork|verified fork/.test(e.message)) ? 'conflict' : e.status === 404 ? 'unsupported' : 'unavailable'; reason = e.message;
@@ -240,7 +246,9 @@ export function browserTeams(engine, realmID) {
       if (!d || d.address !== engine.address) fail('team: current self device required');
       const prev = c.op === 'create' ? null : data.chains[id]?.at(-1)?.state;
       if (c.op !== 'create' && (!prev || data.conflicts[id])) fail('team: missing or frozen team');
-      const s = await signTeam(engine.keys, { v: prev?.version===2?2:(c.v||1), realm_id: realmID, team: id, seq: prev ? prev.seq + 1 : 0, prev: prev?.hash || '',
+      if(prev && prev.version!==2 && c.op==='add' && !v.legacy_add)fail('Update the server to add people to retained legacy lists.');
+      const version=prev && prev.version!==2 && c.op==='add'?3:prev?.version||c.v||1;
+      const s = await signTeam(engine.keys, { v: version, realm_id: realmID, team: id, seq: prev ? prev.seq + 1 : 0, prev: prev?.hash || '',
         author: { person: roster.person, roster: await wire.rosterHash(roster), address: engine.address, fingerprint: engine.fp },
         op: c.op, ...(c.name ? { name: c.name } : {}), ...(c.target ? { target: c.target } : {}), ...(c.agent?{agent:c.agent}:{}), ts: Math.floor(Date.now() / 1000) });
       const accepted = await applyTeam(s, prev, roster);
@@ -260,6 +268,8 @@ export function browserTeams(engine, realmID) {
     const sources = [], persons = new Set();
     for (const id of [...new Set(ids)].sort()) {
       const st = v.teams.find(t => t.id === id && t.listed && !t.conflict && !t.archived);
+      const head=data.directory.teams.find(r=>r.id===id);
+      if(st && (!head || st.seq!==head.seq || st.hash!==head.hash || st.version===3&&!v.legacy_add))fail('team: selected team head is stale or unsupported');
       if (!st) fail('team: unavailable selection');
       sources.push({ id, seq: st.seq, hash: st.hash }); st.members.forEach(p => persons.add(p));
     }
