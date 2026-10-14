@@ -56,7 +56,7 @@ func (h HumanTurn) Validate(conv string) error {
 		s, ok := seen[e.PID]
 		raw, _ := json.Marshal(e)
 		if !ok || len(e.Sig) != ed25519.SignatureSize || len(raw) > protocol.MaxParticipationEvent || e.Conv != conv || e.Validate() != nil || (e.Type != protocol.EventScope && e.Type != protocol.EventAccept) ||
-			e.Type == protocol.EventScope && e.Role != protocol.RoleHuman && e.Audience != protocol.AudienceRoom { // an agent only as a room participant
+			e.Type == protocol.EventScope && e.Role != protocol.RoleHuman && e.Audience != protocol.AudienceRoom && e.Audience != protocol.AudienceConversation {
 			return errors.New("human: proof outside audience")
 		}
 		hash := e.Hash()

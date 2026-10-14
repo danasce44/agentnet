@@ -31,10 +31,10 @@ func recordRoomContext(tx *sql.Tx, in envelope.Inner, fp, self string) error {
 	if err != nil {
 		return err
 	}
-	if m.group == nil {
+	if m.group == nil && in.Replica {
 		return nil
 	}
-	if in.Sub == "" {
+	if m.group != nil && in.Sub == "" {
 		for person := range m.persons {
 			// A received copy proves only its verified sender/receiver fan,
 			// never additional readers inferred from current membership.
@@ -90,9 +90,14 @@ func recordRoomContext(tx *sql.Tx, in envelope.Inner, fp, self string) error {
 		if in.Sub != "" {
 			continue
 		}
-		if p.Member && p.Claimable() && p.Host.Address == self && in.Human != nil && slices.ContainsFunc(in.Human.Audience, func(scope envelope.HumanScope) bool {
+		captured := in.Human != nil && slices.ContainsFunc(in.Human.Audience, func(scope envelope.HumanScope) bool {
 			return scope.PID == pid && scope.Invite == p.Invite && scope.Decision == p.Decision
-		}) {
+		})
+		// A DM helper follows native originals admitted on its host while
+		// active. The transport separately verifies outside-host readership.
+		liveDM := m.group == nil
+		if p.Role == "" && p.Claimable() && p.Host.Address == self && (captured || liveDM) &&
+			(p.Topic == nil || *p.Topic == in.Topic) {
 			if _, e = tx.Exec(`INSERT OR IGNORE INTO room_context VALUES(?,?,?,?)`, in.Conv, pid, in.LID, fp); e != nil {
 				return e
 			}

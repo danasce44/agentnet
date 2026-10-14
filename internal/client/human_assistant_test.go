@@ -115,8 +115,8 @@ func TestHumanGuestAsksMemberHostedAssistant(t *testing.T) {
 	}
 	prompt := stub.last()
 	if strings.Count(prompt, "guest question one") != 1 || !strings.Contains(prompt, "deploy failed at step 3") ||
-		strings.Contains(prompt, "ambient guest chatter") || strings.Contains(prompt, "lunch") {
-		t.Fatalf("assistant context is not granted context plus the addressed request:\n%s", prompt)
+		!strings.Contains(prompt, "ambient guest chatter") || strings.Contains(prompt, "lunch") {
+		t.Fatalf("assistant context lacks granted/live context or exposes earlier history:\n%s", prompt)
 	}
 
 	// Bob's standing approval of Carol: her next question runs directly.

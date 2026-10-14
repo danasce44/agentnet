@@ -74,6 +74,25 @@ func humanTurnAuthorization(q dbq, in envelope.Inner, from, fromFP, to, toFP str
 	}
 	return humanAuthority(q, in.Conv, h, from, fromFP, to, toFP, historical, true, false, context...)
 }
+
+// Captured live readers change delivery, not reply authority. Outside DM
+// answers retain the same exact request binding on admission and every retry.
+func humanDMOutputRequest(q dbq, in envelope.Inner, self, selfFP string) error {
+	if in.Human == nil || in.Human.AgentAuthor() || in.PID == "" || in.Target != nil ||
+		in.Sub != "" || in.Kind != envelope.KindAnswer && in.Kind != envelope.KindResult && !isResponderProgress(in) {
+		return nil
+	}
+	m, err := membersIn(q, in.Conv)
+	if err != nil || m.group != nil {
+		return err
+	}
+	p, err := participationIn(q, in.Conv, in.PID, m, self)
+	if err != nil || !p.External {
+		return err
+	}
+	_, err = externalOutputRequest(q, in, p, m, self, selfFP)
+	return err
+}
 func humanAuthority(q dbq, conv string, h *envelope.HumanTurn, from, fromFP, to, toFP string, historical, hostAuthor, hostReader bool, context ...dmMembers) error {
 	if len(context) > 0 && !historical {
 		return errors.New("human: historical context cannot authorize live turns")
@@ -196,6 +215,16 @@ func humanEndEvent(in envelope.Inner, info ParticipationInfo) bool {
 	return err == nil && ev.Type == protocol.EventDismiss && ev.PID == info.PID && ev.Conv == info.Conv
 }
 func (a *Agent) humanPlan(ctx context.Context, conv, authorPID string, topic ...string) (*envelope.HumanTurn, error) {
+	return a.conversationPlan(ctx, conv, authorPID, "", false, topic...)
+}
+
+// livePlan adds exact outside helper readers to ordinary conversation traffic.
+// Existing addressed requests retain their executable identity and route.
+func (a *Agent) livePlan(ctx context.Context, conv, authorPID, sourcePID string, topic ...string) (*envelope.HumanTurn, error) {
+	return a.conversationPlan(ctx, conv, authorPID, sourcePID, true, topic...)
+}
+
+func (a *Agent) conversationPlan(ctx context.Context, conv, authorPID, sourcePID string, live bool, topic ...string) (*envelope.HumanTurn, error) {
 	m, err := a.dmMembers(conv)
 	if err != nil {
 		return nil, err
@@ -207,19 +236,39 @@ func (a *Agent) humanPlan(ctx context.Context, conv, authorPID string, topic ...
 	if err != nil {
 		return nil, err
 	}
+	// Member-hosted helpers already hold the admitted DM originals. Only
+	// outside readers require extra encrypted copies and public scope proof.
+	helperReader, humanReader := false, false
+	sourceHost := a.Address
+	for _, p := range infos {
+		if p.PID == sourcePID {
+			sourceHost = p.Host.Address
+		}
+	}
+	for _, p := range infos {
+		if p.Topic != nil && (len(topic) == 0 || *p.Topic != topic[0]) || !p.Following() {
+			continue
+		}
+		humanReader = humanReader || p.Role == protocol.RoleHuman
+		helperReader = helperReader || live && p.Role == "" && p.External && p.Host.Address != sourceHost
+	}
+	writerProof := sourcePID != "" && (helperReader || authorPID == sourcePID && humanReader)
+	if live && sourcePID != "" && authorPID == sourcePID && !helperReader && !humanReader {
+		return nil, nil
+	}
 	h := &envelope.HumanTurn{AuthorPID: authorPID, Audience: []envelope.HumanScope{}, Proof: []protocol.ParticipationEvent{}}
 	slices.SortFunc(infos, func(x, y ParticipationInfo) int { return strings.Compare(x.PID, y.PID) })
 	for _, p := range infos {
 		if p.Topic != nil && (len(topic) == 0 || *p.Topic != topic[0]) {
 			continue
 		}
-		if p.Role != protocol.RoleHuman {
+		if p.Role != protocol.RoleHuman && !(helperReader && p.Role == "" && p.External || writerProof && p.PID == sourcePID) {
 			continue
 		}
 		if p.State == PartActive && p.Held != 0 {
 			return nil, errors.New("human: audience evidence is pending")
 		}
-		if !p.HumanActive() {
+		if p.State != PartActive || p.Held != 0 {
 			continue
 		}
 		if _, err := a.refreshPerson(ctx, p.Host.Person, false); err != nil {
@@ -229,7 +278,7 @@ func (a *Agent) humanPlan(ctx context.Context, conv, authorPID string, topic ...
 		if err != nil {
 			return nil, err
 		}
-		if !p.HumanActive() {
+		if p.State != PartActive || p.Held != 0 {
 			return nil, errors.New("human: audience changed during send; review again")
 		}
 		events, err := a.store.participationEvents(conv, p.PID)
@@ -408,6 +457,9 @@ func (a *Agent) admitHumanTurn(ctx context.Context, env envelope.Envelope, in en
 		if err := humanTurnAuthorization(tx, in, env.From, sender.Fingerprint(), a.Address, a.Self().Fingerprint(), false); err != nil {
 			return err
 		}
+		if err := humanDMOutputRequest(tx, in, a.Address, a.Self().Fingerprint()); err != nil {
+			return err
+		}
 		if root.Kind == protocol.ConvKindGroup {
 			m, err := membersIn(tx, in.Conv)
 			if err != nil {
@@ -463,6 +515,9 @@ func (a *Agent) mayDeliverHuman(env envelope.Envelope, in envelope.Inner, state,
 		return true, false, nil
 	}
 	err := humanTurnAuthorization(a.store.db, in, a.Address, a.Self().Fingerprint(), env.To, capturedFP, false)
+	if err == nil {
+		err = humanDMOutputRequest(a.store.db, in, a.Address, a.Self().Fingerprint())
+	}
 	if err != nil {
 		if e := a.store.setOutboxState(env.ID, stateNotDelivered, "not sent: "+err.Error(), ""); e != nil {
 			return true, false, e

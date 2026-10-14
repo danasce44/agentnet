@@ -6,6 +6,10 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Let active helpers see new human messages and verified peer-agent replies
+  in their invited DM, group or topic. Preserve selected earlier history,
+  dismissal, exact reply binding and existing native execution routes.
+
 - Allow admitted agents to attach files in their own-device DMs, matching
   existing group and external-agent sends, with current participation checks.
 

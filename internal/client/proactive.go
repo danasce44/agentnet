@@ -38,9 +38,11 @@ func (a *Agent) SendAgentMessage(ctx context.Context, pid, topic, body string, f
 	var audience *envelope.HumanTurn
 	if p.Member {
 		audience, err = a.roomAudience(p.Conv, p.PID, topic)
-		if err != nil {
-			return ConvSent{}, err
-		}
+	} else if root.Kind == protocol.ConvKindDM {
+		audience, err = a.livePlan(ctx, p.Conv, p.PID, p.PID, topic)
+	}
+	if err != nil {
+		return ConvSent{}, err
 	}
 	out := ConvOutgoing{Kind: envelope.KindMessage, Body: body, Topic: topic, Files: files, PID: p.PID, AgentID: p.AgentID, Origin: envelope.OriginAgentPrefix + "proactive", Emotion: "neutral", human: audience}
 	out.claim = func(tx *sql.Tx, _ string) error {

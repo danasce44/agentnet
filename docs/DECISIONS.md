@@ -711,3 +711,23 @@ need no operator report. Wrong/removed/pending/frozen or agent-host keys cannot
 exercise owner authority. Queueing or host acceptance of Stop is not process
 termination; only its terminal state confirms that. Prior tool effects are not
 undone, and an old decision never cancels a subsequent attempt or another job.
+
+## October 14, 2026 — live context for invited helpers (MEL-633)
+
+An active helper follows new messages within its invited chat or topic,
+including ordinary human turns and verified replies from other agents. This
+applies to DMs and groups, with member-hosted and outside helpers. Selected
+earlier history remains an exact grant; dismissal ends future delivery. Reading
+a turn never executes it or exposes another agent's native session.
+
+Repair the admission transition using the existing `room_context` ledger, and
+send outside DM hosts recipient-encrypted copies with exact signed scope and
+acceptance evidence. Native execution routes, request IDs and reply bindings
+remain authoritative. No new public operation, service or database migration
+is needed. Existing DM invitations recover only native originals admitted
+strictly after their exact host's native signed acceptance; copied history,
+snapshots and sender timestamps cannot establish that boundary.
+
+This supersedes the earlier selected-and-addressed-only DM context wording.
+The existing group captured-audience model remains in place. Source tests are
+separate from the integrated v0.8.28 release and native qualification gates.

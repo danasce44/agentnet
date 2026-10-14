@@ -463,9 +463,10 @@ func (p ParticipationInfo) HumanActive() bool {
 }
 
 // follows reports whether the participation is of the room's captured
-// audience, in whatever state: a human guest, or a room participant.
+// audience, in whatever state: a human guest, a group participant, or an
+// invited DM helper. This is read access, never conversation membership.
 func (p ParticipationInfo) follows() bool {
-	return p.Role == protocol.RoleHuman || p.Audience == protocol.AudienceRoom
+	return p.Role == protocol.RoleHuman || p.Audience == protocol.AudienceRoom || p.Role == "" && p.Invite != "" && p.Audience == protocol.AudienceConversation
 }
 
 // Following reports whether the participation is in the room's captured
@@ -790,6 +791,11 @@ func (a *Agent) participationScope(ctx context.Context, info ParticipationInfo) 
 		if e.Type == protocol.EventInvite && e.Hash() == info.Invite && (e.Group == nil || e.Audience == protocol.AudienceRoom) && e.Author.Address == a.Address && e.Author.Fingerprint == a.Self().Fingerprint() {
 			s := protocol.ScopeOf(e, time.Now().Unix())
 			s.Sign(a.id.Sign)
+			// Lazy public proof is a separate control send, never the UI's
+			// queued message identity. Preserve that identity for its own turn.
+			if queuedSend(ctx) || ctx.Value(proposalSendIDKey{}) != nil {
+				ctx = context.WithValue(ctx, proposalSendIDKey{}, protocol.NewID())
+			}
 			return s, a.recordAndSend(ctx, s)
 		}
 	}
@@ -1358,11 +1364,10 @@ const defaultContextBytes = 64 << 10
 
 // ParticipationContext shows, for an invited or active participation, what
 // its agent would be given with a new request now (agentContext): the
-// granted earlier messages held here, then the requests to it and its
-// outputs, newest kept first within limit bytes as rendered for the agent
-// (limit <= 0: the default). Nothing else of the DM, no replicas or event
-// records, nothing of any other conversation; an output claimed by any
-// other device is not the agent's.
+// granted earlier messages held here and admitted live turns within its
+// active chat/topic, including verified replies by other agents. Newest
+// turns fit within limit bytes (limit <= 0: the default). Event records,
+// ungranted snapshots, other chats/topics and native sessions stay outside.
 func (a *Agent) ParticipationContext(pid string, limit int) (ParticipationContext, error) {
 	info, err := a.Participation(pid)
 	if err != nil {
