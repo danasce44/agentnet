@@ -6,6 +6,16 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
+Current qualification source9e7dc6e5: actual Codex concurrency/steering81.477s,
+mixed exactv0.8.27 57.701s, real IndexedDB race1.701s and native Linux/macOS
+client/UI succeed. Final client race has ten passing partitions; measured-budget
+correction preserves exact1206 coverage and reruns only2/4/9/10. Both UI race
+partitions pass. Original-key APK8bbcf474 build/units/lint/16KiB verify pass;
+synthetic retained Android recovery and final Windows remain pending. All-skins
+passes except three Zoom stored-message touch assertions under focused review.
+MEL587 remains an owner release hold with no causal fix. No tag/publication.
+
+
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
 items, stable chat/topic links (MEL-625) and four qualification tracks. Its Linear
 milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
