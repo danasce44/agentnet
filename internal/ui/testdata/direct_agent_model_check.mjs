@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import * as model from '../web/src/model.ts';
+import model from './comic_model.mjs';
 import { pendingSends } from '../static/optimistic.mjs';
 import { deviceHistoryDirection } from '../static/devicehistory.mjs';
 import { readFile } from 'node:fs/promises';

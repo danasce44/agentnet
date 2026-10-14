@@ -50,6 +50,7 @@ a contract: AgentNet keeps them on the same elements, and
 | `unread` | The unread count |
 | `conversation` | An open conversation |
 | `conversation-head` | Its header |
+| `agent-runtime` | The selected own agent's reported model and reasoning, below the header or above the composer |
 | `topic-bar` | Its topics bar |
 | `timeline` | The message log |
 | `message` | One message (`data-from`: me, person, agent) |

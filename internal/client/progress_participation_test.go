@@ -80,12 +80,12 @@ func TestProgressParticipationAuthorityCapsAndEnd(t *testing.T) {
 
 	// Bob reads neither prg1 nor, then, the outside participation cap: each
 	// copy to bob waits; alice's copies go.
-	signCapsNow(t, w.bob, without(ownCaps, protocol.CapProgress))
+	signCapsNow(t, w.bob, without(olderRoomFixtureCaps(ownCaps), protocol.CapProgress))
 	noProgress, err := host.SendProgress(tctx(t), w.alice.Address, q.ID, "BOB LACKS PRG1", 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	signCapsNow(t, w.bob, without(ownCaps, protocol.CapExternalParticipation))
+	signCapsNow(t, w.bob, without(olderRoomFixtureCaps(ownCaps), protocol.CapExternalParticipation))
 	noOutside, err := host.SendProgress(tctx(t), w.alice.Address, q.ID, "BOB LACKS APX1", 0, false)
 	if err != nil {
 		t.Fatal(err)

@@ -5,9 +5,10 @@ import { readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { api, errorText } from '../web/src/api.ts';
-import { messageTarget } from '../web/src/model.ts';
+import model from './comic_model.mjs';
 import { pendingSends } from '../static/optimistic.mjs';
 import { mainPreferences, personRoots } from '../skins/shared/person-topics.mjs';
+const { messageTarget } = model;
 
 const storeSource = stripTypeScriptTypes(
   (await readFile(new URL('../web/src/store.ts', import.meta.url), 'utf8'))

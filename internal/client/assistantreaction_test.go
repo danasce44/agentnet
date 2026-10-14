@@ -164,7 +164,7 @@ func TestAssistantReactionDeviceThread(t *testing.T) {
 	}
 
 	// An older reader: the reaction waits, then arrives once.
-	signCapsNow(t, w.alice, without(ownCaps, protocol.CapAgentReaction))
+	signCapsNow(t, w.alice, without(olderRoomFixtureCaps(ownCaps), protocol.CapAgentReaction))
 	held, err := w.bob.reactAsAssistant(tctx(t), q.ID, "claude", "✅", false)
 	if err != nil || held.State != stateConvWaiting {
 		t.Fatalf("reaction to an older reader: %+v %v", held, err)
@@ -368,11 +368,12 @@ func TestAssistantReactionGroupParticipation(t *testing.T) {
 func addCapSuccessor(t *testing.T, a *Agent, cap string) {
 	t.Helper()
 	for session, latest := range sessionRecords(t, a) {
-		caps := append(slices.Clone(latest.Caps), cap)
-		slices.Sort(caps)
-		caps = slices.Compact(caps)
+		caps := withCap(latest.Caps, cap)
 		rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: max(latest.TS+1, time.Now().Unix())}
 		rec.Sign(a.id.Sign)
+		if err := rec.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 			t.Fatal(err)
 		}

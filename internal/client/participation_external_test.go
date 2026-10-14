@@ -382,9 +382,12 @@ func TestExternalAgentProofReplayAndQueuedGates(t *testing.T) {
 	if err := host.hub.do(tctx(t), "GET", "/v1/agents/"+label+"/"+name+"/profile", nil, &prof); err != nil || len(prof.Sessions) != 1 {
 		t.Fatalf("profile %v %v", prof.Sessions, err)
 	}
-	caps := without(ownCaps, protocol.CapExternalParticipation)
+	caps := without(olderRoomFixtureCaps(ownCaps), protocol.CapExternalParticipation)
 	cap := protocol.CapsRecord{Address: host.Address, Session: prof.Sessions[0], Caps: caps, TS: time.Now().Unix() + 100}
 	cap.Sign(host.id.Sign)
+	if err := cap.ValidateAdvertisement(); err != nil {
+		t.Fatalf("fixture capability record (%d names): %v", len(cap.Caps), err)
+	}
 	if err := host.hub.do(tctx(t), "PUT", "/v1/caps", cap, nil); err != nil {
 		t.Fatal(err)
 	}

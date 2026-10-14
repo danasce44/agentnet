@@ -58,7 +58,7 @@ func publishGroupFixtureCaps(t *testing.T, a *Agent, group bool) {
 	}
 	caps := slices.Clone(ownCaps)
 	if !group {
-		caps = without(ownCaps, protocol.CapGroup)
+		caps = without(olderRoomFixtureCaps(ownCaps), protocol.CapGroup)
 	}
 	for _, session := range profile.Sessions {
 		ts := time.Now().Unix() + 100
@@ -67,6 +67,9 @@ func publishGroupFixtureCaps(t *testing.T, a *Agent, group bool) {
 		}
 		rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: ts}
 		rec.Sign(a.id.Sign)
+		if err := rec.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(rec.Caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 			t.Fatal(err)
 		}

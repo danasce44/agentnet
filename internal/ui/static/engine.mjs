@@ -9698,7 +9698,14 @@ export class Engine {
     const lid = this.localSendID(n.id), firstID = wire.newID(), at = this.now(), plain = [], recs = [];
     for (const f of n.files || []) plain.push({ name: wire.safeName(f.name), bytes: f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(await f.arrayBuffer()) });
     checkFiles(plain.map(f => ({ name: f.name, size: f.bytes.length })));
-    const prepared = request ? null : await this.prepareReceiverRequest(n.receiver, { id: firstID, lid, conv: c.id, root: c.root, ts: Math.floor(at / 1000), kind: "message", body: n.body, quote:n.quote||"",reply_to: n.reply_to || "", origin: "ui", pid: h.author_pid || "", human: h }, plain, checks);
+    let receiverGroup;
+    if (c.kind === "group" && n.receiver?.host) {
+      const replyKeys = [];
+      for (const member of evidence.members.values()) if (member.person !== this.me.person) for (const d of member.devices || []) replyKeys.push({ key: d.fingerprint, admission: evidence.members.epochs.get(d.fingerprint) });
+      replyKeys.sort((a, b) => a.key.localeCompare(b.key));
+      receiverGroup = { group_admission: groupAdmission, group_replies: replyKeys };
+    }
+    const prepared = request ? null : await this.prepareReceiverRequest(n.receiver, { id: firstID, lid, conv: c.id, root: c.root, ts: Math.floor(at / 1000), kind: "message", body: n.body, quote:n.quote||"",reply_to: n.reply_to || "", origin: "ui", pid: h.author_pid || "", human: h, ...receiverGroup }, plain, checks);
     const turn = request ? { kind: n.kind, pid: n.pid, target: n.target } : { kind: "message", pid: h.author_pid || "" };
     for (const d of devices) {
       // A changed key refuses the whole turn until it is trusted, as a DM

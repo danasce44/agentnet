@@ -96,7 +96,17 @@ func TestDesktopAlertOnceAfterGrace(t *testing.T) {
 	if pendingAlerts(t, w.bob) != 1 {
 		t.Fatal("default-unmuted chat needs no sender grant")
 	}
+	// Finish the default phase before measuring a separate coalesced alert.
+	// An earlier alert must not satisfy the one/two phase's shown-count wait.
+	eventually(t, "the default-unmuted alert", func() bool { return n.count() == 1 && pendingAlerts(t, w.bob) == 0 })
+	n.mu.Lock()
+	defaultBody, defaultArgv := n.bodies[0], n.argvs[0]
+	n.mu.Unlock()
+	if defaultBody != "AgentNet: New activity" || !slices.Equal(defaultArgv, []string{"open-page", conv}) {
+		t.Fatalf("default alert: %q %v", defaultBody, defaultArgv)
+	}
 	allowAliceAt(t, w)
+	shownBefore := n.count()
 	queued := time.Now()
 	sendAt(t, w.alice, w.bob, conv, ConvOutgoing{Body: "one"})
 	sendAt(t, w.alice, w.bob, conv, ConvOutgoing{Body: "two"})
@@ -105,10 +115,10 @@ func TestDesktopAlertOnceAfterGrace(t *testing.T) {
 	if inGrace && pending != 1 {
 		t.Fatal("not one pending alert for the conversation")
 	}
-	eventually(t, "the alert", func() bool { return n.count() >= 1 })
+	eventually(t, "the new alert", func() bool { return n.count() >= shownBefore+1 })
 	time.Sleep(600 * time.Millisecond)
 	n.mu.Lock()
-	body, argv := n.bodies[0], n.argvs[0]
+	body, argv := n.bodies[shownBefore], n.argvs[shownBefore]
 	n.mu.Unlock()
 	if body != "AgentNet: New activity" || !slices.Equal(argv, []string{"open-page", conv}) {
 		t.Fatalf("alert: %q %v", body, argv)
@@ -117,8 +127,8 @@ func TestDesktopAlertOnceAfterGrace(t *testing.T) {
 		t.Logf("the two sends outlasted the grace (%v past it): \"two\" may have queued its own alert, so \"once\" is not observable this run", time.Since(queued.Add(alertGrace)))
 		return
 	}
-	if n.count() != 1 || pendingAlerts(t, w.bob) != 0 {
-		t.Fatalf("alerts: shown %d, pending %d", n.count(), pendingAlerts(t, w.bob))
+	if n.count() != shownBefore+1 || pendingAlerts(t, w.bob) != 0 {
+		t.Fatalf("alerts: shown %d (baseline %d), pending %d", n.count(), shownBefore, pendingAlerts(t, w.bob))
 	}
 }
 

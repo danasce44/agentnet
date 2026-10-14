@@ -23,6 +23,9 @@ func humanTestCaps(t *testing.T, a *Agent) {
 	for _, session := range profile.Sessions {
 		rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: time.Now().Unix() + 100}
 		rec.Sign(a.id.Sign)
+		if err := rec.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(rec.Caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 			t.Fatal(err)
 		}

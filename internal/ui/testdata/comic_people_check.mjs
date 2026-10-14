@@ -1,10 +1,10 @@
 // Comic's people model (MEL-529, MEL-525): a device is an agent only when it
 // says it runs one; own devices are you; other people's devices are those
 // people; look-alike names get a short key. model.ts holds every decision
-// as a pure helper (type-only imports), so Node can import it directly.
+// as pure helpers; the fixture uses the shipped Markdown projection.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import * as m from "../web/src/model.ts";
+import m from "./comic_model.mjs";
 
 for (const v of JSON.parse(await readFile(new URL("./device_words.json", import.meta.url), "utf8")))
   assert.equal(m.niceDevice(v.in), v.out, "niceDevice(" + JSON.stringify(v.in) + ")");

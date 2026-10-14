@@ -214,7 +214,12 @@ const groupEngine = async (devices) => {
 {
   const cur = await device('alice/laptop', NEW), old = await device('bob/oldlaptop', OLD);
   const e = await groupEngine([cur, old]), root = e.root;
-  const carrier = async (d, tolerant) => e.groupCarrierCopy(root, wire.SubGroupContext, { v: 1, seq: 1, hash: 'a'.repeat(64) }, '{"v":1}', { address: d.address, fingerprint: d.fingerprint }, {}, false, tolerant);
+  const conv = await wire.rootID(root), realm = root.realm;
+  const admission = await wire.signGroupAdmission(e.keys, { conv, realm, person: me, roster: mh, seq: 0, prev: '', history: [], by: e.fp });
+  const state = await wire.signGroupState(e.keys, { v: 1, conv, realm, seq: 0, prev: '', title: root.title, members: [{ person: me, roster: mh, admin: true, admission }], actor: me, actor_roster: mh, by: e.fp });
+  const packet = wire.groupContextJSON({ root, proof: null, state, withdrawals: null });
+  assert.throws(() => wire.parseGroupContext({ ...JSON.parse(packet), v: 1 }), /unknown field v/); checks++;
+  const carrier = async (d, tolerant) => e.groupCarrierCopy(root, wire.SubGroupContext, { v: 1, seq: state.seq, hash: await wire.groupStateHash(state) }, packet, { address: d.address, fingerprint: d.fingerprint }, {}, false, tolerant);
   check((await carrier(cur, true)).state === 'queued', 'a current device: carrier queued');
   const waiting = await carrier(old, true);
   check(waiting.state === 'waiting' && waiting.detail.startsWith('peer_update: '), 'a device without grp1: its carrier waits, the publication goes on');

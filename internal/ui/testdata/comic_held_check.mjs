@@ -7,7 +7,7 @@
 // copies with a logical record, or sized like one in the same group. Equal
 // sizes alone prove nothing, and trust decisions keep a neutral count.
 import assert from "node:assert/strict";
-import * as m from "../web/src/model.ts";
+import m from "./comic_model.mjs";
 
 const me = { person: "p-me", label: "Sergey", address: "admin/zenbook", state: "self", devices: [{ address: "admin/zenbook" }, { address: "admin/bezos" }] };
 const bohdan = { person: "p-b", label: "Bohdan", address: "bohdan/windows-laptop", state: "pinned", devices: [{ address: "bohdan/windows-laptop" }] };

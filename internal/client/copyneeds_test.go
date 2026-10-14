@@ -170,7 +170,7 @@ func TestEmptyBodyHistoryCopyReleased(t *testing.T) {
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, w.bob.Address, "", `{"v":2}`, stateConvWaiting, time.Now().Unix(), conv, protocol.NewID(), envelope.KindMessage, time.Now().UnixMilli(), envelope.SubHistory, protocol.CapExternalParticipation, bob.Fingerprint(), WaitPeerUpdate+"older reader"); err != nil {
 		t.Fatal(err)
 	}
-	signCapsAfter(t, w.bob, without(ownCaps, protocol.CapExternalParticipation)) // an older reader
+	signCapsAfter(t, w.bob, without(olderRoomFixtureCaps(ownCaps), protocol.CapExternalParticipation)) // an older reader
 	feats, err := w.alice.relayFeatures(tctx(t))
 	if err != nil {
 		t.Fatal(err)

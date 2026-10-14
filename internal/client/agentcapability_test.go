@@ -28,10 +28,13 @@ func TestNamedAgentOfflineQueueRechecksCapability(t *testing.T) {
 			// Explicitly model either generation; the current program reads agi1.
 			caps := slices.Clone(ownCaps)
 			if !capable {
-				caps = without(caps, protocol.CapAgentIdentity)
+				caps = without(olderRoomFixtureCaps(caps), protocol.CapAgentIdentity)
 			}
 			record := protocol.CapsRecord{Address: w.bob.Address, Session: prof.Sessions[0], Caps: caps, TS: time.Now().Unix() + 100}
 			record.Sign(w.bob.id.Sign)
+			if err := record.ValidateAdvertisement(); err != nil {
+				t.Fatalf("fixture capability record (%d names): %v", len(record.Caps), err)
+			}
 			if err := w.bob.hub.do(tctx(t), "PUT", "/v1/caps", record, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -158,9 +161,12 @@ func TestNamedConversationWaitsForRequiredCapability(t *testing.T) {
 	if err := w.alice.hub.do(tctx(t), "GET", "/v1/agents/"+label+"/"+device+"/profile", nil, &profile); err != nil || len(profile.Sessions) != 1 {
 		t.Fatalf("synthetic session: %+v %v", profile.Sessions, err)
 	}
-	oldCaps := without(ownCaps, protocol.CapAgentIdentity)
+	oldCaps := without(olderRoomFixtureCaps(ownCaps), protocol.CapAgentIdentity)
 	oldRecord := protocol.CapsRecord{Address: w.bob.Address, Session: profile.Sessions[0], Caps: oldCaps, TS: time.Now().Unix() + 100}
 	oldRecord.Sign(w.bob.id.Sign)
+	if err := oldRecord.ValidateAdvertisement(); err != nil {
+		t.Fatalf("fixture capability record (%d names): %v", len(oldRecord.Caps), err)
+	}
 	if err := w.bob.hub.do(tctx(t), "PUT", "/v1/caps", oldRecord, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -180,6 +186,9 @@ func TestNamedConversationWaitsForRequiredCapability(t *testing.T) {
 	}
 	record := protocol.CapsRecord{Address: w.bob.Address, Session: profile.Sessions[0], Caps: slices.Clone(ownCaps), TS: oldRecord.TS + 1}
 	record.Sign(w.bob.id.Sign)
+	if err := record.ValidateAdvertisement(); err != nil {
+		t.Fatalf("fixture capability record (%d names): %v", len(record.Caps), err)
+	}
 	if err = w.bob.hub.do(tctx(t), "PUT", "/v1/caps", record, nil); err != nil {
 		t.Fatal(err)
 	}

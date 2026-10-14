@@ -389,6 +389,10 @@ func TestCodexPresetInPlainDirectory(t *testing.T) {
 			t.Fatalf("reply %+v", r)
 		}
 	}
+	questionRef, taskRef := sessionOf(t, w.bob, q.ID), sessionOf(t, w.bob, task.ID)
+	if questionRef == nil || taskRef == nil || questionRef.ID == taskRef.ID {
+		t.Fatalf("fresh question/task threads: question=%+v task=%+v", questionRef, taskRef)
+	}
 	runs := st.runs()
 	if len(runs) != 2 || runs[0] != "run app-server" || runs[1] != "run app-server" {
 		t.Fatalf("codex runs: %v", runs)

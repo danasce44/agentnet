@@ -174,10 +174,32 @@ func TestSuspendedStreamKeepsCustody(t *testing.T) {
 	// and committing the message must not delay this reader's first ping ack.
 	id := sendAs(t, h, "v1.2.0", alice, bob)
 	old := pushStream(t, h, bob, "v1.1.0") // its first event, release, read
+	h.streams.mu.Lock()
+	var measured *subscriber
+	for sub := range h.streams.subs[bob.addr] {
+		measured = sub // this test opens one connection
+	}
+	h.streams.mu.Unlock()
+	phase, phaseStarted := "suspended-update-event", time.Now()
+	var ackElapsed, ackAgeBefore time.Duration
+	acks := 0
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("phase=%s elapsed=%v lease=%v ping_to_ack_return=%v ack_age_before=%v successful_acks=%d captured=%t", phase, time.Since(phaseStarted), 2*hb, ackElapsed, ackAgeBefore, acks, measured != nil)
+		if measured != nil {
+			h.streams.mu.Lock()
+			_, live := h.streams.subs[bob.addr][measured]
+			h.streams.mu.Unlock()
+			t.Logf("suspended stream: live=%t last_ack_age=%v", live, time.Since(time.Unix(0, measured.lastAck.Load())))
+		}
+	}()
 	if e := <-old; e.name != "update_required" || e.data != `{"latest":"v1.2.0","url":"https://github.com/misunders2d/agentnet/releases/tag/v1.2.0"}` {
 		t.Fatalf("after release: %+v", e)
 	}
 	for until := time.Now().Add(4 * 2 * hb); time.Now().Before(until); { // several leases
+		phase, phaseStarted = "suspended-ping-read", time.Now()
 		e, ok := <-old
 		if !ok {
 			t.Fatal("the suspended stream ended although its pings were acknowledged")
@@ -185,12 +207,20 @@ func TestSuspendedStreamKeepsCustody(t *testing.T) {
 		if e.name != "ping" {
 			t.Fatalf("the suspended stream carried %s: %s", e.name, e.data)
 		}
+		phase, phaseStarted = "suspended-ping-ack", time.Now()
+		if measured != nil {
+			ackAgeBefore = time.Since(time.Unix(0, measured.lastAck.Load()))
+		}
 		var p protocol.PingAck
 		json.Unmarshal([]byte(e.data), &p)
-		if c, b := bob.callAs(t, h, "v1.1.0", "POST", "/v1/stream/ack", p); c != http.StatusNoContent {
+		c, b := bob.callAs(t, h, "v1.1.0", "POST", "/v1/stream/ack", p)
+		ackElapsed = time.Since(phaseStarted)
+		if c != http.StatusNoContent {
 			t.Fatalf("ping acknowledgement: %d %s", c, b)
 		}
+		acks++
 	}
+	phase, phaseStarted = "suspended-custody-and-update", time.Now()
 	state := func() string {
 		_, _, s, err := h.store.messageState(id, alice.addr)
 		if err != nil {
@@ -385,15 +415,39 @@ func TestAdminRecommendationNeverSuspends(t *testing.T) {
 		t.Fatalf("an older release after the grace period: %d %s", c, b)
 	}
 	events := pushStream(t, h, bob, "v1.1.0")
+	h.streams.mu.Lock()
+	var measured *subscriber
+	for sub := range h.streams.subs[bob.addr] {
+		measured = sub // this test opens one connection
+	}
+	h.streams.mu.Unlock()
+	phase, phaseStarted := "recommendation-update-event", time.Now()
+	var clearElapsed time.Duration
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("phase=%s elapsed=%v lease=%v admin_clear=%v captured=%t", phase, time.Since(phaseStarted), 200*time.Millisecond, clearElapsed, measured != nil)
+		if measured != nil {
+			h.streams.mu.Lock()
+			_, live := h.streams.subs[bob.addr][measured]
+			h.streams.mu.Unlock()
+			t.Logf("recommendation stream: live=%t last_ack_age=%v", live, time.Since(time.Unix(0, measured.lastAck.Load())))
+		}
+	}()
 	if e := <-events; e.name != "update_required" || e.data != `{"latest":"v1.2.0","url":"https://github.com/misunders2d/agentnet/releases/tag/v1.2.0"}` {
 		t.Fatalf("suspended stream: %+v", e)
 	}
-	if c, b := admin.callAs(t, h, "v1.2.0", "POST", "/v1/admin/release", protocol.ReleaseRequest{Clear: true}); c != http.StatusOK {
+	phase, phaseStarted = "recommendation-clear", time.Now()
+	c, b := admin.callAs(t, h, "v1.2.0", "POST", "/v1/admin/release", protocol.ReleaseRequest{Clear: true})
+	clearElapsed = time.Since(phaseStarted)
+	if c != http.StatusOK {
 		t.Fatalf("clear: %d %s", c, b)
 	}
 	if r, _ := h.currentRelease(); r != (protocol.Release{Version: "v1.2.0", URL: protocol.ReleaseURL("v1.2.0")}) {
 		t.Fatalf("after clear: %+v", r)
 	}
+	phase, phaseStarted = "recommendation-release-read", time.Now()
 	if e := nextEvent(t, h, bob, "v1.1.0", events); e.name != "release" || !strings.Contains(e.data, `"version":"v1.2.0"`) {
 		t.Fatalf("suspended stream after clear: %+v", e)
 	}

@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +20,9 @@ import (
 
 // Real installed Codex, one ordinary synthetic daemon, one selected executor,
 // two fresh conversations and an actual turn/steer acknowledgment. Opt-in only:
-// config/model/reasoning/tools/permissions stay inherited, with no approval reply
-// or native retry. Nonce files prove native tools ran; stored refs, reservations,
+// config/model/reasoning/tools/permissions stay inherited. Only each exact
+// upfront readiness command may receive native approval; never retry a denial.
+// Nonce files prove native tools ran; stored refs, reservations,
 // attempts, staged bytes and the recipient's verified answer prove the journey.
 func TestCodexActualIndependentSteering(t *testing.T) {
 	configured := os.Getenv("AGENTNET_LIVE_CODEX_STEERING")
@@ -66,6 +69,13 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 	dm := newDM(t, w.alice, w.bob)
 	convs := []string{dm, packet.State.Conv}
 	ids, lids, pids, ready, tokens := make([]string, 2), make([]string, 2), make([]string, 2), make([]string, 2), make([]string, 2)
+	commands, wrapped := make([]string, 2), make([]string, 2)
+	var callbacks [2]int
+	var approvals [2]string
+	seenCallbacks := map[string]bool{}
+	defer func() {
+		t.Logf("genuine native readiness callbacks observed %d/%d; exact approvals submitted %t/%t", callbacks[0], callbacks[1], approvals[0] != "", approvals[1] != "")
+	}()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	wait := func(what string, condition func() bool) {
@@ -89,7 +99,41 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 			t.Fatal("native run proof unavailable", err)
 		}
 		if pending := w.alice.nativeRequestFor(id); pending != nil {
-			t.Fatalf("native request %s needs %s approval; no approval/config override", id, pending.Method)
+			i := slices.Index(ids, id)
+			if i < 0 {
+				t.Fatal("native readiness callback has no exact fixture job; no response")
+			}
+			if !seenCallbacks[pending.Token] {
+				seenCallbacks[pending.Token] = true
+				callbacks[i]++
+			}
+			w.alice.workerLanes.Lock()
+			lane, owned := w.alice.workerLanes.jobs[id]
+			w.alice.workerLanes.Unlock()
+			if approvals[i] != "" || proof.state != stateRunning || proof.attempt != 1 || proof.executor != agent.ID || proof.thread == "" ||
+				!owned || lane.executor != agent.ID || lane.native != proof.thread ||
+				pending.Request != id || pending.Host != w.alice.Address || pending.Key != w.alice.Self().Fingerprint() || pending.AgentID != agent.ID || pending.Harness != "codex" ||
+				pending.Attempt != 1 || pending.Thread != proof.thread || pending.Turn == "" || pending.Item == "" || !protocol.ValidID(pending.Token) ||
+				pending.Unsupported != "" || pending.CancelRun || !slices.Contains(pending.Choices, "allow") {
+				t.Fatal("native readiness approval is duplicate, unsupported or differs from current job/executor/thread/attempt; no response")
+			}
+			if _, err := os.Stat(ready[i]); !os.IsNotExist(err) {
+				t.Fatal("native readiness approval is not before the nonce file's creation; no response")
+			}
+			if own, err := w.alice.nativeOwnerHumanIn(w.alice.store.db, w.alice.Address, pending.Key); err != nil || !own {
+				t.Fatal("native readiness approval no longer has exact own-human authority; no response")
+			}
+			if err := nativeFixtureApprovalError(pending, commands[i], wrapped[i], dir); err != nil {
+				// Optional private evidence cannot change this exact refusal.
+				_ = writeNativeSteeringRefusalDiagnostic(os.Getenv("AGENTNET_LIVE_CODEX_STEERING_REFUSAL"), pending, commands[i], wrapped[i])
+				t.Fatal(err)
+			}
+			// Answer the genuine pending token through the existing current-job
+			// validator; the bridge still checks its exact native turn at handover.
+			if err := w.alice.RespondNativeRequest(id, pending.Key, 1, nativeResponseText(pending.Token, "allow"), protocol.NewID()); err != nil {
+				t.Fatal("exact upfront native readiness approval refused; no retry", err)
+			}
+			approvals[i] = pending.Token
 		}
 		if proof.state != stateRunning && proof.state != stateAgentWaiting && proof.state != stateAnswered && proof.state != stateCancelReq && proof.state != stateCancelled {
 			t.Fatalf("native request %s ended or refused as %s: %s; no retry", id, proof.state, proof.detail)
@@ -104,8 +148,9 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 		pids[i] = part.PID
 		wait("own named agent admission", func() bool { return stateAt(t, w.alice, part.PID).Claimable() })
 		ready[i], tokens[i] = filepath.Join(dir, fmt.Sprintf("native-ready-%d", i)), "NATIVE_READY_"+protocol.NewID()
-		command := fmt.Sprintf("printf '%%s' %q > %q; sleep 60", tokens[i], ready[i])
-		prompt := fmt.Sprintf("Isolated native compatibility journey authorized by the local human. Use your normal shell tool exactly once to run this harmless command in this owned temporary directory: %s . It writes only the readiness nonce file and sleeps for 60 seconds. Wait for the command to return. Process any explicit corrections to this request before answering; without a correction, give only INITIAL_ONLY_%s. Do not change setup or permissions, contact anyone, use unrelated files/tools/services or automatically retry a denied operation. If native permission requires approval or the operation is unavailable, report it honestly.", command, tokens[i])
+		commands[i] = fmt.Sprintf("printf '%%s' %q > %q; sleep 60", tokens[i], ready[i])
+		wrapped[i] = "/usr/bin/bash -lc " + strconv.Quote(commands[i]) + "\nNative execution environment: local"
+		prompt := fmt.Sprintf("Isolated native compatibility journey authorized by the local human. Use your normal shell tool exactly once to run this harmless command in this owned temporary directory: %s . It writes only the readiness nonce file and sleeps for 60 seconds. The human preauthorizes only this exact command in this working directory. If current native permissions require approval, use your native tool's upfront approval option before execution and wait for that exact approval. Do not first attempt a restricted write or retry any denied operation. Wait for the command to return. Process any explicit corrections to this request before answering; without a correction, give only INITIAL_ONLY_%s. Do not change setup or permissions, contact anyone, use unrelated files/tools/services or automatically retry a denied operation. If native permission requires approval or the operation is unavailable, report it honestly.", commands[i], tokens[i])
 		request, err := w.alice.AskAgent(ctx, part.PID, envelope.KindQuestion, prompt)
 		if err != nil {
 			t.Fatal(err)
@@ -221,4 +266,130 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 		t.Fatal("exact native attempt context checkpoint missing", err)
 	}
 	t.Logf("native steering accepted for %s into original %s/thread %s/attempt 1; staged bytes and recipient verified signed corrected answer %s proven", correction, ids[1], proofs[1].thread, answer.LID)
+}
+
+// Only the failing display and its two expected forms leave the temporary DB,
+// at an explicit private destination. Never serialize the NativeRequest itself.
+func writeNativeSteeringRefusalDiagnostic(path string, n *NativeRequest, command, wrapped string) bool {
+	const limit = 8 << 10
+	if path == "" || !filepath.IsAbs(path) || n == nil || len(n.Method)+len(n.CWD)+len(n.Operation)+len(command)+len(wrapped) > limit {
+		return false
+	}
+	record := struct {
+		Method    string    `json:"method"`
+		CWD       string    `json:"cwd"`
+		Operation string    `json:"operation"`
+		Expected  [2]string `json:"expected"`
+	}{n.Method, n.CWD, n.Operation, [2]string{command, wrapped}}
+	data, err := json.Marshal(record)
+	if err != nil || len(data) > limit {
+		return false
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return false
+	}
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(data)
+	}
+	closeErr := f.Close()
+	if err != nil || closeErr != nil {
+		_ = os.Remove(path)
+		return false
+	}
+	return true
+}
+
+func TestNativeSteeringRefusalDiagnostic(t *testing.T) {
+	command, wrapped := "FIXTURE_LITERAL", "FIXTURE_WRAPPED"
+	n := NativeRequest{Method: "item/commandExecution/requestApproval", CWD: "/owned/private-cwd", Operation: "PRIVATE_REJECTED_DISPLAY", Token: "OMITTED_CALLBACK_TOKEN", Key: "OMITTED_KEY", Reason: "OMITTED_PRIVATE_REASON", Thread: "OMITTED_THREAD", Questions: []NativeQuestion{{Question: "OMITTED_PRIVATE_PROMPT"}}}
+	refusal := nativeFixtureApprovalError(&n, command, wrapped, n.CWD)
+	if refusal == nil {
+		t.Fatal("unknown display was approved")
+	}
+	t.Run("private-allowlisted-record", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "refusal.json")
+		if !writeNativeSteeringRefusalDiagnostic(path, &n, command, wrapped) {
+			t.Fatal("private capture unavailable")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) > 8<<10 {
+			t.Fatal("private bounded record unavailable")
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+			t.Fatal("capture is not an owner-only regular file")
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(data, &fields) != nil || len(fields) != 4 {
+			t.Fatal("capture contains unexpected fields")
+		}
+		for field, want := range map[string]string{"method": n.Method, "cwd": n.CWD, "operation": n.Operation} {
+			var got string
+			if json.Unmarshal(fields[field], &got) != nil || got != want {
+				t.Fatal("capture changed an allowed field")
+			}
+		}
+		var expected [2]string
+		if json.Unmarshal(fields["expected"], &expected) != nil || expected != [2]string{command, wrapped} || strings.Contains(string(data), "OMITTED_") {
+			t.Fatal("capture omitted expected forms or exposed private callback fields")
+		}
+	})
+	for _, mode := range []string{"unset", "relative", "missing-parent", "oversize", "escaped-oversize"} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "refusal.json")
+			destination, current := path, n
+			switch mode {
+			case "unset":
+				destination = ""
+			case "relative":
+				cwd, err := os.Getwd()
+				if err != nil {
+					t.Fatal(err)
+				}
+				destination, err = filepath.Rel(cwd, path)
+				if err != nil {
+					t.Skip("temporary destination is on another volume")
+				}
+			case "missing-parent":
+				destination = filepath.Join(path, "refusal.json")
+			case "oversize":
+				current.Operation = strings.Repeat("x", 8<<10)
+			case "escaped-oversize":
+				current.Operation = strings.Repeat("\x00", 2000)
+			}
+			if writeNativeSteeringRefusalDiagnostic(destination, &current, command, wrapped) {
+				t.Fatal("invalid capture destination or oversized record accepted")
+			}
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatal("failed capture left a file or created a directory")
+			}
+		})
+	}
+	for _, link := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing-symlink-%t", link), func(t *testing.T) {
+			dir := t.TempDir()
+			path, kept := filepath.Join(dir, "refusal.json"), filepath.Join(dir, "kept")
+			if err := os.WriteFile(kept, []byte("UNCHANGED"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if link {
+				if err := os.Symlink(kept, path); err != nil {
+					t.Skip("symlink creation unavailable")
+				}
+			} else {
+				path = kept
+			}
+			if writeNativeSteeringRefusalDiagnostic(path, &n, command, wrapped) {
+				t.Fatal("existing destination was reused")
+			}
+			data, err := os.ReadFile(kept)
+			if err != nil || string(data) != "UNCHANGED" {
+				t.Fatal("existing destination or symlink target changed")
+			}
+		})
+	}
+	if after := nativeFixtureApprovalError(&n, command, wrapped, n.CWD); after == nil || after.Error() != refusal.Error() || strings.Contains(after.Error(), n.Operation) || strings.Contains(after.Error(), n.CWD) {
+		t.Fatal("capture changed refusal or exposed a private display/path in its console error")
+	}
 }

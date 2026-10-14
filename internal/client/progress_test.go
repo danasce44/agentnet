@@ -212,7 +212,7 @@ func TestProgressRequiresSignedCapabilityQueueAndRetry(t *testing.T) {
 	}
 
 	// alice's session now says it is an older program.
-	signCapsNow(t, w.alice, without(ownCaps, protocol.CapProgress))
+	signCapsNow(t, w.alice, without(olderRoomFixtureCaps(ownCaps), protocol.CapProgress))
 	if err = w.bob.requireParticipationCaps(tctx(t), w.alice.Self(), protocol.CapProgress); err == nil {
 		t.Fatal("older session accepted progress")
 	}

@@ -15,7 +15,7 @@ import (
 // program of before ROOM_V1 P1 (or an older session) advertises them.
 func withoutRoom(t *testing.T, a *Agent) {
 	t.Helper()
-	signCapsAfter(t, a, without(withCap(ownCaps, protocol.CapRoom), protocol.CapRoom))
+	signCapsAfter(t, a, without(olderRoomFixtureCaps(ownCaps), protocol.CapRoom))
 }
 
 func copyTo(t *testing.T, sent ConvSent, to string) string {

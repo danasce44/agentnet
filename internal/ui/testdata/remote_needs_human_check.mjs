@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {stripTypeScriptTypes} from 'node:module';
 import {runInNewContext} from 'node:vm';
-import * as model from '../web/src/model.ts';
+import model from './comic_model.mjs';
 const source=stripTypeScriptTypes((await readFile(new URL('../web/src/features/Approvals.words.ts',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replace(/^export \{.*\} from .*;\n/gm,'')).replace(/^export /gm,'');
 const words=runInNewContext(source+"\n({myAgent,myAgentSeed,phaseOf,remoteNeedsHumanDetail:typeof remoteNeedsHumanDetail==='function'?remoteNeedsHumanDetail:null})",{...model});
 const host='owner/bezos',local='owner/zenbook',id='request',key='verified-key',attempt=2;

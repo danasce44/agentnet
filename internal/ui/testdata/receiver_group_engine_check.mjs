@@ -59,11 +59,44 @@ async function checks(v){
   await accepted(await e.askAgent({pid,body:'Exact '+role+' addressed question',files:[file],reply_receiver:receiver}),r=>{assert.equal(r.pid,pid);assert.equal(r.group_replies.length,1);assert.equal(r.group_replies[0].key,r.target.fingerprint);assert.equal(!!r.group_replies[0].admission,role==='member');assert.equal(r.id,r.lid);});
  }
  assert.equal(prepared.length,3);
+ // Conversation-only legacy invites cannot supply public room scope. End
+ // those scenarios through signed records before installing real room vectors.
+ await assert.rejects(()=>e.sendDM({conv,body:'Legacy scope is not public',files:[file],reply_receiver:receiver}),/Participation's public scope is not held here yet/);
+ for(const role of ['member','visitor']){
+  await e.onMessage(v.participations[role+'-dismiss'].envelope);
+  assert.equal((await e.agentConv(v.participations[role+'-pid'])).info.state,'dismissed');
+ }
+ const inviterKeys={sign:await crypto.subtle.importKey('pkcs8',wire.unb64(v.challenge.alice_private),{name:'Ed25519'},false,['sign'])};
+ for(const [role,prefix] of [['member','p6-0'],['visitor','p6-1']]){
+  for(const kind of ['invite','accept'])await e.onMessage(v.participations[prefix+'-'+kind].envelope);
+  const scopeVector=v.participations[prefix+'-scope'],scope=wire.parseEvent(scopeVector.inner.body),pid=scope.pid;
+  const blocked=()=>e.sendDM({conv,body:'No public '+role+' scope',files:[file],reply_receiver:receiver}),before=(await e.store.all('outbox')).length;
+  await assert.rejects(blocked,/Participation's public scope is not held here yet/);
+  // Valid outer sender; tampering with the peer-signed scope cannot supply authority.
+  const forged={...scope,host:{...scope.host,agent_id:wire.newID()}},badID=wire.newID();
+  const bad=await wire.seal({...scopeVector.inner,id:badID,lid:wire.newID(),root:wire.rootJSON(root),body:wire.eventJSON(forged)},inviterKeys,pub);
+  await e.onMessage(bad);
+  assert.equal((await e.store.get('held',badID)).reason,'invalid');assert.equal(await e.store.get('inbox',badID),undefined);
+  await assert.rejects(blocked,/Participation's public scope is not held here yet/);
+  assert.equal((await e.store.all('outbox')).length,before,'missing/forged scope cannot prepare or send receiver copies');
+  await e.onMessage(scopeVector.envelope);
+  assert.ok(await e.store.get('inbox',wire.parseEnvelope(scopeVector.envelope).id),'genuine native '+role+' scope admitted');
+  assert.equal((await e.agentConv(pid)).info.scope,await wire.eventHash(scope),'only the exact peer-signed public scope counts');
+ }
  // Stop before release when persisted own identity changed; receipt and copies atomic.
  const last=await e.sendDM({conv,body:'Held across identity change',files:[file],reply_receiver:receiver}),row=(await e.store.all('outbox')).find(r=>r.receiver_setup?.request.lid===last.lid),old=await e.store.get('kv','person');
+ const roomRequest=(await wire.parseReceiverOperation(row.body,row.receiver_route,'',row.attachments||[])).request,expectedReplies=[];
+ for(const person of v.challenge.rosters.filter(r=>r.person!==roster.person)){
+  const admission=await wire.groupAdmissionHash(wire.groupMember(v.states[0],person.person).admission);
+  for(const device of person.devices)expectedReplies.push({key:await wire.fingerprint(await wire.parsePublic(device)),admission});
+ }
+ expectedReplies.sort((a,b)=>a.key.localeCompare(b.key));
+ assert.deepEqual(roomRequest.group_replies,expectedReplies,'signed room receiver commits exactly other current member keys/epochs, excluding own-linked and visitor keys');
+ assert.equal(roomRequest.group_admission,await wire.groupAdmissionHash(wire.groupMember(v.states[0],roster.person).admission));
+ assert.equal(roomRequest.human.audience.length,2,'both genuine signed room scopes stay captured');
  await e.store.write([{s:'kv',k:'person',v:{...old,devices:old.devices.filter(d=>d.address!==laptopPub.address)}}]);
  const route={...row.receiver_route,op:'ready'},raw=await wire.seal({v:1,id:wire.newID(),from:laptopPub.address,to:address,ts:Math.floor(now/1000),kind:'message',reply_to:row.id,body:wire.receiverOperationJSON({v:1}),receiver_route:route},laptopKeys,pub);await e.admit(raw,wire.parseEnvelope(raw));
  assert.equal((await e.store.get('held',wire.parseEnvelope(raw).id)).reason,'invalid');for(const r of row.receiver_setup.originals)assert.equal((await e.store.get('outbox',r.id)).state,'receiver_waiting');assert.equal((await e.store.get('receipts',wire.parseEnvelope(raw).id)).state,'quarantined');assert.equal(await e.store.get('inbox',wire.parseEnvelope(raw).id),undefined);
- return{ok:true,evidence:'existing native proof + ordinary/member-PID/visitor-PID prepared encrypted files; original audience epochs; exact ready/dedup; changed current-own identity refuses atomically; native executor untested'};
+ return{ok:true,evidence:'existing native proof + signed room scopes; missing/forged public scope refuses without copies; ordinary/member-PID/visitor-PID prepared encrypted files; original audience epochs; exact ready/dedup; changed current-own identity refuses atomically; native executor untested'};
 }
 for await(const line of createInterface({input:process.stdin})){let result;try{const r=JSON.parse(line);result=r.op==='setup'?await setup():r.op==='consent'?await consent(r.challenge):await checks(r.vectors);}catch(e){result={error:e.stack};}process.stdout.write(JSON.stringify(result)+'\n');}

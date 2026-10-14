@@ -39,6 +39,9 @@ func signCapsAfter(t *testing.T, a *Agent, caps []string) {
 		for _, session := range prof.Sessions {
 			rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: last + 1}
 			rec.Sign(a.id.Sign)
+			if err := rec.ValidateAdvertisement(); err != nil {
+				t.Fatalf("fixture capability record (%d names): %v", len(caps), err)
+			}
 			if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 				t.Fatal(err)
 			}

@@ -26,7 +26,7 @@ func installCodexSessionStub(t *testing.T, log string) string {
 	t.Setenv("AGENTNET_CODEX_SESSION_EXE", exe)
 	t.Setenv("AGENTNET_CODEX_SESSION_FIXTURE", "1")
 	t.Setenv("STUB_LOG", log)
-	t.Setenv("STUB_THREAD", "thread-1")
+	t.Setenv("STUB_THREAD", "fresh")
 	path := filepath.Join(t.TempDir(), "codex")
 	script := "#!/bin/sh\nprintf 'run %s\\n' \"$*\" >> \"$STUB_LOG\"\nexec \"$AGENTNET_CODEX_SESSION_EXE\" -test.run '^TestCodexSessionFixtureProcess$'\n"
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
@@ -63,6 +63,8 @@ func TestCodexSessionFixtureProcess(t *testing.T) {
 			json.Unmarshal(m.Params["threadId"], &id)
 			if m.Method == "thread/resume" {
 				thread = id
+			} else if thread == "fresh" {
+				thread = newUUID()
 			}
 			f, err := os.OpenFile(os.Getenv("STUB_LOG")+".rpc", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 			if err != nil {

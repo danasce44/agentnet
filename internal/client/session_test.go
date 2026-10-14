@@ -430,6 +430,9 @@ func TestCodexAnswerFromEvents(t *testing.T) {
 	}
 	for _, mode := range []string{"fail", "cut", "empty", "approval"} {
 		t.Setenv("STUB_TURN", mode)
+		// Each unrelated request starts a genuinely new native thread. Reusing
+		// thread-1 would test the saved-thread fence before reaching this mode.
+		t.Setenv("STUB_THREAD", "thread-"+mode)
 		sent, err := w.alice.SendMessage(tctx(t), Outgoing{To: w.bob.Address, Body: mode, Kind: envelope.KindQuestion})
 		if err != nil {
 			t.Fatal(err)

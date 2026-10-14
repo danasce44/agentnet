@@ -276,7 +276,7 @@ func TestNativeFollowupFreshEvidenceFilesAndCursor(t *testing.T) {
 // turn/steer input and advance only after its explicit native acknowledgment.
 func cursorHandover(t *testing.T, a *Agent, parent job, ref envelope.Ref) func(bool) string {
 	t.Helper()
-	ctx, cancel := context.WithCancel(tctx(t))
+	ctx, cancel := context.WithCancel(t.Context())
 	in, out := io.Pipe()
 	ready := make(chan struct{})
 	close(ready)
@@ -306,7 +306,8 @@ func cursorHandover(t *testing.T, a *Agent, parent job, ref envelope.Ref) func(b
 		select {
 		case m = <-messages:
 		case <-time.After(3 * time.Second):
-			t.Fatal("no owned native handover")
+			state, err := a.store.jobState(id)
+			t.Fatalf("no owned native handover: context=%v correction=%s read=%v", ctx.Err(), state, err)
 		}
 		params := m["params"].(map[string]any)
 		if params["clientUserMessageId"] != id {

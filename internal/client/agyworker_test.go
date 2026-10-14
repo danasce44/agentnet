@@ -212,9 +212,11 @@ func TestAgyNamedGroupResponder(t *testing.T) {
 	if err = host.PublishAgentCatalog(tctx(t)); err != nil {
 		t.Fatal(err)
 	}
-	p, err := w.alice.InviteNamedAgent(tctx(t), packet.State.Conv, host.Address, record.ID, nil, nil, "")
+	ctx, started := tctx(t), time.Now()
+	deadline, _ := ctx.Deadline()
+	p, err := w.alice.InviteNamedAgent(ctx, packet.State.Conv, host.Address, record.ID, nil, nil, "")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("named group invitation: elapsed=%v remaining=%v context=%v: %v", time.Since(started), time.Until(deadline), ctx.Err(), err)
 	}
 	eventually(t, "Antigravity invitation", func() bool { v, e := host.Participation(p.PID); return e == nil && v.State == PartInvited })
 	if _, err = host.AcceptParticipation(tctx(t), p.PID); err != nil {

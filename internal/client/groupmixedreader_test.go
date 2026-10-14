@@ -48,7 +48,7 @@ func groupMixedReaderKeepsHumanMentionQueued(t *testing.T, missing string) {
 	body := fmt.Sprintf("[@Bob](agentnet:person/%s) тут?", person.roster.Person)
 	oldCaps := without(ownCaps, missing)
 	if missing == protocol.CapGroup {
-		oldCaps = withCap(without(oldCaps, protocol.CapRoom), protocol.CapHumanParticipation)
+		oldCaps = withCap(without(without(olderRoomFixtureCaps(ownCaps), missing), protocol.CapRoom), protocol.CapHumanParticipation)
 	}
 	signCapsAfter(t, carol, oldCaps)
 	sent, err := w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: body})

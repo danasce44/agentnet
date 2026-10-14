@@ -17,8 +17,10 @@ import (
 func persons(t *testing.T, agents ...*Agent) {
 	t.Helper()
 	for _, a := range agents {
-		if _, err := a.CreatePerson(tctx(t), "Person of "+a.Address); err != nil {
-			t.Fatalf("person for %s: %v", a.Address, err)
+		ctx, started := tctx(t), time.Now()
+		deadline, _ := ctx.Deadline()
+		if _, err := a.CreatePerson(ctx, "Person of "+a.Address); err != nil {
+			t.Fatalf("person for %s: phase=create-person elapsed=%v remaining=%v context=%v: %v", a.Address, time.Since(started), time.Until(deadline), ctx.Err(), err)
 		}
 	}
 }

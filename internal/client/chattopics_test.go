@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -77,11 +78,14 @@ func TestChatTopicVectors(t *testing.T) {
 
 func testChatTopicJourney(t *testing.T, a, b *Agent, conv string) {
 	t.Helper()
-	ctx := tctx(t)
+	sendNumber := 0
 	send := func(from *Agent, m ConvOutgoing) ConvSent {
+		sendNumber++
+		ctx, started := tctx(t), time.Now()
+		deadline, _ := ctx.Deadline()
 		r, e := from.SendConv(ctx, conv, m)
 		if e != nil {
-			t.Fatal(e)
+			t.Fatalf("topic send %d: elapsed=%v remaining=%v context=%v: %v", sendNumber, time.Since(started), time.Until(deadline), ctx.Err(), e)
 		}
 		return r
 	}
@@ -112,11 +116,11 @@ func testChatTopicJourney(t *testing.T, a, b *Agent, conv string) {
 	if len(topics(a)) != 0 {
 		t.Fatal("ordinary reply invented a topic")
 	}
-	if _, e := a.ChangeChatTopic(ctx, conv, main.LID, "create", "", 0); e != nil {
-		t.Fatal(e)
+	if _, e := a.ChangeChatTopic(tctx(t), conv, main.LID, "create", "", 0); e != nil {
+		t.Fatalf("create topic: %v", e)
 	}
 	wait(b, main.LID, 2, TopicActive)
-	if covered, e := b.ChangeChatTopic(ctx, conv, main.LID, "done", "", 2); e != nil || !covered {
+	if covered, e := b.ChangeChatTopic(tctx(t), conv, main.LID, "done", "", 2); e != nil || !covered {
 		t.Fatalf("shared mark %v %v", covered, e)
 	}
 	wait(a, main.LID, 2, TopicDone)
@@ -134,8 +138,8 @@ func testChatTopicJourney(t *testing.T, a, b *Agent, conv string) {
 	}
 	send(a, ConvOutgoing{Body: "Opt-in new topic", Topic: "new"})
 	eventually(t, "two topic flows", func() bool { return len(topics(b)) == 2 })
-	if _, e := a.ChangeChatTopic(ctx, conv, main.LID, "delete", "", 0); e != nil {
-		t.Fatal(e)
+	if _, e := a.ChangeChatTopic(tctx(t), conv, main.LID, "delete", "", 0); e != nil {
+		t.Fatalf("delete topic: %v", e)
 	}
 	if len(topics(a)) != 1 {
 		t.Fatal("delete affected another topic or main")
@@ -147,8 +151,8 @@ func testChatTopicJourney(t *testing.T, a, b *Agent, conv string) {
 	for _, x := range topics(a) {
 		freshTopic = x.ID
 	}
-	if _, e := a.ChangeChatTopic(ctx, conv, freshTopic, "archive", "", 0); e != nil {
-		t.Fatal(e)
+	if _, e := a.ChangeChatTopic(tctx(t), conv, freshTopic, "archive", "", 0); e != nil {
+		t.Fatalf("archive topic: %v", e)
 	}
 	if topics(a)[0].State != TopicArchived || topics(b)[0].State == TopicArchived {
 		t.Fatal("archive scope")
@@ -169,12 +173,11 @@ func TestChatTopicGroupJourney(t *testing.T) {
 
 func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 	w, conv, _ := dmFiles(t)
-	ctx := tctx(t)
-	main, err := w.alice.SendConv(ctx, conv, ConvOutgoing{Body: "Main stays"})
+	main, err := w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "Main stays"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed, err := w.alice.SendConv(ctx, conv, ConvOutgoing{Body: "Topic retained", Topic: "new"})
+	seed, err := w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "Topic retained", Topic: "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,21 +189,21 @@ func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 	// Match the two stale own-device badges: 19 and 4 stored incoming
 	// copies, all displayed as this person's outgoing turns.
 	for i := 1; i < 19; i++ {
-		if _, err = w.alice.SendConv(ctx, conv, ConvOutgoing{Body: "Another own turn", Topic: id}); err != nil {
+		if _, err = w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "Another own turn", Topic: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	other, err := w.alice.SendConv(ctx, conv, ConvOutgoing{Body: "Other topic", Topic: "new"})
+	other, err := w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "Other topic", Topic: "new"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	otherTopic := convMsgByID(t, w.alice, conv, other.ID).Topic
 	for i := 1; i < 4; i++ {
-		if _, err = w.alice.SendConv(ctx, conv, ConvOutgoing{Body: "Other own turn", Topic: otherTopic}); err != nil {
+		if _, err = w.alice.SendConv(tctx(t), conv, ConvOutgoing{Body: "Other own turn", Topic: otherTopic}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err = w.alice.ChangeChatTopic(ctx, conv, id, "done", "", 19); err != nil {
+	if _, err = w.alice.ChangeChatTopic(tctx(t), conv, id, "done", "", 19); err != nil {
 		t.Fatal(err)
 	}
 	original, err := w.alice.ConversationMessages(conv)
@@ -213,8 +216,33 @@ func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 		t.Fatal(err)
 	}
 	phone := linked(t, w.alice)
+	convergenceStarted, converged := time.Now(), false
+	var observed []ThreadSummary
+	var observedErr error
+	defer func() {
+		if !t.Failed() || converged {
+			return
+		}
+		t.Logf("phase=closed-linked-topic elapsed=%v topics=%d read_error=%t", time.Since(convergenceStarted), len(observed), observedErr != nil)
+		for _, topic := range observed {
+			if topic.ID == id || topic.ID == otherTopic {
+				t.Logf("closed_topic=%t state=%s count=%d unread=%d", topic.ID == id, topic.State, topic.Count, topic.Unread)
+			}
+		}
+		// Failure-only scalar reads have a separate bounded diagnostic budget.
+		// They neither wait for convergence nor retry a business operation.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		var jobs, retained, done, failed, pos int
+		e := phone.store.db.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(retained),0),coalesce(sum(done),0),coalesce(sum(error<>''),0),coalesce(max(pos),0) FROM history_archive_jobs`).Scan(&jobs, &retained, &done, &failed, &pos)
+		t.Logf("linked archive: jobs=%d retained=%d done=%d failed=%d max_pos=%d read_error=%t", jobs, retained, done, failed, pos, e != nil)
+		var donorJobs, donorDone int
+		e = w.alice.store.db.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(state='done'),0) FROM history_jobs WHERE device=?`, phone.Address).Scan(&donorJobs, &donorDone)
+		t.Logf("donor history: jobs=%d done=%d read_error=%t", donorJobs, donorDone, e != nil)
+	}()
 	eventually(t, "closed topic on linked device", func() bool {
 		ts, e := phone.ChatTopics(conv)
+		observed, observedErr = ts, e
 		if e != nil || len(ts) != 2 {
 			return false
 		}
@@ -227,6 +255,7 @@ func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 		}
 		return counts[id] == 19 && counts[otherTopic] == 4
 	})
+	converged = true
 	retained, err := phone.ConversationMessages(conv)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +298,7 @@ func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 	// Genuine incoming turns remain unread. An exact read on one device
 	// clears only that turn on the linked reader, not the newer unseen one.
 	for _, body := range []string{"Read this foreign turn", "New unseen foreign turn"} {
-		if _, err = w.bob.SendConv(ctx, conv, ConvOutgoing{Body: body, Topic: id}); err != nil {
+		if _, err = w.bob.SendConv(tctx(t), conv, ConvOutgoing{Body: body, Topic: id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -291,7 +320,7 @@ func TestChatTopicHistoryAndOwnDeviceErasure(t *testing.T) {
 		t.Fatal("new unseen foreign turn marked read")
 	}
 	assertUnread(map[string]int{id: 1, otherTopic: 0})
-	if _, err = w.alice.ChangeChatTopic(ctx, conv, id, "delete", "", 0); err != nil {
+	if _, err = w.alice.ChangeChatTopic(tctx(t), conv, id, "delete", "", 0); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "erased on own linked device", func() bool {

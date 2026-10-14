@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/misunders2d/agentnet/internal/protocol"
 )
@@ -138,7 +139,6 @@ func TestTopicOrganizationOlderOrSuspendedMemberDeviceStopsNobody(t *testing.T) 
 func TestGroupGuestInviteOlderMemberDoesNotVeto(t *testing.T) {
 	w, carol, packet, stops := groupTurnsFixture(t)
 	conv := packet.State.Conv
-	ctx := tctx(t)
 	guest := proofReader(t, w, "guest")
 	runAgent(t, guest)
 	publishGroupFixtureCaps(t, guest, true)
@@ -151,9 +151,11 @@ func TestGroupGuestInviteOlderMemberDoesNotVeto(t *testing.T) {
 	everyone := []string{w.alice.Address, w.bob.Address, carol.Address, guest.Address}
 	ready := func() bool {
 		t.Helper()
+		ctx, started := tctx(t), time.Now()
+		deadline, _ := ctx.Deadline()
 		support, err := carol.HumanInviteSupport(ctx, conv, guest.Address)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("guest readiness: elapsed=%v remaining=%v context=%v: %v", time.Since(started), time.Until(deadline), ctx.Err(), err)
 		}
 		for _, s := range support {
 			if s.State == "update" || s.State == "not set up" {
@@ -171,7 +173,7 @@ func TestGroupGuestInviteOlderMemberDoesNotVeto(t *testing.T) {
 	// The invited host is asked, suspended or not.
 	signCapsAfter(t, guest, oldCaps)
 	listMembers(t, carol, map[string]bool{w.bob.Address: true, guest.Address: true}, everyone...)
-	if _, err := carol.InviteHuman(ctx, conv, guest.Address, nil, "older host"); err == nil {
+	if _, err := carol.InviteHuman(tctx(t), conv, guest.Address, nil, "older host"); err == nil {
 		t.Fatal("older suspended host invited as a group guest")
 	}
 	roomReader(t, guest)
@@ -182,9 +184,11 @@ func TestGroupGuestInviteOlderMemberDoesNotVeto(t *testing.T) {
 	if !ready() {
 		t.Fatal("a suspended member device decided group-guest readiness")
 	}
+	ctx, started := tctx(t), time.Now()
+	deadline, _ := ctx.Deadline()
 	p, err := carol.InviteHuman(ctx, conv, guest.Address, nil, "bob is suspended")
 	if err != nil {
-		t.Fatalf("one suspended member device stopped a group guest invitation: %v", err)
+		t.Fatalf("one suspended member device stopped a group guest invitation: elapsed=%v remaining=%v context=%v: %v", time.Since(started), time.Until(deadline), ctx.Err(), err)
 	}
 	eventually(t, "guest invited", func() bool { return stateAt(t, guest, p.PID).State == PartInvited })
 	states, details := copyStates(t, carol, "pid", p.PID, w.bob.Address)

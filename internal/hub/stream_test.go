@@ -160,6 +160,31 @@ func TestMessageAcksKeepBusyStreamAlive(t *testing.T) {
 		close(abandonedEnded)
 	}()
 	current := pushStream(t, h, bob)
+	// Retain this synthetic connection's atomic ack clock after removal so a
+	// failure distinguishes a late receipt from closure after a timely one.
+	h.streams.mu.Lock()
+	var measured *subscriber
+	for sub := range h.streams.subs[bob.addr] {
+		if measured == nil || sub.n > measured.n {
+			measured = sub
+		}
+	}
+	h.streams.mu.Unlock()
+	phase, phaseStarted := "busy-send", time.Now()
+	var sendElapsed, ackElapsed, ackAgeBefore time.Duration
+	acks := 0
+	defer func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("phase=%s elapsed=%v lease=%v message_send=%v ack_call=%v ack_age_before=%v successful_acks=%d captured=%t", phase, time.Since(phaseStarted), 2*hb, sendElapsed, ackElapsed, ackAgeBefore, acks, measured != nil)
+		if measured != nil {
+			h.streams.mu.Lock()
+			_, live := h.streams.subs[bob.addr][measured]
+			h.streams.mu.Unlock()
+			t.Logf("busy stream: live=%t last_ack_age=%v", live, time.Since(time.Unix(0, measured.lastAck.Load())))
+		}
+	}()
 
 	// Busy for at least four leases, and until the abandoned connection ended
 	// while the newest one's acknowledgements went on.
@@ -173,7 +198,10 @@ func TestMessageAcksKeepBusyStreamAlive(t *testing.T) {
 			abandonedClosed = true
 		default:
 		}
+		phase, phaseStarted = "busy-send", time.Now()
 		id := sendMessage(t, h, alice, bob)
+		sendElapsed = time.Since(phaseStarted)
+		phase, phaseStarted = "busy-read", time.Now()
 		for got := ""; got != id; {
 			e, ok := <-current
 			if !ok {
@@ -183,10 +211,18 @@ func TestMessageAcksKeepBusyStreamAlive(t *testing.T) {
 				got = envelopeID(t, e.data)
 			}
 		}
-		if c, b := bob.call(t, h, "POST", "/v1/messages/"+id+"/ack", protocol.AckRequest{State: protocol.StateDelivered}); c != http.StatusOK {
+		phase, phaseStarted = "message-ack", time.Now()
+		if measured != nil {
+			ackAgeBefore = time.Since(time.Unix(0, measured.lastAck.Load()))
+		}
+		c, b := bob.call(t, h, "POST", "/v1/messages/"+id+"/ack", protocol.AckRequest{State: protocol.StateDelivered})
+		ackElapsed = time.Since(phaseStarted)
+		if c != http.StatusOK {
 			t.Fatalf("ack: %d %s", c, b)
 		}
+		acks++
 	}
+	phase, phaseStarted = "idle-close", time.Now()
 	idle := time.After(5 * time.Second) // nothing acknowledged any more: the lease ends it
 	for {
 		select {

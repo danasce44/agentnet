@@ -1,11 +1,13 @@
 package client
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
+	"github.com/misunders2d/agentnet/internal/identity"
 	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
@@ -32,6 +34,9 @@ func signCapsNow(t *testing.T, a *Agent, caps []string) {
 	for _, session := range prof.Sessions {
 		rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: time.Now().Unix()}
 		rec.Sign(a.id.Sign)
+		if err := rec.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -69,9 +74,75 @@ func TestCapabilityFixtureDropsOnlyRequestedReader(t *testing.T) {
 	}
 }
 
-// withCap is caps plus add, sorted and once, as a signed record requires.
+// These older room-reader fixtures exercise the remaining basic, group,
+// audience, history, control, own-device, topic and organization readers.
+// Expanding rm1 in the complete current profile would need 33/34 names.
+// They explicitly omit unrelated Drive/model/notification/typing/continuation/
+// follow-up readers and the agent discovery hint, rather than truncate readers.
+func olderRoomFixtureCaps(caps []string) []string {
+	return slices.DeleteFunc(slices.Clone(caps), func(cap string) bool {
+		return slices.Contains([]string{protocol.CapDriveSpace, protocol.CapModelSyncV2, protocol.CapNotify, protocol.CapTyping, protocol.CapContinuation, protocol.CapRequestFollowup, protocol.CapAgent}, cap)
+	})
+}
+
+func TestCapabilityFixtureSignedReaderProfiles(t *testing.T) {
+	key, err := identity.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := protocol.CapsRecord{Caps: olderRoomFixtureCaps(withCap(ownCaps, protocol.CapAgent))}
+	for _, keep := range []string{protocol.CapEnv2, protocol.CapPerson, protocol.CapRoom, protocol.CapGroupHumanParticipation, protocol.CapConversationAudience, protocol.CapHistoryArchive, protocol.CapControl, protocol.CapRootSync, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapTopicContext, protocol.CapTopicParticipation, protocol.CapTopicOrganization, protocol.CapSendGroup, protocol.CapAgentOrganization} {
+		if !before.Reads(keep) {
+			t.Fatalf("older room fixture is missing required independent reader %s", keep)
+		}
+	}
+	for _, drop := range append(slices.Clone(protocol.RoomImplies), protocol.CapRoom) {
+		t.Run(drop, func(t *testing.T) {
+			caps := without(before.Caps, drop)
+			record := protocol.CapsRecord{Address: "fixture/reader", Session: protocol.NewID(), Caps: caps, TS: 1790000000}
+			record.Sign(key.Sign)
+			raw, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("drop=%s names=%d signed_bytes=%d producer=%v reader=%v", drop, len(caps), len(raw), record.ValidateAdvertisement(), record.Verify(key.Public(record.Address).SignKey))
+			if err = record.ValidateAdvertisement(); err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := protocol.ParseCapsRecord(raw)
+			if err != nil || parsed.Verify(key.Public(record.Address).SignKey) != nil || parsed.Reads(drop) {
+				t.Fatal("signed fixture does not model the intended missing reader", err)
+			}
+			for _, keep := range append(slices.Clone(protocol.RoomImplies), before.Caps...) {
+				if keep != drop && keep != protocol.CapRoom && before.Reads(keep) && !parsed.Reads(keep) {
+					t.Fatalf("missing %s also lost scoped reader %s", drop, keep)
+				}
+			}
+			// Restoring an implied reader first still fits; restoring rm1 then
+			// removes only names it implies, preserving every scoped reader.
+			for _, restored := range [][]string{withCap(caps, drop), withCap(withCap(caps, drop), protocol.CapRoom)} {
+				record.Caps = restored
+				record.Sign(key.Sign)
+				if err := record.ValidateAdvertisement(); err != nil {
+					t.Fatal("restored fixture is not a valid advertisement", err)
+				}
+				for _, keep := range append(slices.Clone(protocol.RoomImplies), before.Caps...) {
+					if keep != protocol.CapRoom && before.Reads(keep) && !record.Reads(keep) {
+						t.Fatalf("upgrade lost scoped reader %s", keep)
+					}
+				}
+			}
+		})
+	}
+}
+
+// withCap adds a reader, sorted and once, omitting only explicit aliases
+// already supplied by rm1. Restoring rm1 does not lose any effective reader.
 func withCap(caps []string, add string) []string {
 	caps = append(slices.Clone(caps), add)
+	if slices.Contains(caps, protocol.CapRoom) {
+		caps = slices.DeleteFunc(caps, func(cap string) bool { return slices.Contains(protocol.RoomImplies, cap) })
+	}
 	slices.Sort(caps)
 	return slices.Compact(caps)
 }
@@ -126,12 +197,12 @@ func TestProgressNamedExecutorProvenanceAndComboCaps(t *testing.T) {
 	}
 
 	// alice's sessions lack agi1, then prg1: each update waits, never downgraded.
-	signCapsNow(t, w.alice, without(ownCaps, protocol.CapAgentIdentity))
+	signCapsNow(t, w.alice, without(olderRoomFixtureCaps(ownCaps), protocol.CapAgentIdentity))
 	noAgent, err := w.bob.SendProgress(tctx(t), w.alice.Address, req.ID, "WAITS FOR AGI1", 0, false)
 	if err != nil || noAgent.State != stateConvWaiting {
 		t.Fatalf("progress without agi1: %+v %v", noAgent, err)
 	}
-	signCapsNow(t, w.alice, without(ownCaps, protocol.CapProgress))
+	signCapsNow(t, w.alice, without(olderRoomFixtureCaps(ownCaps), protocol.CapProgress))
 	noProgress, err := w.bob.SendProgress(tctx(t), w.alice.Address, req.ID, "WAITS FOR PRG1", 0, false)
 	if err != nil || noProgress.State != stateConvWaiting {
 		t.Fatalf("progress without prg1: %+v %v", noProgress, err)

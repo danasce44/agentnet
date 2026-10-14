@@ -69,9 +69,16 @@ func runPublished(t *testing.T, a *Agent) func() {
 func dropCapSuccessor(t *testing.T, a *Agent, cap string) {
 	t.Helper()
 	for session, latest := range sessionRecords(t, a) {
-		caps := without(latest.Caps, cap) // an older reader: no rm1 either
+		caps := latest.Caps
+		if cap == protocol.CapRoom || slices.Contains(protocol.RoomImplies, cap) {
+			caps = olderRoomFixtureCaps(caps)
+		}
+		caps = without(caps, cap) // an older reader: no rm1 either
 		rec := protocol.CapsRecord{Address: a.Address, Session: session, Caps: caps, TS: max(latest.TS+1, time.Now().Unix())}
 		rec.Sign(a.id.Sign)
+		if err := rec.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", rec, nil); err != nil {
 			t.Fatal(err)
 		}

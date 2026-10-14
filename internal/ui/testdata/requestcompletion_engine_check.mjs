@@ -53,7 +53,7 @@ if (phone.retrying) await phone.retrying;
 const {readFile}=await import('node:fs/promises');
 const {stripTypeScriptTypes}=await import('node:module');
 const {runInNewContext}=await import('node:vm');
-const model=await import('../web/src/model.ts');
+const {default:model}=await import('./comic_model.mjs');
 const source=stripTypeScriptTypes((await readFile(new URL('../web/src/features/Message.model.ts',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'')).replace(/^export /gm,'');
 const presentation=runInNewContext(source+'\n({answerTo,requestState,working})',{...model});
 const pid2=wire.newID(),group=wire.newID(),targetOf=e=>({address:e.address,fingerprint:e.fp});

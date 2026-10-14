@@ -193,6 +193,9 @@ func p3Caps(t *testing.T, a *Agent, caps []string) {
 	for _, session := range p.Sessions {
 		r := protocol.CapsRecord{Address: a.Address, Session: session, TS: ts, Caps: caps}
 		r.Sign(a.id.Sign)
+		if err := r.ValidateAdvertisement(); err != nil {
+			t.Fatalf("fixture capability record (%d names): %v", len(r.Caps), err)
+		}
 		if err := a.hub.do(tctx(t), "PUT", "/v1/caps", r, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -200,7 +203,7 @@ func p3Caps(t *testing.T, a *Agent, caps []string) {
 }
 func TestHumanInviteWaitsForUpdate(t *testing.T) {
 	w, carol, conv, _, _ := humanWorld(t)
-	p3Caps(t, carol, without(ownCaps, protocol.CapHumanParticipation))
+	p3Caps(t, carol, without(olderRoomFixtureCaps(ownCaps), protocol.CapHumanParticipation))
 	support, err := w.alice.HumanInviteSupport(tctx(t), conv, carol.Address)
 	if err != nil {
 		t.Fatal(err)

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { chatList } from '../web/src/model.ts';
+import model from './comic_model.mjs';
+const { chatList, messageTarget } = model;
 
 const person={person:'verified-person',label:'Vitalii',address:'vitalii/desk',state:'pinned'};
 const conversation=(id,patch={})=>({id,kind:'dm',role:'member',peer:person,created:'2026-10-06T12:00:00Z',last_at:'2026-10-06T12:00:00Z',count:1,title:id,last:id,unread:1,held:0,...patch});
@@ -22,7 +23,6 @@ console.log('One person chat: separate conversations, combined unread, exact ide
 
 // Preview focus uses the same displayed row, with exact IDs preferred over
 // logical aliases. A malicious same-LID author cannot redirect navigation.
-const { messageTarget } = await import('../web/src/model.ts');
 const { previewMessageID } = await import('../static/engine.mjs');
 const latest={id:'actual-copy',lid:'stable-original'};
 assert.equal(previewMessageID([latest],latest),'stable-original');
