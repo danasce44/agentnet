@@ -34,6 +34,15 @@ The question-ancestor delegation vetoes are removed; recipient task consent and
 the existing scope/identity/cancellation checks remain. Combined focused tests
 pass22.445s; this is source evidence, not actual native or release qualification.
 
+Current qualification adds genuine native-parent question-to-task journeys for
+Codex, Pi, Claude and OMP; their child responder is synthetic. Antigravity stopped
+for sign-in and is not a pass. The native exact-file test observed one genuine
+approval callback and completed in12.563s with setup unchanged. Its strict display
+and private rejection diagnostics now pass10 focused cases. Actual Codex steering
+still refuses its readiness-file write under the inherited filesystem policy;
+no override or denied-operation retry was made. Mixed-version against exactv27
+passes83.898s. Full source/platform and all-skin gates remain separate.
+
 Do not tag or publish the next release until these are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
