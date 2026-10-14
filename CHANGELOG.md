@@ -4,7 +4,7 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
-## Unreleased
+## [0.8.27] — 2026-10-14
 
 - Reading an Android chat now clears its exact OS message notifications after
   the read is stored; unrelated pending decisions remain.

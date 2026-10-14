@@ -4,30 +4,19 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## v0.8.27 qualification correction
+## v0.8.27 — source qualified, package gates pending
 
-No v27 publication yet. Bounded browser event pre-commit retries and phone
-read-to-OS dismissal are independently reviewed; actual original-key emulator
-read succeeds. Full mobile/core race78.127s and browser611-check negatives pass.
-The measured client10 partition is balanced by moving only three fixtures to
-1/7/11, retaining the exact1,171-test union/twelve shards/600s bound. Requalify
-changed partitions and affected native/UI packages; retain unchanged passing
-coverage. Current scope, evidence and remaining Windows/artifact gates are in
-[the v27 record](plans/V0_8_27.md).
-
-## Next release — v0.8.27, supervised implementation
-
-The owner assigned the existing tab-3 Codex worker to the agreed V1–V9 scope,
-with Codex release lead supervising/reviewing for minimal design. Its only
-worktree is `.worktrees/v0.8.27`, branch `feat/v0.8.27`; it is actively assigned,
-not a stray. The worker returned a frozen110-file candidate, now integrated at b5850fae.
-The lead owns Git, full qualification and release. Native callback race and
-original-key Android build checks pass; runtime and integrated release gates
-remain pending. See [V0_8_27.md](plans/V0_8_27.md) for evidence and limits. Shared checklist:
-`.agentnet/v27-release-checklist.md`. Do not publish v27 before candidate review,
-required integrated gates, exact artifacts and upgrade preservation checks.
-Native harness permissions, signed identity, current admission and audience
-remain unchanged. No optional redesign or helpers.
+Application source d9966789 is frozen; 7d290d8f is a test-only child.
+All required source race/native/real IndexedDB/mixed-version coverage passes
+with retained unchanged evidence and declared skips kept distinct. The final
+Windows invitation fixture now uses the shared all-live-session publisher and
+proves exact waiting-to-queued ciphertext. Original-key Android real receive,
+read/mute/denial and cold preservation pass; all four final pinned skin packages
+retain verified interactions and pass40/40 conformance. No v27 publication or
+relay deployment yet. Complete immutable tag-built13asset/APK gates before
+publication. [V0_8_27.md](plans/V0_8_27.md) records exact runs, evidence and limits.
+The single merged worker worktree remains only for retained build/evidence and
+is removed at release closure; no worker may edit source or publish.
 
 ## Current release — v0.8.26, October 14, 2026
 
