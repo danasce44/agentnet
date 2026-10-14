@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,10 @@ func TestRetainedContextClockOrder(t *testing.T) {
 }
 
 func TestRetainedContextNativePromptAndRefresh(t *testing.T) {
+	if binary := os.Getenv("AGENTNET_LIVE_CODEX_RETAINED_CONTEXT"); binary != "" {
+		actualNativeRetainedDMContext(t, binary)
+		return
+	}
 	stub := installAgentStub(t)
 	w, conv, lids, stopBob := agentWorld(t)
 	setResponder(t, w.alice, "agentstub", stub.dir, time.Minute)
