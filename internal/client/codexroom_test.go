@@ -78,6 +78,12 @@ func TestCodexRoomBridgeBoundTransport(t *testing.T) {
 			t.Fatal(forbidden)
 		}
 	}
+	spec := p["dynamicTools"].([]any)[0].(map[string]any)
+	schema := spec["inputSchema"].(map[string]any)
+	kind, _ := json.Marshal(schema["properties"].(map[string]any)["kind"])
+	if string(kind) != `{"enum":["question","task"],"type":"string"}` || len(schema["required"].([]any)) != 1 || schema["required"].([]any)[0] != "action" || !strings.Contains(spec["description"].(string), "recipient consent") {
+		t.Fatalf("room kind schema/consent: %s %v", kind, spec)
+	}
 	event(`{"id":2,"result":{"thread":{"id":"thread"},"approvalPolicy":"on-request","sandbox":{"type":"workspaceWrite","networkAccess":true}}}`)
 	turn := next()["params"].(map[string]any)
 	if turn["approvalPolicy"] != nil || turn["sandboxPolicy"] != nil || turn["sandbox"] != nil || turn["config"] != nil || turn["threadId"] != "thread" {
@@ -160,7 +166,46 @@ func TestCodexRoomToolQuestionAndCancellation(t *testing.T) {
 	if e != nil || !strings.Contains(reply, "from agent participation "+to.PID) {
 		t.Fatalf("%s %v", reply, e)
 	}
-	for _, bad := range []string{`{"action":"task","pid":"x","text":"forbidden"}`, `{"action":"ask","pid":"x","text":"foreign"}`, `{"action":"wait","id":"x","extra":"forbidden"}`, `{"action":"ask","pid":"x","text":"foreign"} {}`} {
+	taskRaw, _ := json.Marshal(map[string]string{"action": "ask", "kind": envelope.KindTask, "pid": to.PID, "text": "native task needs recipient consent"})
+	taskCtx, cancel := context.WithCancel(tctx(t))
+	defer cancel()
+	type toolResult struct {
+		text string
+		err  error
+	}
+	done := make(chan toolResult, 1)
+	beforeRuns := stub.runs()
+	go func() { text, err := w.alice.codexRoomTool(taskCtx, root.LID, taskRaw); done <- toolResult{text, err} }()
+	var child, childLID string
+	eventually(t, "native task awaits recipient consent", func() bool {
+		select {
+		case result := <-done:
+			t.Fatalf("task tool ended before consent: %s %v", result.text, result.err)
+		default:
+		}
+		return w.bob.store.db.QueryRow(`SELECT id,lid FROM inbox WHERE conv=? AND pid=? AND reply_to=? AND kind='task' AND state=?`, conv, to.PID, root.LID, stateAwaiting).Scan(&child, &childLID) == nil
+	})
+	if stub.runs() != beforeRuns {
+		t.Fatal("native task ran before recipient consent")
+	}
+	if e = w.bob.Accept(child); e != nil {
+		t.Fatal(e)
+	}
+	select {
+	case result := <-done:
+		if result.err != nil || !strings.Contains(result.text, "reply "+childLID+" from agent participation "+to.PID) || stub.runs() != beforeRuns+1 {
+			t.Fatalf("task correlation/result: %s %v runs=%d", result.text, result.err, stub.runs())
+		}
+	case <-taskCtx.Done():
+		t.Fatal(taskCtx.Err())
+	}
+	for _, kind := range []string{"", envelope.KindQuestion} {
+		explicit, _ := json.Marshal(map[string]string{"action": "ask", "kind": kind, "pid": to.PID, "text": "explicit native question"})
+		if reply, e := w.alice.codexRoomTool(tctx(t), root.LID, explicit); e != nil || !strings.Contains(reply, "from agent participation "+to.PID) {
+			t.Fatalf("question kind %q: %s %v", kind, reply, e)
+		}
+	}
+	for _, bad := range []string{`{"action":"task","pid":"x","text":"forbidden"}`, `{"action":"ask","pid":"x","text":"foreign"}`, `{"action":"wait","id":"x","extra":"forbidden"}`, `{"action":"ask","pid":"x","text":"foreign"} {}`, `{"action":"ask","kind":"message","pid":"` + to.PID + `","text":"invalid kind"}`, `{"action":"wait","kind":"question","id":"` + child + `"}`, `{"action":"organize","kind":"task"}`, `{"action":"react","kind":"question"}`, `{"action":"send","kind":"task"}`} {
 		if _, e = w.alice.codexRoomTool(tctx(t), root.LID, json.RawMessage(bad)); e == nil {
 			t.Fatal("accepted", bad)
 		}
@@ -170,6 +215,9 @@ func TestCodexRoomToolQuestionAndCancellation(t *testing.T) {
 	}
 	if _, e = w.alice.codexRoomTool(tctx(t), root.LID, raw); e == nil {
 		t.Fatal("cancelled cause sent new question")
+	}
+	if _, e = w.alice.codexRoomTool(tctx(t), root.LID, taskRaw); e == nil {
+		t.Fatal("cancelled cause sent new task")
 	}
 }
 

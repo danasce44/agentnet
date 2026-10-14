@@ -45,6 +45,7 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 	}
 	var p struct {
 		Action string   `json:"action"`
+		Kind   string   `json:"kind"`
 		PID    string   `json:"pid"`
 		Text   string   `json:"text"`
 		ID     string   `json:"id"`
@@ -63,6 +64,9 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 	}
 	if dec.Decode(new(any)) != io.EOF {
 		return "", errors.New("choose one room operation")
+	}
+	if p.Kind != "" && (p.Action != "ask" || p.Kind != envelope.KindQuestion && p.Kind != envelope.KindTask) {
+		return "", errors.New("kind must be question or task and is only for ask")
 	}
 	ref := p.ID
 	switch p.Action {
@@ -118,9 +122,12 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 		return fmt.Sprintf("agent message %s stored (%s)", sent.LID, sent.State), nil
 	case "ask":
 		if !protocol.ValidID(p.PID) || strings.TrimSpace(p.Text) == "" || p.ID != "" {
-			return "", errors.New("choose an exact current group agent PID and question text")
+			return "", errors.New("choose an exact current group agent PID and request text")
 		}
-		sent, e := a.SendRoomAsk(ctx, cause, p.PID, envelope.KindQuestion, p.Text)
+		if p.Kind == "" {
+			p.Kind = envelope.KindQuestion
+		}
+		sent, e := a.SendRoomAsk(ctx, cause, p.PID, p.Kind, p.Text)
 		if e != nil {
 			return "", e
 		}
@@ -130,7 +137,7 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 			return "", errors.New("choose the exact permitted request ID")
 		}
 	default:
-		return "", errors.New("room question tool supports only ask and wait; it cannot assign tasks")
+		return "", errors.New("choose ask, wait, organize, react or send")
 	}
 	waiting := false
 	defer func() {
@@ -322,7 +329,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 		switch string(m.ID) {
 		case "1":
 			b.send(map[string]any{"method": "initialized"})
-			spec := map[string]any{"type": "function", "name": "agentnet_room", "description": "Bound to this admitted native run: ask/wait for group agents; organize only supplied messages on the human request; react to an admitted ordinary canonical mention; send as this exact agent. Current admission, native permissions, removal and cancellation apply. Cannot assign tasks.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"ask", "wait", "organize", "react", "send"}}, "pid": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "id": map[string]string{"type": "string"}, "ids": map[string]any{"type": "array", "items": map[string]string{"type": "string"}, "maxItems": envelope.MaxTopicMoves}, "topic": map[string]string{"type": "string"}, "new": map[string]string{"type": "boolean"}, "title": map[string]string{"type": "string"}, "author": map[string]string{"type": "string"}, "emoji": map[string]string{"type": "string"}, "remove": map[string]string{"type": "boolean"}}}}
+			spec := map[string]any{"type": "function", "name": "agentnet_room", "description": "Bound to this admitted native run: ask a question or task of group agents and wait for replies; tasks require recipient consent. Organize only supplied messages on the human request; react to an admitted ordinary canonical mention; send as this exact agent. Current admission, native permissions, removal and cancellation apply.", "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"type": "string", "enum": []string{"ask", "wait", "organize", "react", "send"}}, "kind": map[string]any{"type": "string", "enum": []string{"question", "task"}}, "pid": map[string]string{"type": "string"}, "text": map[string]string{"type": "string"}, "id": map[string]string{"type": "string"}, "ids": map[string]any{"type": "array", "items": map[string]string{"type": "string"}, "maxItems": envelope.MaxTopicMoves}, "topic": map[string]string{"type": "string"}, "new": map[string]string{"type": "boolean"}, "title": map[string]string{"type": "string"}, "author": map[string]string{"type": "string"}, "emoji": map[string]string{"type": "string"}, "remove": map[string]string{"type": "boolean"}}}}
 			method, params := "thread/start", map[string]any{"cwd": b.cwd, "ephemeral": b.ephemeral}
 			if b.resume != "" {
 				method, params = "thread/resume", map[string]any{"cwd": b.cwd, "threadId": b.resume}
