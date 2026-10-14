@@ -4,21 +4,37 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## v0.8.27 — source qualified, package gates pending
+## Current release — v0.8.27, October 14, 2026
 
-Application source d9966789 is frozen; 7d290d8f is a test-only child.
-All required source race/native/real IndexedDB/mixed-version coverage passes
-with retained unchanged evidence and declared skips kept distinct. The final
-Windows invitation fixture now uses the shared all-live-session publisher and
-proves exact waiting-to-queued ciphertext. Original-key Android real receive,
-read/mute/denial and cold preservation pass; all four final pinned skin packages
-retain verified interactions and pass40/40 conformance. No v27 publication or
-relay deployment yet. Complete immutable tag-built13asset/APK gates before
-publication. [V0_8_27.md](plans/V0_8_27.md) records exact runs, evidence and limits.
-The single merged worker worktree remains only for retained build/evidence and
-is removed at release closure; no worker may edit source or publish.
+[Download v0.8.27](https://github.com/misunders2d/agentnet/releases/tag/v0.8.27)
+or its [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.27/AgentNet-android.apk).
+Published02:18:16 UTC, immutable tag93d2d642. All13 tag-built assets/checksums,
+original signing key/two-ABI/nondebuggable/16KiB APK and exact warm/cold203-message
+fixture preservation pass. Actual native update recognizes v27. The exact
+AppImage passes playable repeat/revoked-URL downloads and genuine menu Quit.
+All required source race/native/IDB coverage and mixed exactv26 pass with retained
+unchanged evidence and skips kept distinct. [V0_8_27.md](plans/V0_8_27.md)
+records exact runs and material limits, including unproven historical shutdown/
+physical Windows causes, genuine model approval coverage and corrupt cache repair.
 
-## Current release — v0.8.26, October 14, 2026
+[Collection v2026.10.14.1](https://github.com/misunders2d/agentnet-skins/releases/tag/v2026.10.14.1),
+commit6790da5, publishes all four verified1.2.0 packages with private native request
+controls and unchanged permission/admission boundaries. All4 conformance and
+retained rendered gates pass; final Android Classic/Pulp gallery trust/mount pass
+in separate storage. The preserved test browser profile's malformed Chromium
+CacheStorage remains unrepaired; its chat/identity preservation is independently
+verified. Do not describe that profile's failed replacement as a pass.
+
+Existing relay rollout completed02:28:47 UTC with a verified full stopped-store
+backup `/opt/agentnet-revived/backups/pre-v0.8.27-w7yvhlft`. Data/counts, realm,
+configuration and neighboring service remain; HTTPS/binary agree, restarts0.
+Both main checkouts are clean/pushed at closure, with only their main branch
+and primary worktree. Completed worker source/evidence is integrated/preserved,
+its worktree/branch removed and owned test processes stopped. Original fixture
+data remains for the cache diagnosis. No live identities, history, grants or
+requests were reset or replayed.
+
+## Previous release — v0.8.26, October 14, 2026
 
 [Download v0.8.26](https://github.com/misunders2d/agentnet/releases/tag/v0.8.26)
 or its [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.26/AgentNet-android.apk).
@@ -45,7 +61,7 @@ full stopped-store backup: `/opt/agentnet-revived/backups/pre-v0.8.26-_665yotk`.
 Realm, data/counts, configuration and neighboring service are preserved; HTTPS
 and binary agree, Hub restarts0. No live identities/history/grants/requests reset.
 Both main checkouts are clean/pushed at closure; v26 has no extra branch/worktree.
-Keep the explicitly active v27 worktree and its tooling until separate closure.
+That closure kept the then-active v27 worktree; it is now removed after v27 release.
 
 ## Previous release — v0.8.25 skins, October 13, 2026
 
