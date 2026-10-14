@@ -45,6 +45,15 @@ func (a *Agent) groupLifecycleCopy(root protocol.ConvRoot, sub string, descripto
 		copy.in.PID = pids[0]
 	}
 	copy.state, copy.required, copy.recipientFP = stateQueued, protocol.CapGroup, key.Fingerprint()
+	if sub == envelope.SubGroupContext {
+		needed, e := snapshotCopy(nil, root.ID(), "", sub, string(raw), "")
+		if e != nil {
+			return copy, e
+		}
+		if needed {
+			copy.required = protocol.CapTopicContext
+		}
+	}
 	if p, ok := value.(protocol.GroupInvitation); ok && p.Nonce != "" {
 		copy.required = protocol.CapGroupInvitationControl
 	}

@@ -27,6 +27,7 @@ export const CapHumanParticipation = "hgp1"; // protocol.CapHumanParticipation: 
 export const CapSendGroup = "sg1"; // optional signed presentation; never a routing or execution capability
 export const CapRequestFollowup = "flw1";
 export const CapTopicOrganization = "org1";
+export const CapTopicContext = "tpc1";
 export const CapTopicParticipation = "tps1"; // explicit ongoing topic scope, never implied by rm1
 export const CapRoom = "rm1"; // protocol.CapRoom: reads room participation (ROOM_V1 §2); implies RoomImplies
 export const CapOwnSyncV2 = "own2", SubInvitationSync = "invitation-sync";
@@ -1024,7 +1025,7 @@ export const convRootVersionLimit = (v) => v === GroupRootVersion ? MaxGroupRoot
 const convRootSizeLimit = (json) => { try { return convRootVersionLimit(JSON.parse(json).v); } catch (_) { return MaxConvRoot; } };
 export const CapProactiveAgent = "ams1";
 export const proactiveAgent = n => n.kind === "message" && !n.sub && !n.status && !n.reply_to && !n.target && !!n.conv && !!n.pid && n.origin === "agent:proactive" && !n.receiver_route;
-export const MaxCaps = 32, MaxAdvertisedCaps = 26; // older readers already parse up to 32 names
+export const MaxCaps = 32, MaxAdvertisedCaps = 27; // older readers already parse up to 32 names
 export const MaxCapsRecord = 1024;
 export const CapEnv2 = "env2";
 export const CapPerson = "person2"; // reads person roster chains, roots v2, fan-out and history
@@ -1412,7 +1413,8 @@ export function parseHistory(json) {
 export const excerptLID = async (pid, ref) => hex((await sha256(utf8.encode(pid + "\0" + ref.lid + "\0" + ref.fingerprint))).slice(0, 16));
 export function parseGrantedExcerpt(n, info) {
   const h = parseHistory(n.body), raw = JSON.parse(n.body);
-  if(info.topic!=null && (h.topic||"")!==info.topic)throw Error("Excerpt is outside the invited topic.");
+  const frozen=info.snapshots?.some(g=>g.lid===h.lid&&g.fingerprint===h.from_key);
+  if(!frozen&&info.topic!=null && (h.topic||"")!==info.topic)throw Error("Excerpt is outside the invited topic.");
   if (!(h.ts > 0) || h.sub || h.ref || !["message", "question", "task", "answer", "result"].includes(h.kind) ||
       !info.grant.some((g) => g.lid === h.lid && g.fingerprint === h.from_key)) throw new Error("excerpt does not match an exact signed grant reference");
   if (h.attachments.length > 8) throw new Error("too many excerpt files");
@@ -1938,6 +1940,7 @@ function marshalEvent(e, withSig) {
   if (e.role) s += ',"role":' + goString(e.role);
   if (e.until) s += ',"until":' + goInt(e.until, "end time");
   if (e.topic != null) s += ',"topic":' + goString(e.topic);
+  if(e.snapshots?.length)s+=',"snapshots":['+e.snapshots.map(g=>'{"lid":'+goString(g.lid)+',"fingerprint":'+goString(g.fingerprint)+',"hash":'+goString(g.hash)+'}').join(',')+']';
   return s + sigJSON(e, withSig) + "}";
 }
 export const eventJSON = (e) => marshalEvent(e, true);
@@ -1981,6 +1984,10 @@ function uniqueList(items, max, valid, what) {
 // null when absent, which matters: an accept, decline or dismiss may not
 // carry them even empty.
 export function validateEvent(e) {
+  if(e.snapshots?.length){
+    if(e.topic==null||!["invite","share"].includes(e.type)||e.snapshots.length!==(e.grant||[]).length)throw Error("participation: snapshots require an exact scoped history grant");
+    const seen=new Set();for(const g of e.snapshots){const key=g.lid+"/"+g.fingerprint;if(!validHash(g.hash)||seen.has(key)||!(e.grant||[]).some(r=>r.lid===g.lid&&r.fingerprint===g.fingerprint))throw Error("participation: invalid or extra history snapshot");seen.add(key);}
+  }
   if(e.topic != null && (typeof e.topic!=="string" || e.topic!==""&&!validID(e.topic) || !["invite","share","scope"].includes(e.type)))throw Error("participation: invalid topic scope");
   if(e.type === "share") {
     if(!validHash(e.prev)||!e.group||e.role||e.until||e.task_keys?.length||e.note) throw new Error("participation: a share names an existing group agent and selected context only");
@@ -2042,7 +2049,7 @@ export async function signEvent(keys, fields) {
 
 export function parseEvent(json) {
   const f = strictRecord(json, MaxParticipationEvent, "participation", { v: "int", conv: "string", pid: "string", type: "string", prev: "string",
-    author: "object", ts: "int", host: "object", grant: "array", audience: "string", task_keys: "array", note: "string", group: "object", role: "string", until: "int", topic: "string", sig: "string" });
+    author: "object", ts: "int", host: "object", grant: "array", audience: "string", task_keys: "array", note: "string", group: "object", role: "string", until: "int", topic: "string", snapshots:"array", sig: "string" });
   const a = strict(f.author || {}, "participation author", { person: "string", roster: "string", address: "string", fingerprint: "string", group_admission: "string" });
   const h = f.host ? strict(f.host, "participation host", { person: "string", address: "string", fingerprint: "string", agent_id: "string" }) : null;
   const group = f.group ? strict(f.group,"participation group",{seq:"int",hash:"string",host_role:"string",host_admission:"string",task_admissions:"array"}) : null;
@@ -2053,6 +2060,7 @@ export function parseEvent(json) {
     host: h ? { person: h.person || "", address: h.address || "", fingerprint: h.fingerprint || "", ...(h.agent_id ? { agent_id: h.agent_id } : {}) } : null,
     grant: f.grant ? f.grant.map((g) => { const x = strict(g, "participation grant", { lid: "string", fingerprint: "string" });
       return { lid: x.lid || "", fingerprint: x.fingerprint || "" }; }) : null,
+    ...(f.snapshots?.length?{snapshots:f.snapshots.map(g=>{const x=strict(g,"history snapshot",{lid:"string",fingerprint:"string",hash:"string"});return {lid:x.lid||"",fingerprint:x.fingerprint||"",hash:x.hash||""};})}:{}),
     audience: f.audience || "", task_keys: f.task_keys || null, note: f.note || "", ...(f.role ? { role: f.role } : {}), ...(f.until ? { until: f.until } : {}), ...(f.topic!=null?{topic:f.topic}:{}), ...(group ? {group:{seq:group.seq || 0,hash:group.hash || "",host_role:group.host_role || "",host_admission:group.host_admission || "",task_admissions:group.task_admissions || null}} : {}), sig: f.sig ? unb64(f.sig, "event signature") : null };
   validateEvent(e);
   fitsRecord(eventJSON(e), MaxParticipationEvent, "participation");

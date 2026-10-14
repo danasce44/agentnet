@@ -10,6 +10,9 @@ This record starts with v0.8.1; earlier releases remain on the
   preserving app identity, chat data, drafts, queued sends and healthy packages.
 - Let managers add people to retained legacy lists while preserving their signed
   identity and membership rules; list selection rejects changes during refresh.
+- Invite an agent with exactly reviewed messages moved into a topic, including
+  their selected files, without changing the originals' execution scope.
+  Move notices name Main flow or the actual destination topic.
 - Attribute agent-authored requests to the asking agent and hide a local retry
   when its originating run has ended. Explicit handling keeps the request audit
   and clears only that request's archive blocker.

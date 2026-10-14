@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -1112,6 +1113,14 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (
 	if err != nil {
 		return ParticipationContext{}, err
 	}
+	if len(info.Snapshots) > 0 {
+		frozen, e := a.snapshotContextMessages(info)
+		if e != nil {
+			return ParticipationContext{}, e
+		}
+		msgs = append(msgs, frozen...)
+		sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].At < msgs[j].At })
+	}
 	// Speakers by device and exact key, worded from their verified record.
 	names := map[string]string{}
 	claims := map[string]string{}
@@ -1161,7 +1170,12 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (
 		if msg.ExcerptPID != "" {
 			ref.Fingerprint = msg.Claimed
 		}
-		if info.Topic != nil {
+		_, frozen := grantSnapshot(ref, info.Snapshots)
+		if frozen && msg.ExcerptPID == "" {
+			c.Unrelated++
+			continue
+		}
+		if info.Topic != nil && !frozen {
 			if msg.ExcerptPID != "" {
 				if msg.Topic != *info.Topic {
 					c.Unrelated++

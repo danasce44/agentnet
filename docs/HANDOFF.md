@@ -6,7 +6,7 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-The [v0.8.28 package](plans/V0_8_28.md) contains ten focused bug-fix
+The [v0.8.28 package](plans/V0_8_28.md) contains eleven focused bug-fix
 items, stable chat/topic links (MEL-625) and three qualification tracks. Its Linear
 milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
 are recorded. Implementation has started with three GPT-6.1-sol xhigh workers
@@ -19,12 +19,15 @@ overthinking/overengineering; disputed designs have two evidence-backed rounds.
 MEL-628 adds independent conversations for the same agent using fresh native
 sessions, preserving actual same-session exclusion and cancellation isolation.
 
-Source progress: the cache repair and exact model/reasoning report changes are
-integrated. The legacy-list and request-card slice passed independent focused
-protocol/Hub/client/UI checks, including directory invalidation during roster
-refresh, and is being integrated with the rebuilt Comic bundle. These are source
-checks; packaged Android recovery, all-skins/native/platform and release gates
-remain pending. Topic-sharing and steering candidates are still under review.
+Source progress: cache repair, exact model/reasoning reports, legacy lists and
+request cards are integrated with the rebuilt Comic bundle. Moved-topic sharing
+and truthful destination notices passed independent focused checks on the
+combined source, preserving model-reader and attachment admission guards.
+Steering and links remain under review. These are source checks; packaged
+Android recovery, all-skins/native/platform and release gates remain pending.
+The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
+`3599582f`; exact file bytes, limits and removal guards pass the four-case
+focused signed/encrypted test (9.630s). Nothing is published by this integration.
 
 Do not tag or publish the next release until these are fixed and verified:
 

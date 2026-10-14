@@ -219,6 +219,15 @@ func (a *Agent) groupDeliveryTo(ctx context.Context, packet GroupContext, payloa
 		in := envelope.Inner{V: envelope.Version2, ID: protocol.NewID(), LID: protocol.NewID(), From: a.Address, To: key.Address, TS: time.Now().Unix(), Kind: envelope.KindMessage, Conv: packet.State.Conv, Root: rootRaw, Sub: p.sub, Body: string(descriptor)}
 		copies = append(copies, outCopy{in: in, state: stateQueued, required: protocol.CapGroup, recipientFP: key.Fingerprint()})
 		copy := &copies[len(copies)-1]
+		if p.sub == envelope.SubGroupContext {
+			needed, e := snapshotCopy(nil, packet.State.Conv, "", p.sub, string(p.raw), "")
+			if e != nil {
+				return copies, e
+			}
+			if needed {
+				copy.required = protocol.CapTopicContext
+			}
+		}
 		path, cleanup, e := a.StageUpload(p.sub+".json", bytes.NewReader(p.raw))
 		if e != nil {
 			return copies, e

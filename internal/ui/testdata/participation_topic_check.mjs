@@ -43,5 +43,21 @@ export async function participationTopics({world,check,c,root,conv,keys,address,
   } finally {w.e.profile=profile;}
   await w.reload();check((await w.e.agentConv(invitation.pid)).info.topic===topic,'scope survives restart');
   const view=w.e.agentView((await w.e.agentConv(invitation.pid)).info,[],null,[...members.values()],'member');check(view.topic===topic&&view.state_text.includes('only in this topic')&&!view.state_text.includes('every new'),'scoped participant projection avoids whole-group promise');
+  // Actual signed group ingress: a display move permits one new explicit
+  // disclosure, while the original Main request/reference scope stays Main.
+  const source=await send({topic:'',body:'B3 exact selected Main history',origin:'ui'});
+  const selectedHash=await wire.groupHistoryContentHash(conv,source),destination=wire.newID();
+  await send({topic:destination,body:'Moved selected messages',origin:'ui',topic_event:{action:'move',moves:[{lid:source.lid,author:aliceFP,hash:selectedHash}]}});
+  const hostPerson=w.e.me.person,hostMember=wire.groupMember(packet.state,hostPerson),hostAdmission=await wire.groupAdmissionHash(hostMember.admission);
+  const selectedInvite=await wire.signEvent(aliceKeys,{conv,pid:wire.newID(),type:'invite',ts:1700000103,author,host:{person:hostPerson,address,fingerprint:w.e.fp},audience:'room',topic:destination,grant:[{lid:source.lid,fingerprint:aliceFP}],snapshots:[{lid:source.lid,fingerprint:aliceFP,hash:selectedHash}],group:{seq:packet.state.seq,hash:await wire.groupStateHash(packet.state),host_role:'member',host_admission:hostAdmission}});
+  await send({pid:selectedInvite.pid,sub:'event',body:wire.eventJSON(selectedInvite)});
+  const selectedInfo=(await w.e.agentConv(selectedInvite.pid)).info;
+  check(selectedInfo.snapshots?.length===1&&selectedInfo.topic===destination,'group receiver verifies exact signed moved disclosure');
+  const selectedSnapshot=w.e.itemOf(await w.st.get('inbox',source.id),false);
+  const excerpt=await send({pid:selectedInvite.pid,sub:'excerpt',replica:true,body:wire.historyJSON(selectedSnapshot)});
+  check(!!await w.st.get('inbox',excerpt.id)&&!(await w.st.get('inbox',excerpt.id)).state,'group exact snapshot is inert admitted context');
+  const altered=await send({pid:selectedInvite.pid,sub:'excerpt',replica:true,body:wire.historyJSON({...selectedSnapshot,body:'forged unreviewed text'})});
+  check(!await w.st.get('inbox',altered.id)&&(await w.st.get('held',altered.id))?.reason==='invalid','group receiver rejects substituted snapshot');
+  let cross=false;try{await w.e.checkParticipationTopic(destination,{conv,ref:{id:source.lid,fingerprint:aliceFP}});}catch{cross=true;}check(cross,'new disclosure does not widen ongoing Main reference scope');
  } finally {await w.close();}
 }

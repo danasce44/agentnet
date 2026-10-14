@@ -157,7 +157,7 @@ func (a *Agent) requireParticipationCaps(ctx context.Context, key identity.Publi
 		}
 		return nil
 	}
-	if required != protocol.CapModelSync && required != protocol.CapModelSyncV2 && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent && required != protocol.CapMentionReaction && required != protocol.CapAgentOrganization {
+	if required != protocol.CapTopicContext && required != protocol.CapModelSync && required != protocol.CapModelSyncV2 && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent && required != protocol.CapMentionReaction && required != protocol.CapAgentOrganization {
 		return errors.New("unknown queued capability requirement")
 	}
 	label, device, err := protocol.SplitAddress(key.Address)
@@ -351,6 +351,8 @@ func (e *NeedsUpdateError) Error() string {
 		message = "cannot read private model reports yet; update all its active AgentNet sessions"
 	case protocol.CapTopicOrganization:
 		message = "cannot read selected topic moves and merges yet; update all its active AgentNet sessions"
+	case protocol.CapTopicContext:
+		message = "cannot verify reviewed topic history yet; update all its active AgentNet sessions"
 	case protocol.CapTopicParticipation:
 		message = "cannot enforce topic-only participation yet; update all its active AgentNet sessions"
 	case protocol.CapOwnSyncV3:

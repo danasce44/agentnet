@@ -94,6 +94,9 @@ func TestAgentTopicOrganizationAdmittedRun(t *testing.T) {
 			if organizationCount != 1 {
 				t.Fatalf("organization rows=%d", organizationCount)
 			}
+			if row.Body != "Moved selected messages to “Related discussion”." {
+				t.Fatalf("agent notice names wrong destination: %q", row.Body)
+			}
 			if row.TopicEvent == nil || row.TopicEvent.Request == nil || row.TopicEvent.Request.LID != q.LID {
 				t.Fatal("signed action lost exact request")
 			}
@@ -166,6 +169,14 @@ func TestAgentTopicOrganizationAdmittedRun(t *testing.T) {
 			}
 			if count(t, w.alice, "outbox") != before {
 				t.Fatal("failed later source group stored a partial inverse")
+			}
+			mainMove, e := w.bob.OrganizeAgentTopic(tctx(t), j.ID, attempt, TopicOrganizationRequest{IDs: []string{lids[0]}, Main: true})
+			if e != nil {
+				t.Fatal(e)
+			}
+			mainRow, _ := convMsg(t, w.bob, conv, func(m ConvMessage) bool { return m.LID == mainMove.LID })
+			if mainRow.Topic != "" || mainRow.Body != "Moved selected messages to Main flow." {
+				t.Fatalf("agent Main destination notice=%q topic=%q", mainRow.Body, mainRow.Topic)
 			}
 			if _, err = w.bob.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateCancelled, j.ID); err != nil {
 				t.Fatal(err)

@@ -43,33 +43,34 @@ const (
 
 // ParticipationInfo is one participation as this installation resolves it.
 type ParticipationInfo struct {
-	Topic       *string             `json:"topic,omitempty"`
-	NeedsUpdate []string            `json:"needs_update,omitempty"`
-	Role        string              `json:"role,omitempty"`
-	PID         string              `json:"pid"`
-	Conv        string              `json:"conv"`
-	State       string              `json:"state"`
-	Host        PersonInfo          `json:"host"`               // the host device's person (its device runs the agent)
-	HostHere    bool                `json:"host_here"`          // this installation is the host
-	External    bool                `json:"external,omitempty"` // host person is outside the unchanged DM membership
-	AgentID     string              `json:"agent_id,omitempty"` // host-signed agent selected by the invite
-	Inviters    []PersonInfo        `json:"inviters,omitempty"`
-	Shares      []string            `json:"-"`
-	Member      bool                `json:"member,omitempty"`
-	Inviter     PersonInfo          `json:"inviter"`
-	Grant       []protocol.GrantRef `json:"grant,omitempty"`     // earlier messages the agent may be given, each exactly
-	TaskKeys    []string            `json:"task_keys,omitempty"` // member keys allowed follow-up tasks here
-	Note        string              `json:"note,omitempty"`
-	Invite      string              `json:"invite,omitempty"`    // the invite's hash
-	Scope       string              `json:"scope,omitempty"`     // its counted public projection (protocol.EventScope), if held
-	Decision    string              `json:"decision,omitempty"`  // the accept or decline that decided it
-	Dismissal   string              `json:"dismissal,omitempty"` // the dismiss that ended it
-	Conflict    string              `json:"conflict,omitempty"`  // why a conflict (or a declined fork) was resolved so
-	Held        int                 `json:"held"`                // events that do not count here now
-	HeldDismiss int                 `json:"held_dismiss"`        // of those, dismissals
-	Invited     int64               `json:"invited,omitempty"`   // the inviter's claim, unix seconds
-	Audience    string              `json:"audience,omitempty"`  // protocol.AudienceConversation or AudienceRoom, as invited
-	Until       int64               `json:"until,omitempty"`     // a room's end time as invited; past it here, it counts as ended
+	Snapshots   []protocol.GrantSnapshot `json:"snapshots,omitempty"`
+	Topic       *string                  `json:"topic,omitempty"`
+	NeedsUpdate []string                 `json:"needs_update,omitempty"`
+	Role        string                   `json:"role,omitempty"`
+	PID         string                   `json:"pid"`
+	Conv        string                   `json:"conv"`
+	State       string                   `json:"state"`
+	Host        PersonInfo               `json:"host"`               // the host device's person (its device runs the agent)
+	HostHere    bool                     `json:"host_here"`          // this installation is the host
+	External    bool                     `json:"external,omitempty"` // host person is outside the unchanged DM membership
+	AgentID     string                   `json:"agent_id,omitempty"` // host-signed agent selected by the invite
+	Inviters    []PersonInfo             `json:"inviters,omitempty"`
+	Shares      []string                 `json:"-"`
+	Member      bool                     `json:"member,omitempty"`
+	Inviter     PersonInfo               `json:"inviter"`
+	Grant       []protocol.GrantRef      `json:"grant,omitempty"`     // earlier messages the agent may be given, each exactly
+	TaskKeys    []string                 `json:"task_keys,omitempty"` // member keys allowed follow-up tasks here
+	Note        string                   `json:"note,omitempty"`
+	Invite      string                   `json:"invite,omitempty"`    // the invite's hash
+	Scope       string                   `json:"scope,omitempty"`     // its counted public projection (protocol.EventScope), if held
+	Decision    string                   `json:"decision,omitempty"`  // the accept or decline that decided it
+	Dismissal   string                   `json:"dismissal,omitempty"` // the dismiss that ended it
+	Conflict    string                   `json:"conflict,omitempty"`  // why a conflict (or a declined fork) was resolved so
+	Held        int                      `json:"held"`                // events that do not count here now
+	HeldDismiss int                      `json:"held_dismiss"`        // of those, dismissals
+	Invited     int64                    `json:"invited,omitempty"`   // the inviter's claim, unix seconds
+	Audience    string                   `json:"audience,omitempty"`  // protocol.AudienceConversation or AudienceRoom, as invited
+	Until       int64                    `json:"until,omitempty"`     // a room's end time as invited; past it here, it counts as ended
 
 	OwnerInvited bool `json:"owner_invited,omitempty"` // current human owner already supplied consent; presentation, never execution authority
 }
@@ -289,6 +290,10 @@ func resolve(conv, pid string, events []protocol.ParticipationEvent, m dmMembers
 				author = author || inviter && host && ev.Author.Person == invite.Host.Person && ev.Author.Address == invite.Host.Address && ev.Author.Fingerprint == invite.Host.Fingerprint && m.chains[ev.Author.Person][ev.Author.Roster]
 			}
 		}
+		if len(ev.Snapshots) > 0 {
+			person, ok := m.author(ev.Author)
+			author = author && ok && person.roster.Human(ev.Author.Fingerprint)
+		}
 		if !author {
 			hold(ev)
 			continue
@@ -373,6 +378,7 @@ func resolve(conv, pid string, events []protocol.ParticipationEvent, m dmMembers
 		_, member := m.persons[inv.Host.Person]
 		info.External = !member
 		info.Grant, info.TaskKeys, info.Note, info.Invited = inv.Grant, inv.TaskKeys, inv.Note, inv.TS
+		info.Snapshots = slices.Clone(inv.Snapshots)
 		if inv.Group != nil && m.roomEvents[inv.Hash()] {
 			info.TaskKeys = nil
 			for i, key := range inv.TaskKeys {
@@ -398,6 +404,7 @@ func resolve(conv, pid string, events []protocol.ParticipationEvent, m dmMembers
 				continue
 			}
 			info.Shares = append(info.Shares, ev.Hash())
+			mergeGrantSnapshots(&info, ev.Snapshots)
 			p, valid := m.author(ev.Author)
 			if !valid {
 				p, _ = m.roomAuthor(ev.Author)
@@ -695,7 +702,20 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 			return ParticipationInfo{}, fmt.Errorf("more than one message here has logical id %s; it cannot be shared by that id", lid)
 		}
 	}
-	if err := a.checkTopicGrants(a.store.db, conv, topic, refs); err != nil {
+	snapshots, snapshotClaim, err := a.prepareGrantSnapshots(conv, topic, refs)
+	if err != nil {
+		return ParticipationInfo{}, err
+	}
+	if len(snapshots) > 0 && host.Address != a.Address {
+		key, e := a.sendKey(ctx, host.Address)
+		if e != nil {
+			return ParticipationInfo{}, e
+		}
+		if e = a.requireParticipationCaps(ctx, key, protocol.CapTopicContext); e != nil {
+			return ParticipationInfo{}, e
+		}
+	}
+	if err := a.checkTopicGrants(a.store.db, conv, topic, refs, snapshots); err != nil {
 		return ParticipationInfo{}, err
 	}
 	for _, fp := range taskKeys {
@@ -710,14 +730,30 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 		}
 		for _, existing := range infos {
 			if existing.Role == "" && existing.Host.Address == host.Address && existing.Host.Fingerprint == host.Fingerprint && existing.AgentID == agentID && sameParticipationTopic(existing.Topic, topic) && (existing.State == PartActive || existing.State == PartInvited) {
-				ev := protocol.ParticipationEvent{V: 1, Conv: conv, PID: existing.PID, Type: protocol.EventShare, Prev: existing.Invite, TS: time.Now().Unix(), Author: protocol.EventAuthor{Person: me.info.Person, Roster: me.info.Roster, Address: a.Address, Fingerprint: me.info.Fingerprint}, Host: host, Grant: refs, Audience: existing.Audience, Topic: topic}
+				for _, ref := range refs {
+					if old, ok := grantSnapshot(ref, existing.Snapshots); ok {
+						item, e := a.snapshotSourceItem(a.store.db, conv, ref)
+						if e != nil {
+							return ParticipationInfo{}, e
+						}
+						controls, e := a.controlsOf(ControlRef{Conv: conv, ID: ref.LID, Fingerprint: ref.Fingerprint})
+						if e != nil {
+							return ParticipationInfo{}, e
+						}
+						item.Body = controls.Shown(item.Body)
+						if controls.Deleted || contentHash(item.inner(conv)) != old.Hash {
+							return ParticipationInfo{}, errors.New("previously shared context is frozen; choose a new participation for changed content")
+						}
+					}
+				}
+				ev := protocol.ParticipationEvent{V: 1, Conv: conv, PID: existing.PID, Type: protocol.EventShare, Prev: existing.Invite, TS: time.Now().Unix(), Author: protocol.EventAuthor{Person: me.info.Person, Roster: me.info.Roster, Address: a.Address, Fingerprint: me.info.Fingerprint}, Host: host, Grant: refs, Audience: existing.Audience, Topic: topic, Snapshots: snapshots}
 				if err := m.bindGroupInvite(&ev); err != nil {
 					return ParticipationInfo{}, err
 				}
-				if err := a.recordAndSend(ctx, ev); err != nil {
+				if err := a.recordAndSendWith(ctx, ev, snapshotClaim); err != nil {
 					return ParticipationInfo{}, err
 				}
-				if existing.External {
+				if existing.External || len(snapshots) > 0 {
 					if err := a.sendGrantedExcerpts(ctx, ev); err != nil {
 						return ParticipationInfo{}, err
 					}
@@ -728,7 +764,7 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 	}
 	ev := protocol.ParticipationEvent{V: 1, Conv: conv, PID: protocol.NewID(), Type: protocol.EventInvite, TS: time.Now().Unix(),
 		Author: protocol.EventAuthor{Person: me.info.Person, Roster: me.info.Roster, Address: a.Address, Fingerprint: me.info.Fingerprint},
-		Host:   host, Grant: refs, Audience: protocol.AudienceConversation, TaskKeys: taskKeys, Note: note, Role: role, Topic: topic}
+		Host:   host, Grant: refs, Audience: protocol.AudienceConversation, TaskKeys: taskKeys, Note: note, Role: role, Topic: topic, Snapshots: snapshots}
 	if m.group != nil {
 		if role == "" || role == protocol.RoleHuman {
 			ev.Audience = protocol.AudienceRoom
@@ -737,7 +773,7 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 			return ParticipationInfo{}, err
 		}
 	}
-	if err := a.recordAndSend(ctx, ev); err != nil {
+	if err := a.recordAndSendWith(ctx, ev, snapshotClaim); err != nil {
 		return ParticipationInfo{}, err
 	}
 	if role == protocol.RoleHuman && m.group == nil || ev.Audience == protocol.AudienceRoom { // its public projection, for participants who never hold the invite (an assistant's is signed once guests need it)
@@ -745,7 +781,7 @@ func (a *Agent) inviteParticipation(ctx context.Context, conv, hostAddress, agen
 			return ParticipationInfo{}, err
 		}
 	}
-	if _, member := m.persons[host.Person]; !member && role != protocol.RoleHuman {
+	if _, member := m.persons[host.Person]; (!member || len(snapshots) > 0) && role != protocol.RoleHuman {
 		if err := a.sendGrantedExcerpts(ctx, ev); err != nil {
 			return ParticipationInfo{}, err
 		}
@@ -1229,6 +1265,9 @@ func (a *Agent) recordAndSendWith(ctx context.Context, ev protocol.Participation
 	if len(raw) > protocol.MaxParticipationEvent {
 		return errors.New("participation: event too large")
 	}
+	if len(ev.Snapshots) > 0 && also == nil {
+		return errors.New("reviewed snapshots require a current source commit guard")
+	}
 	// Stored first: if sending fails, a retry resends these very bytes.
 	humanEnd := false
 	if ev.Type == protocol.EventDismiss {
@@ -1240,7 +1279,7 @@ func (a *Agent) recordAndSendWith(ctx context.Context, ev protocol.Participation
 		a.humanMu.Lock()
 	}
 	err := a.store.addParticipationEventWith(ev, raw, func(tx *sql.Tx) error {
-		if err := a.checkTopicGrants(tx, ev.Conv, ev.Topic, ev.Grant); err != nil {
+		if err := a.checkTopicGrants(tx, ev.Conv, ev.Topic, ev.Grant, ev.Snapshots); err != nil {
 			return err
 		}
 		if also != nil {

@@ -19,6 +19,8 @@ import (
 // push, and one waiting on a requirement only deliver checked was never
 // released. Nothing here grants anything: delivery stays per exact
 // captured key and every authority check still runs at handover.
+const topicContextArchiveProactive = protocol.CapTopicContext + "+" + protocol.CapProactiveAgent
+
 type copyNeeds struct {
 	required                                                                       string // the stored requirement, or the one its shape derives
 	stored                                                                         string // required_cap as stored
@@ -27,6 +29,7 @@ type copyNeeds struct {
 	proactive, progress, receiverCap, room, topicScoped, organizationCap, followup bool
 	proposal, groupedWire                                                          bool
 	mentionCap, agentOrganizationCap                                               bool
+	snapshotCap                                                                    bool
 	// A history copy's carried item. A copy kept as ciphertext only (empty
 	// body) carries none: its requirement is the stored column.
 	item               HistoryItem
@@ -43,6 +46,12 @@ func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 		return n, err
 	}
 	n.required = n.stored
+	var snapshotErr error
+	n.snapshotCap, snapshotErr = snapshotCopy(q, n.conv, n.pid, n.sub, n.body, n.humanRaw)
+	if snapshotErr != nil {
+		return n, snapshotErr
+	}
+	n.snapshotCap = n.snapshotCap || (n.stored == protocol.CapTopicContext || n.stored == topicContextArchiveProactive)
 	if target == "" {
 		n.proactive = envelope.ProactiveAgent(envelope.Inner{Conv: n.conv, Kind: kind, Origin: origin, ReplyTo: reply, PID: n.pid, Sub: n.sub, Status: n.status})
 	}
@@ -65,6 +74,9 @@ func copyNeedsOf(q dbq, id string, v int) (copyNeeds, error) {
 	}
 	if n.topicScoped, err = topicCopy(q, n.conv, n.pid, n.sub, n.body, n.humanRaw); err != nil {
 		return n, err
+	}
+	if n.snapshotCap && (n.sub == envelope.SubGroupProof || n.sub == envelope.SubGroupContext) {
+		n.required = protocol.CapTopicContext
 	}
 	if n.required == "" && n.topicScoped {
 		n.required = protocol.CapTopicParticipation
@@ -110,7 +122,7 @@ func (n copyNeeds) cacheKey(to string) string {
 	return fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%v%v%v%v%v%v%v%v%v%v%v\x00%s\x00%s\x00%s\x00%s",
 		to, n.v, n.required, n.stored, n.conv, n.sub, n.pid, n.humanRaw, n.status, n.agentID,
 		n.progress, n.receiverCap, n.room, n.topicScoped, n.organizationCap, n.followup, n.proposal, n.groupedWire, n.historical, n.helper, item.GroupHistory != nil,
-		item.Sub, item.Status, item.PID, item.AgentID) + fmt.Sprint(n.proactive, n.mentionCap, n.agentOrganizationCap)
+		item.Sub, item.Status, item.PID, item.AgentID) + fmt.Sprint(n.proactive, n.mentionCap, n.agentOrganizationCap, n.snapshotCap)
 }
 
 // copyWait is a reason a copy waits that capSupport words itself.
@@ -125,6 +137,10 @@ func (e *copyWait) Error() string { return e.why }
 // nothing here (the conversation itself was checked when it was stored).
 func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public, n copyNeeds) error {
 	required := n.required
+	if required == topicContextArchiveProactive {
+		required = protocol.CapTopicContext
+		n.proactive = true
+	}
 	if required == "" {
 		return nil
 	}
@@ -139,6 +155,16 @@ func (a *Agent) readerCheck(ctx context.Context, to string, key identity.Public,
 		return nil
 	}
 	var err error
+	if n.snapshotCap {
+		if n.sub == envelope.SubGroupContext || n.sub == envelope.SubGroupProof {
+			if err = a.requireParticipationCaps(ctx, key, protocol.CapGroup); err != nil {
+				return err
+			}
+		}
+		if err = a.requireParticipationCaps(ctx, key, protocol.CapTopicContext); err != nil {
+			return err
+		}
+	}
 	if n.mentionCap {
 		if err = a.requireParticipationCaps(ctx, key, protocol.CapMentionReaction); err != nil {
 			return err

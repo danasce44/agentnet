@@ -174,6 +174,13 @@ func (l *Live) dmOverview(o *Overview) error {
 				if m.Sub == envelope.SubEvent {
 					return eventText(m.Body, people)
 				}
+				if envelope.TopicOrganization(m.TopicEvent) {
+					notice, e := l.a.TopicOrganizationNotice(c.ID, m.Topic, "")
+					if e == nil {
+						return notice
+					}
+					return client.TopicOrganizationNotice(m.Topic, "")
+				}
 				if m.Body == "" && len(m.Attachments) > 0 { // files only: their names
 					var names []string
 					for _, f := range m.Attachments {
@@ -404,6 +411,16 @@ func (l *Live) DM(id string) (DMThread, error) {
 			dm := DMMessage{SendGroup: m.SendGroup, SendGroupAuthor: cmp.Or(m.Key, m.Claimed), Status: m.Status(), Topic: assigned[m.LID], TopicEvent: m.TopicEvent, ID: m.ID, LID: m.LID, AgentID: m.AgentID, Target: m.Target, Dir: m.Dir, From: m.From, Kind: m.Kind, Body: m.Body, ReplyTo: m.ReplyTo, Quote: m.Quote, SentAt: shownSent(time.Unix(m.Sent, 0), time.Unix(m.At, 0)), Delivery: m.Delivery,
 				Origin: m.Origin, State: m.State, StateText: DMStateText(m.Dir, m.Kind, m.State, words(laggingCopy(m, c.Peer.Address)), m.Detail),
 				Detail: m.Detail, SendStopped: m.SendStopped, DeliveryUncertain: m.DeliveryUncertain, JobDetail: m.JobDetail, At: time.Unix(m.At, 0), Unread: m.Dir == "in" && isUnread[m.ID], Replica: m.Replica, PID: m.PID, Attachments: fileViews(m.Attachments), Via: m.Via, Copies: copyViews(m.Copies), SyncedFrom: syncedFrom(m), Controls: m.Controls, Exec: m.Exec}
+			if envelope.TopicOrganization(m.TopicEvent) {
+				title := ""
+				for _, topic := range topics {
+					if topic.ID == m.Topic {
+						title = topic.Title
+						break
+					}
+				}
+				dm.Body = client.TopicOrganizationNotice(m.Topic, title)
+			}
 			dm.Continuation, err = l.a.ContinuationFor(m.ID, m.Key, m.Exec)
 			if err != nil {
 				return DMThread{}, err

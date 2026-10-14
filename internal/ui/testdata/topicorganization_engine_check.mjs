@@ -29,7 +29,7 @@ const rows=async e=>e.convMessages(conv,await e.store.all('inbox'),await e.store
 const deliver=async sent=>{
  for(const r of (await a.store.all('outbox')).filter(r=>r.lid===sent.lid&&r.to===b.address)){
   const env=wire.parseEnvelope(r.envelope);await wire.verifyEnvelope(env,a.pub.sign_key);
-  const n=await wire.open(r.envelope,b.keys,b.address,a.pub),ops=await b.admitConv(n,env,await b.pinned(a.address),{...n,at:1790000000000,fp:a.fp,read:false});
+  const n=await wire.open(r.envelope,b.keys,b.address,a.pub),ops=await b.admitConv(n,env,await b.pinned(a.address),{...n,to:undefined,at:1790000000000,fp:a.fp,read:false});
   await b.store.write(ops,ops.checks||[]);
  }
 };
@@ -37,7 +37,8 @@ const from=wire.newID(),to=wire.newID();
 const first=await a.sendDM({conv,body:'Selected parent',topic:from});await deliver(first);
 const child=await a.sendDM({conv,body:'Unselected child',reply_to:first.lid});await deliver(child);
 const sourceOther=await a.sendDM({conv,body:'Other selected source message',topic:from});await deliver(sourceOther);
-const main=await a.sendDM({conv,body:'Selected main-flow message'});await deliver(main);
+const fileBytes=new TextEncoder().encode('EXACT_SELECTED_BROWSER_FILE');
+const main=await a.sendDM({conv,body:'Selected main-flow message',files:[{name:'selected.txt',bytes:fileBytes}]});await deliver(main);
 const destination=await a.sendDM({conv,body:'Destination',topic:to});await deliver(destination);
 const before=await a.store.all('outbox');
 const review=await a.api('/api/topic/organization/preview',{conv,ids:[first.id,main.id],topic:to});
@@ -48,7 +49,43 @@ for(const e of [a,b]){
  const assigned=chatTopicAssignments(await rows(e));
  same([assigned.get(first.lid),assigned.get(main.lid),assigned.get(child.lid),assigned.get(sourceOther.lid)],[to,to,from,from],'only reviewed selection moves on both readers');
  same(await e.outgoingTopic(conv,'',first.lid),from,'implicit later reply keeps original signed placement');
+ const grant=[{lid:first.lid,fingerprint:a.fp},{lid:main.lid,fingerprint:a.fp}],snapshots=await e.prepareGrantSnapshots(conv,to,grant);
+ same(snapshots.length,2,'moved selection preview requires exact witnesses');
+ await e.checkTopicGrants(conv,to,grant,[],snapshots);
 }
+// A real signed invitation carries only hashes of the exact reviewed history;
+// its inert excerpts keep original metadata and bind the selected file bytes.
+for(const e of users){e.caps.push(wire.CapTopicParticipation,wire.CapTopicContext,wire.CapRoom,wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity);e.profile=async address=>{const peer=users.find(u=>u.address===address),session=peer.capSession||=(wire.newID());return {sessions:[session],caps:[JSON.parse(wire.capsJSON(await wire.newCaps(peer.keys,peer.address,session,peer.caps)))]};};}
+const invitation=await a.inviteAgent({conv,host:b.address,share:[first.id,main.id],topic:to});
+const inviteRow=(await a.store.all('outbox')).find(r=>r.pid===invitation.pid&&r.sub==='event'&&wire.parseEvent(r.body).type==='invite');
+const missing=await wire.signEvent(a.keys,{...wire.parseEvent(inviteRow.body),pid:wire.newID(),snapshots:undefined}),beforeMissing=await a.store.all('outbox');
+await wire.verifyEvent(missing,a.pub.sign_key);
+await refuses(()=>a.sendConv(c,{queued:true,kind:'message',sub:'event',body:wire.eventJSON(missing),pid:missing.pid}),/changed after review/);
+same(await a.store.all('outbox'),beforeMissing,'signed moved grant without witnesses commits no event or copy');
+const unchangedGrant=[{lid:destination.lid,fingerprint:a.fp}],unneeded=await wire.signEvent(a.keys,{...missing,pid:wire.newID(),grant:unchangedGrant,snapshots:[{...unchangedGrant[0],hash:await wire.groupHistoryContentHash(conv,await a.grantSnapshotItem(conv,unchangedGrant[0]))}]});
+await refuses(()=>a.sendConv(c,{queued:true,kind:'message',sub:'event',body:wire.eventJSON(unneeded),pid:unneeded.pid}),/changed after review/);
+same(await a.store.all('outbox'),beforeMissing,'unmoved grant with unneeded witnesses commits no event or copy');
+await deliver({lid:inviteRow.lid});
+const info=(await b.agentConv(invitation.pid)).info;
+same(info.snapshots.length,2,'exact signed snapshots reach actual receiver');
+const excerpts=(await a.store.all('outbox')).filter(r=>r.pid===invitation.pid&&r.sub==='excerpt');
+same(excerpts.length,2,'only reviewed inert excerpts sent');
+for(const row of excerpts){await deliver({lid:row.lid});const received=await b.store.get('inbox',row.id);check(received?.replica&&received.sub==='excerpt'&&!received.state,'received history cannot execute');const h=wire.parseHistory(received.body);same(await wire.groupHistoryContentHash(conv,h),info.snapshots.find(s=>s.lid===h.lid).hash,'receiver verifies original content/files hash');}
+const savedExcerpt=wire.parseHistory(excerpts.find(r=>wire.parseHistory(r.body).lid===main.lid).body);
+same(savedExcerpt.topic||'','','original Main scope stays unchanged in disclosed snapshot');
+same(savedExcerpt.attachments[0].sha256,wire.hex(await wire.sha256(fileBytes)),'selected file manifest is the exact reviewed bytes');
+const altered={...savedExcerpt,body:'substituted text'},carrier={conv,pid:info.pid,sub:'excerpt',body:wire.historyJSON(altered),attachments:[],replica:true,kind:'message'};
+await refuses(()=>b.verifyGrantedSnapshot(carrier,info),/snapshot/i);
+const malformed=wire.parseEvent(inviteRow.body);malformed.snapshots.pop();
+assert.throws(()=>wire.parseEvent(wire.eventJSON(malformed)),/snapshot/);checks++;
+await refuses(()=>a.checkParticipationTopic(to,{conv,ref:{id:main.lid,fingerprint:a.fp}}),/outside/);
+const retainedCiphertext=inviteRow.envelope;
+b.caps=b.caps.filter(c=>c!==wire.CapTopicContext);
+await a.post({...inviteRow});
+same((await a.store.get('outbox',inviteRow.id)).state,'waiting','tps1/org1 does not bypass independent snapshot capability');
+same((await a.store.get('outbox',inviteRow.id)).envelope,retainedCiphertext,'unsupported copy keeps the same sealed invitation');
+b.caps.push(wire.CapTopicContext);
+await a.store.write([{s:'outbox',k:inviteRow.id,v:inviteRow}]);
 for(const r of before)same((await a.store.get('outbox',r.id)).envelope,r.envelope,'original IDs/authors/replies/ciphertext not rewritten');
 const sentEvent=(await a.store.all('outbox')).find(r=>r.lid===moved.lid);
 check(!wire.parseEnvelope(sentEvent.envelope).attn&&!wire.parseEnvelope(sentEvent.envelope).chan,'organization emits no old-mention alerts');
@@ -120,12 +157,18 @@ const future=await a.sendDM({conv,body:'Future source post',reply_to:child.lid})
 same(chatTopicAssignments(await rows(a)).get(future.lid),from,'future source post is outside the reviewed merge');
 check((await a.chatTopics(conv)).find(t=>t.id===from)?.count===1,'source remains openable after new activity');
 const namedTopic=wire.newID(),named=await a.previewTopicOrganization({conv,ids:[future.id],topic:namedTopic,new:true,title:'Named destination'});
-await a.applyTopicOrganization(named);
+const namedMove=await a.applyTopicOrganization(named);
+same((await a.store.all('outbox')).find(r=>r.lid===namedMove.lid).body,'Moved selected messages to “Named destination”.','browser human notice names destination');
 const namedSummary=(await a.chatTopics(conv)).find(t=>t.id===namedTopic);
 check(namedSummary?.title==='Named destination'&&namedSummary.count===1,'named new topic atomically retains exact reviewed title and selection');
 const renamedReview=await a.previewTopicOrganization({conv,ids:[first.id],topic:namedTopic});
 await a.changeChatTopic('rename',{conv,id:namedTopic,title:'Changed destination'});
+const renamedView=await a.api('/api/dm?id='+conv);
+same(renamedView.messages.find(m=>m.lid===namedMove.lid).body,'Moved selected messages to “Changed destination”.','browser view derives renamed destination from canonical topic');
 await refuses(()=>a.applyTopicOrganization(renamedReview),/changed/);
+const mainReview=await a.previewTopicOrganization({conv,ids:[future.id],topic:'',main:true}),mainMove=await a.applyTopicOrganization(mainReview);
+same((await a.store.all('outbox')).find(r=>r.lid===mainMove.lid).body,'Moved selected messages to Main flow.','browser Main move notice names actual destination');
+same((await a.api('/api/dm?id='+conv)).messages.find(m=>m.lid===mainMove.lid).body,'Moved selected messages to Main flow.','browser Main view preserves destination');
 await refuses(()=>a.previewTopicOrganization({conv,ids:[first.id],topic:from,merge:to}),/cycle/);
 // Concurrent independently signed merges still converge: the late cycle is
 // ignored even if its author reviewed before the first merge arrived.

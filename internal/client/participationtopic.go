@@ -166,9 +166,12 @@ func checkParticipationTopic(q dbq, topic *string, in envelope.Inner) error {
 	}
 	return nil
 }
-func (a *Agent) checkTopicGrants(q dbq, conv string, topic *string, refs []protocol.GrantRef) error {
+func (a *Agent) checkTopicGrants(q dbq, conv string, topic *string, refs []protocol.GrantRef, snapshots ...[]protocol.GrantSnapshot) error {
 	if topic == nil {
 		return nil
+	}
+	if len(snapshots) > 0 && len(snapshots[0]) > 0 {
+		return topicOrganizationAuthor(q, conv, a.Address, a.Self().Fingerprint())
 	}
 	for _, ref := range refs {
 		got, err := topicReference(q, conv, ref.LID, ref.Fingerprint)

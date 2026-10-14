@@ -19,6 +19,18 @@ func TestBrowserTopicOrganization(t *testing.T) {
 	}
 }
 
+func TestBrowserTopicSnapshotArchive(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/topicsnapshot_archive_check.mjs").CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	} else {
+		t.Log(string(out))
+	}
+}
+
 func TestTopicOrganizationComicRendered(t *testing.T) {
 	if os.Getenv("AGENTNET_PLAYWRIGHT") == "" {
 		t.Skip("opt-in: set AGENTNET_PLAYWRIGHT to an installed playwright-core")

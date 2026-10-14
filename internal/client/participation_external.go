@@ -181,7 +181,7 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 	}
 	member := m.device(sender, fp)
 	host := sender == info.Host.Address && fp == info.Host.Fingerprint
-	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil && !envelope.ProactiveAgent(in) && !organization {
+	if in.PID != info.PID || info.Invite == "" || (!info.External || len(m.persons) != 2) && m.group == nil && !envelope.ProactiveAgent(in) && !organization && !(in.Sub == envelope.SubExcerpt && len(info.Snapshots) > 0) {
 		return errors.New("external participation has incomplete pinned evidence")
 	}
 	switch in.Sub {
@@ -232,6 +232,14 @@ func externalTurn(in envelope.Inner, info ParticipationInfo, m dmMembers, sender
 			}
 		}
 	case envelope.SubExcerpt:
+		if len(info.Snapshots) > 0 {
+			if len(queries) != 1 {
+				return errParticipationTopicPending
+			}
+			if err := topicOrganizationAuthor(queries[0], in.Conv, sender, fp); err != nil {
+				return err
+			}
+		}
 		if info.Role == protocol.RoleHuman && !info.HumanActive() {
 			return errors.New("human selected context waits for exact acceptance")
 		}
@@ -394,7 +402,12 @@ func parseGrantedExcerpt(in envelope.Inner, info ParticipationInfo) (HistoryItem
 	if !slices.Contains([]string{envelope.KindMessage, envelope.KindQuestion, envelope.KindTask, envelope.KindAnswer, envelope.KindResult}, h.Kind) || !slices.Contains(info.Grant, protocol.GrantRef{LID: h.LID, Fingerprint: h.FromKey}) {
 		return h, errors.New("excerpt does not match an exact signed grant reference")
 	}
-	if info.Topic != nil && h.Topic != *info.Topic {
+	snapshot, frozen := grantSnapshot(protocol.GrantRef{LID: h.LID, Fingerprint: h.FromKey}, info.Snapshots)
+	if frozen {
+		if info.Topic == nil || contentHash(h.inner(in.Conv)) != snapshot.Hash {
+			return h, errors.New("excerpt differs from its signed reviewed snapshot")
+		}
+	} else if info.Topic != nil && h.Topic != *info.Topic {
 		return h, errParticipationTopic
 	}
 	if err := envelope.CheckQuote(h.inner(in.Conv)); err != nil {
@@ -909,7 +922,7 @@ func (a *Agent) sendGrantedExcerpts(ctx context.Context, invite protocol.Partici
 		if msg == nil {
 			continue
 		} // receiver reports missing selected context honestly
-		if err := a.checkTopicGrants(a.store.db, invite.Conv, invite.Topic, []protocol.GrantRef{ref}); err != nil {
+		if err := a.checkTopicGrants(a.store.db, invite.Conv, invite.Topic, []protocol.GrantRef{ref}, invite.Snapshots); err != nil {
 			return err
 		}
 		original := envelope.Inner{Topic: msg.Topic, TopicEvent: msg.TopicEvent, ID: msg.ID, From: msg.From, LID: msg.LID, TS: msg.At, Kind: msg.Kind, Body: msg.Controls.Shown(msg.Body), ReplyTo: msg.ReplyTo, Quote: msg.Quote, Origin: msg.Origin, Emotion: msg.Emotion, Target: msg.Target, PID: msg.PID, AgentID: msg.AgentID}
@@ -917,9 +930,18 @@ func (a *Agent) sendGrantedExcerpts(ctx context.Context, invite protocol.Partici
 			original.Attachments = append(original.Attachments, envelope.Attachment{Name: f.Name, Size: f.Size, SHA256: f.SHA256})
 		}
 		item := itemOf(original, ref.Fingerprint, msg.At*1000)
-		if invite.Topic != nil {
+		if len(invite.Snapshots) > 0 {
+			item, err = a.snapshotSourceItem(a.store.db, invite.Conv, ref)
+			if err != nil {
+				return err
+			}
+			item.Body = msg.Controls.Shown(msg.Body)
+			if snapshot, ok := grantSnapshot(ref, invite.Snapshots); !ok || contentHash(item.inner(invite.Conv)) != snapshot.Hash {
+				return errors.New("selected context changed after review")
+			}
+		} else if invite.Topic != nil {
 			item.Topic = *invite.Topic
-		} // this excerpt is explicitly a forwarder-claimed snapshot
+		}
 		body, _ := json.Marshal(item)
 		in := envelope.Inner{V: envelope.Version2, ID: protocol.NewID(), From: a.Address, To: key.Address, TS: time.Now().Unix(), Kind: envelope.KindMessage,
 			Body: string(body), Conv: invite.Conv, LID: ref.LID, Root: raw, Sub: envelope.SubExcerpt, PID: invite.PID, Replica: true}
@@ -937,6 +959,13 @@ func (a *Agent) sendGrantedExcerpts(ctx context.Context, invite protocol.Partici
 			if err != nil {
 				continue
 			} // manifest remains: missing bytes are explicit
+			if key.Address == a.Address {
+				if err = a.keepSent(plain); err != nil {
+					os.Remove(plain)
+					spoolErr = err
+					break
+				}
+			}
 			att, err := a.spoolNamed(OutgoingFile{Name: name, Path: plain}, recipient)
 			os.Remove(plain)
 			if err != nil {
@@ -965,7 +994,10 @@ func (a *Agent) sendGrantedExcerpts(ctx context.Context, invite protocol.Partici
 					}
 					return externalTurn(in, current, m, a.Address, a.Self().Fingerprint(), tx)
 				}
-				copy := outCopy{in: in, env: sealed, state: stateQueued, required: protocol.CapExternalParticipation}
+				copy := outCopy{in: in, env: sealed, state: stateQueued, required: protocol.CapExternalParticipation, recipientFP: key.Fingerprint()}
+				if key.Address == a.Address {
+					copy.state = protocol.StateDelivered
+				}
 				if invite.Role == protocol.RoleHuman {
 					copy.required = protocol.CapHumanParticipation
 				}
@@ -975,13 +1007,23 @@ func (a *Agent) sendGrantedExcerpts(ctx context.Context, invite protocol.Partici
 					if m.group != nil {
 						copy.required = protocol.CapGroup
 						copy.recipientFP = key.Fingerprint()
+						if m.device(key.Address, key.Fingerprint()) {
+							admission, e := groupMemberAdmission(a.store.db, *m.group, key.Address, key.Fingerprint())
+							if e != nil {
+								spoolErr = e
+							} else {
+								copy.groupAdmission = admission.Hash()
+							}
+						}
 					}
 					spoolErr = a.store.addConvOutbox([]outCopy{copy}, in, guard, "")
 				}
 				if spoolErr == nil {
 					stored = true
 					release()
-					_, spoolErr = a.deliver(ctx, sealed, nil)
+					if key.Address != a.Address {
+						_, spoolErr = a.deliver(ctx, sealed, nil)
+					}
 					if retryable(spoolErr) {
 						spoolErr = nil
 					} // queued encrypted bytes survive offline retry
@@ -1194,6 +1236,10 @@ func (a *Agent) admitExternalParticipation(ctx context.Context, env envelope.Env
 		}
 		return true, hold(reason, err.Error())
 	}
+	snapshotGuard, err := a.snapshotOriginalGuard(in, info)
+	if err != nil {
+		return true, hold(reasonInvalid, err.Error())
+	}
 	if envelope.AgentTopicOrganization(in) {
 		if reason, err := a.topicOrganizationAdmission(a.store.db, in, env.From, sender.Fingerprint(), false); err != nil {
 			return true, hold(reason, err.Error())
@@ -1223,6 +1269,11 @@ func (a *Agent) admitExternalParticipation(ctx context.Context, env envelope.Env
 		state = stateAgentWaiting
 	}
 	also := func(tx *sql.Tx) error {
+		if snapshotGuard != nil {
+			if err := snapshotGuard(tx); err != nil {
+				return err
+			}
+		}
 		if ev != nil {
 			if err := insertParticipationEvent(tx, *ev, []byte(in.Body)); err != nil {
 				return err
@@ -1394,6 +1445,9 @@ func (a *Agent) mayDeliverExternal(env envelope.Envelope) (bool, bool, error) {
 	// is ordinary member traffic: a scope's hgp1 only fences its reader.
 	memberEvent := rootMember && externalDM(m.root) && (in.Sub == envelope.SubEvent || envelope.ProactiveAgent(in) || envelope.AgentTopicOrganization(in)) && m.device(env.To, recipientFP(a.store, env.To))
 	allowed := memberEvent || !rootMember && externalDM(m.root) && (m.device(env.To, recipientFP(a.store, env.To)) || env.To == info.Host.Address && a.personSendable(info.Host.Address, ""))
+	if in.Sub == envelope.SubExcerpt && len(info.Snapshots) > 0 && rootMember && env.To == info.Host.Address && capturedFP == info.Host.Fingerprint && m.device(env.To, capturedFP) {
+		allowed = true
+	}
 	if env.To == info.Host.Address {
 		p, ok, _ := a.store.personByID(info.Host.Person)
 		allowed = allowed && ok && p.has(info.Host.Address, info.Host.Fingerprint)

@@ -231,7 +231,11 @@ func (a *Agent) ApplyTopicOrganization(ctx context.Context, review TopicOrganiza
 		}
 		return nil
 	}
-	sent, err := a.SendConv(WithQueuedSend(ctx, review.Operation), review.Conv, ConvOutgoing{Body: "Moved selected messages to this topic.", Topic: review.Topic, ReplyTo: review.Parent, TopicEvent: event, claim: claim})
+	notice, err := a.TopicOrganizationNotice(review.Conv, review.Topic, review.Title)
+	if err != nil {
+		return ConvSent{}, err
+	}
+	sent, err := a.SendConv(WithQueuedSend(ctx, review.Operation), review.Conv, ConvOutgoing{Body: notice, Topic: review.Topic, ReplyTo: review.Parent, TopicEvent: event, claim: claim})
 	if err != nil {
 		// A concurrent identical click may have committed between preview
 		// and the existing queued-send claim. Return only that exact action.

@@ -196,7 +196,11 @@ func (a *Agent) OrganizeAgentTopic(ctx context.Context, cause string, attempt in
 		}
 		return nil
 	}
-	sent, err := a.SendConv(WithQueuedSend(ctx, operation), request.Conv, ConvOutgoing{Body: "Moved selected messages to this topic.", Topic: request.Topic, ReplyTo: review.Parent, TopicEvent: event, PID: r.p.PID, AgentID: r.p.AgentID, Origin: envelope.OriginAgentOrganization, Emotion: "neutral", claim: claim, agentOrganizationCause: cause, agentOrganizationAttempt: attempt})
+	notice, err := a.TopicOrganizationNotice(request.Conv, request.Topic, request.Title)
+	if err != nil {
+		return ConvSent{}, err
+	}
+	sent, err := a.SendConv(WithQueuedSend(ctx, operation), request.Conv, ConvOutgoing{Body: notice, Topic: request.Topic, ReplyTo: review.Parent, TopicEvent: event, PID: r.p.PID, AgentID: r.p.AgentID, Origin: envelope.OriginAgentOrganization, Emotion: "neutral", claim: claim, agentOrganizationCause: cause, agentOrganizationAttempt: attempt})
 	if err == nil && request.New && request.Title != "" {
 		a.topicTitlesChanged()
 	}

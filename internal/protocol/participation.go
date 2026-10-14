@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"unicode"
 	"unicode/utf8"
 )
@@ -133,6 +134,16 @@ type GrantRef struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+// GrantSnapshot binds an explicitly reviewed history disclosure to its exact
+// original content and file manifests. It confers no ongoing topic authority.
+type GrantSnapshot struct {
+	LID         string `json:"lid"`
+	Fingerprint string `json:"fingerprint"`
+	Hash        string `json:"hash"`
+}
+
+const CapTopicContext = "tpc1"
+
 // ParticipationHost is the device that would run the agent, and its person.
 type ParticipationHost struct {
 	Person      string `json:"person"`
@@ -161,7 +172,8 @@ type ParticipationEvent struct {
 	Role     string              `json:"role,omitempty"`  // invite only; absent retains legacy agent semantics
 	Until    int64               `json:"until,omitempty"` // room invite and scope only: past it, by the reader's own clock, the participation counts as ended; it orders nothing
 
-	Topic *string `json:"topic,omitempty"` // absent: whole chat; present empty: Main; otherwise stable topic ID
+	Topic     *string         `json:"topic,omitempty"` // absent: whole chat; present empty: Main; otherwise stable topic ID
+	Snapshots []GrantSnapshot `json:"snapshots,omitempty"`
 
 	Sig []byte `json:"sig,omitempty"`
 }
@@ -183,6 +195,19 @@ func (e *ParticipationEvent) Sign(key ed25519.PrivateKey) { e.Sig = ed25519.Sign
 // whether its author, host or keys belong to the DM: that needs the DM's
 // pinned persons).
 func (e ParticipationEvent) Validate() error {
+	if len(e.Snapshots) != 0 {
+		if e.Topic == nil || e.Type != EventInvite && e.Type != EventShare || len(e.Snapshots) != len(e.Grant) {
+			return errors.New("participation: snapshots require an exact scoped history grant")
+		}
+		seen := map[GrantRef]bool{}
+		for _, s := range e.Snapshots {
+			ref := GrantRef{LID: s.LID, Fingerprint: s.Fingerprint}
+			if !ValidHash(s.Hash) || seen[ref] || !slices.Contains(e.Grant, ref) {
+				return errors.New("participation: invalid or extra history snapshot")
+			}
+			seen[ref] = true
+		}
+	}
 	if e.V != 1 || !ValidHash(e.Conv) || !ValidID(e.PID) || e.TS <= 0 {
 		return errors.New("participation: invalid event")
 	}
