@@ -43,12 +43,15 @@ export function shortLinkLabel(label: string, href: string): string {
 
 export type LinkPart = string | { href: string; label: string };
 
+// Canonical portable navigation anchors; the host still validates local access.
+export const portableLink = (value: string): boolean => /^agentnet:\/\/open#realm=[0-9a-f]{32}&(?:conv=[0-9a-f]{64}&topic=(?:main|[0-9a-f]{32})|thread=[0-9a-f]{32})$/.test(value);
+
 // Plain-text skins (the Classic and Zoom packages in agentnet-skins) keep
 // their formatting and take this as skins/shared/link-text.mjs (build.sh).
 // Use the same Markdown lexer as Comic to recognize raw links without
 // touching code or descriptive links.
 export function rawLinkParts(text: string): LinkPart[] {
-  if (text.length <= 64 || !/https?:\/\/|www\./i.test(text)) return [text];
+  if (!text.includes("agentnet://open#") && (text.length <= 64 || !/https?:\/\/|www\./i.test(text))) return [text];
   const links: { start: number; end: number; href: string; label: string }[] = [];
   function scan(source: string, tokens: Token[], offset: number) {
     let cursor = 0;
@@ -59,7 +62,7 @@ export function rawLinkParts(text: string): LinkPart[] {
       const t = token as Tokens.Generic;
       if (t.type === "link") {
         const label = shortLinkLabel(t.text, t.href);
-        if (label !== t.text) links.push({ start: offset + at, end: offset + cursor, href: t.href, label });
+        if (label !== t.text || portableLink(t.href)) links.push({ start: offset + at, end: offset + cursor, href: t.href, label: portableLink(t.href) ? markdownText(label) : label });
       } else if (!["code", "codespan", "html", "image"].includes(t.type)) {
         if (t.tokens) scan(t.raw, t.tokens, offset + at);
         else if (t.type === "list") scan(t.raw, (t as Tokens.List).items, offset + at);

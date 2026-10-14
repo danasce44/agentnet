@@ -473,6 +473,7 @@
       }
     };
     document.addEventListener('click',event=>{
+      if(event.defaultPrevented)return;
       const anchor=event.composedPath().find(node=>node?.tagName==='A'), value=anchor?.getAttribute('href');
       if(!value||!/^agentnet:\/\//i.test(value)||!value.includes('#'))return;
       const fields=new URLSearchParams(value.slice(value.indexOf('#')+1));
