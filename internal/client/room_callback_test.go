@@ -324,7 +324,7 @@ func testRoomCallbackAuthority(t *testing.T, a *Agent, conv, callback, root, rem
 		t.Fatal(err)
 	}
 	r := agentReq{ID: callback, Conv: conv, PID: original.pid, Sender: original.from, Key: original.key, Kind: original.kind, Target: original.target, State: stateAgentWaiting}
-	for _, change := range []string{"valid", "wrong_cause", "missing_cause", "wrong_key", "wrong_agent", "ambiguous", "cycle", "stopped_parent", "completed_parent", "cancel_requested_parent", "missing_local_run", "missing_parent", "revoked_grant", "question_to_task"} {
+	for _, change := range []string{"valid", "wrong_cause", "missing_cause", "wrong_key", "wrong_agent", "ambiguous", "cycle", "stopped_parent", "completed_parent", "cancel_requested_parent", "missing_local_run", "missing_parent", "revoked_grant", "question_to_task", "question_to_task_accepted", "question_to_task_granted", "question_to_task_revoked"} {
 		t.Run(change, func(t *testing.T) {
 			tx, err := a.store.db.Begin()
 			if err != nil {
@@ -372,8 +372,25 @@ func testRoomCallbackAuthority(t *testing.T, a *Agent, conv, callback, root, rem
 			case "revoked_grant":
 				exec(`DELETE FROM approvals WHERE address=?`, original.from)
 				want = verdictAsk
-			case "question_to_task":
+			case "question_to_task", "question_to_task_accepted", "question_to_task_granted", "question_to_task_revoked":
 				request.Kind = envelope.KindTask
+				exec(`UPDATE inbox SET kind=? WHERE id=?`, envelope.KindTask, callback)
+				want = verdictAsk
+				if change == "question_to_task_accepted" {
+					request.State = stateAccepted
+					exec(`UPDATE inbox SET state=? WHERE id=?`, stateAccepted, callback)
+					want = verdictRun
+				}
+				if change == "question_to_task_granted" || change == "question_to_task_revoked" {
+					if _, err := grant(tx, original.from); err != nil {
+						t.Fatal(err)
+					}
+					want = verdictRun
+					if change == "question_to_task_revoked" {
+						exec(`DELETE FROM task_grants WHERE address=?`, original.from)
+						want = verdictAsk
+					}
+				}
 			}
 			v, why, err := agentVerdict(tx, request, a.Address, a.Self().Fingerprint(), false, map[string]*partView{})
 			if err != nil {

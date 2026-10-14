@@ -107,7 +107,7 @@ func TestP6AgentQuestionTaskCorrelationAndOrigin(t *testing.T) {
 	from := p6Member(t, w.alice, w.alice, conv)
 	to := p6Member(t, w.alice, w.bob, conv)
 	eventually(t, "source scope at target", func() bool { return stateAt(t, w.bob, from.PID).Claimable() })
-	root, err := w.alice.AskAgent(tctx(t), from.PID, envelope.KindTask, "ask another group agent")
+	root, err := w.alice.AskAgent(tctx(t), from.PID, envelope.KindQuestion, "ask another group agent")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +121,9 @@ func TestP6AgentQuestionTaskCorrelationAndOrigin(t *testing.T) {
 	replyAt(t, w.alice, conv, ask.LID)
 	if !strings.Contains(stub.last(), "verified asking group agent (claimed name") {
 		t.Fatal("asking agent rendered as its human owner")
+	}
+	if !strings.Contains(stub.last(), "tasks require the recipient's consent regardless of the originating request kind") || strings.Contains(stub.last(), "a question cannot assign tasks") {
+		t.Fatal("group prompt misstates task delegation or recipient consent")
 	}
 	reply, err := w.alice.RoomReply(root.LID, ask.LID)
 	if err != nil || reply == nil || reply.PID != to.PID || !reply.VerifiedAgent {
@@ -171,8 +174,13 @@ func TestP6AgentQuestionTaskCorrelationAndOrigin(t *testing.T) {
 	}
 	thirdTarget := p6Member(t, w.alice, carol, conv)
 	stops(w.alice, nested.LID)
-	third, e := w.alice.SendRoomAsk(tctx(t), nested.LID, thirdTarget.PID, envelope.KindQuestion, "third hop")
+	third, e := w.alice.SendRoomAsk(tctx(t), nested.LID, thirdTarget.PID, envelope.KindTask, "third hop")
 	if e != nil {
+		t.Fatal(e)
+	}
+	// Question ancestors do not veto transport or replace task consent.
+	waitState(t, carol, third.LID, stateAwaiting)
+	if e = carol.Accept(third.LID); e != nil {
 		t.Fatal(e)
 	}
 	replyAt(t, w.alice, conv, third.LID)
@@ -229,8 +237,14 @@ func TestP6AgentQuestionTaskCorrelationAndOrigin(t *testing.T) {
 		}
 		return state == stateAwaiting
 	})
-	if _, err = w.alice.SendRoomAsk(tctx(t), foreign.LID, to.PID, envelope.KindTask, "widen question"); err == nil {
-		t.Fatal("question widened to task")
+	delegated, err := w.alice.SendRoomAsk(tctx(t), foreign.LID, to.PID, envelope.KindTask, "task under a question needs recipient consent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w.bob, delegated.LID, stateAwaiting)
+	parent, err := roomCauseIn(w.bob.store.db, conv, foreign.LID, w.bob.Address, w.bob.Self().Fingerprint())
+	if err != nil || parent.kind != envelope.KindQuestion {
+		t.Fatalf("original question changed: %+v %v", parent, err)
 	}
 	if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateCancelled, root.LID); err != nil {
 		t.Fatal(err)

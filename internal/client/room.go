@@ -245,9 +245,6 @@ func roomChain(q dbq, r agentReq, m dmMembers, info ParticipationInfo, self, fp 
 		if c.kind != envelope.KindQuestion && c.kind != envelope.KindTask || c.target == nil {
 			return verdictStop, "agent cause is not an addressed request", nil
 		}
-		if r.Kind == envelope.KindTask && c.kind != envelope.KindTask {
-			return verdictStop, "a question cannot delegate permission to change things", nil
-		}
 		agent := c.human != nil && c.human.AgentAuthor()
 		if agent {
 			p, e := part(c.human.AuthorPID)
@@ -384,9 +381,6 @@ func (a *Agent) SendRoomAsk(ctx context.Context, cause, pid, kind, body string) 
 	}
 	if kind != envelope.KindQuestion && kind != envelope.KindTask {
 		return ConvSent{}, errors.New("choose question or task")
-	}
-	if kind == envelope.KindTask && root.kind != envelope.KindTask {
-		return ConvSent{}, errors.New("a question cannot assign a task")
 	}
 	topic, err := topicReference(a.store.db, conv, cause, "")
 	if err != nil {

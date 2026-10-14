@@ -6,6 +6,10 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Group agents may delegate a task from an admitted question. The recipient's
+  existing task consent and current identity, scope and cancellation checks
+  still apply; native tools and permissions remain unchanged.
+
 - Repair selected damaged local skin packages through the existing cache manager,
   preserving app identity, chat data, drafts, queued sends and healthy packages.
 - Let managers add people to retained legacy lists while preserving their signed

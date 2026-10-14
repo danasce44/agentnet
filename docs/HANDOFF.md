@@ -29,6 +29,9 @@ Android recovery, all-skins/native/platform and release gates remain pending.
 The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
 `3599582f`; exact file bytes, limits and removal guards pass the four-case
 focused signed/encrypted test (9.630s). Nothing is published by this integration.
+The question-ancestor delegation vetoes are removed; recipient task consent and
+the existing scope/identity/cancellation checks remain. Combined focused tests
+pass22.445s; this is source evidence, not actual native or release qualification.
 
 Do not tag or publish the next release until these are fixed and verified:
 

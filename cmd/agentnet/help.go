@@ -177,9 +177,10 @@ This sends now; it does not schedule a later message.
 
 ask and wait are available inside a running group-agent request (AGENTNET_ROOM_REQUEST).
 Ask another active group agent and wait for its correlated answer/result.
-The recipient's owner decides permission for every upstream origin. A question
-cannot assign a task. No platform ask-count or depth limits; stopping the
-originating run or removing its membership stops further asks and waits.
+The recipient's owner decides permission for every upstream origin. Tasks need
+the recipient's consent regardless of the originating request kind. No platform
+ask-count or depth limits; stopping the originating run or removing its membership
+stops further asks and waits.
 Wait reads local stored replies only. Custody/delivery is never completion.`,
 
 	"send": `Usage: agentnet send [--file PATH]... [--fallback] [--wait 5s] [--reply-to ID] [--progress] ADDRESS[#SESSION] TEXT
