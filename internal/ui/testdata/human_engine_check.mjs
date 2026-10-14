@@ -95,6 +95,42 @@ async function world() {
   return { alice, bob, carol, mallory, users, conv, c, agent, posts, blobs, caps, catalogs, receive, drain, from, decision, accept, sibling, offline: (v) => { offline = v; } };
 }
 
+// A DM participation event retries only a failed atomic commit, with fresh
+// authority and exactly the same signed event. Never retry after storage.
+for (const mode of ['once', 'pending-key', 'persistent', 'other-error']) {
+  const w = await world(), {alice:a, bob:b, conv} = w;
+  await a.sendDM({conv,body:'Original discussion'}); await w.drain(b);
+  await b.sendDM({conv,body:'Verified incoming discussion'}); await w.drain(a);
+  const write = a.store.write.bind(a.store), events = [], posted = w.posts.length;
+  a.store.write = async (ops, snapshots) => {
+    const event = ops.find(o=>o.s==='outbox' && o.v?.conv===conv && o.v.sub==='event');
+    if (event && snapshots?.some(c=>c.s==='inbox' && c.scope?.conv===conv)) {
+      events.push(event.v.body);
+      if (mode==='persistent' || events.length===1) {
+        const row=(await a.store.byConv('inbox',conv)).find(r=>!r.sub);
+        await write([{s:'inbox',k:row.id,v:{...row,read:!row.read}}]);
+        if(mode==='pending-key') {
+          const pin=await a.store.get('pins',b.address);
+          await write([{s:'pins',k:b.address,v:{...pin,pending:'fixture changed key'}}]);
+        }
+        if(mode==='other-error')throw Error('Fixture storage failure');
+      }
+    }
+    return write(ops,snapshots);
+  };
+  if(mode==='once') {
+    const invited=await a.inviteAgent({conv,host:b.address});
+    check(events.length===2 && events[0]===events[1], 'retry keeps exact signed invitation/PID/prev');
+    const rows=(await a.store.byConv('outbox',conv)).filter(r=>r.sub==='event');
+    check(rows.length===1 && rows[0].pid===invited.pid, 'atomic conflict leaves one event copy');
+  } else {
+    await refuses(()=>a.inviteAgent({conv,host:b.address}),mode==='pending-key'?/No device of this conversation can be sent a copy now/:mode==='persistent'?/storage changed during verification/:/Fixture storage failure/);
+    if(mode==='pending-key')check(!!(await a.store.get('pins',b.address)).pending, 'pending recipient key remains refused');
+    check(events.length===(mode==='persistent'?4:1), 'only storage conflicts have bounded retries');
+    check(!(await a.store.byConv('outbox',conv)).some(r=>r.sub==='event') && w.posts.length===posted, 'refused retry stores and posts no invitation');
+  }
+}
+
 // Same root, invitation without disclosure, exact acceptance, ordinary guest
 // text/files/replies, both ending actors, no jobs or stale file handover.
 for (const ending of ['member', 'guest']) {

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -112,6 +113,11 @@ func TestGoogleBrowserEnrollmentAndDeviceApproval(t *testing.T) {
 	defer a.Close()
 	if _, err = a.Members(ctx); err == nil {
 		t.Fatal("later device admitted before approval")
+	} else {
+		var pending *client.HubError
+		if !errors.As(err, &pending) || pending.Code != protocol.CodeLinkPending {
+			t.Fatalf("pending device must be refused for consent, not another error: %v", err)
+		}
 	}
 	var id string
 	w.until("Google consent on browser", func() bool {
@@ -123,8 +129,10 @@ func TestGoogleBrowserEnrollmentAndDeviceApproval(t *testing.T) {
 		return true
 	})
 	w.api("/api/device/decide", map[string]any{"id": id, "accept": true})
+	deadline, _ := ctx.Deadline()
+	remaining := time.Until(deadline)
 	if _, err = a.AwaitLink(ctx); err != nil {
-		t.Fatal(err)
+		t.Fatalf("AwaitLink: %v; budget at entry=%s; local state=%s; now=%s", err, remaining, a.LinkState().State, time.Now().UTC().Format(time.RFC3339Nano))
 	}
 	got, ok, err := a.Person()
 	if err != nil || !ok || got.Person != person["person"] || got.Email != "person@example.com" || len(got.Devices) != 2 {

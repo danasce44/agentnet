@@ -10,6 +10,7 @@ import (
 	"github.com/misunders2d/agentnet/internal/client"
 	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/testhub"
+	"github.com/misunders2d/agentnet/internal/ui"
 )
 
 type recordedNativeNotice struct{ workspace, fragment, title, body string }
@@ -103,13 +104,22 @@ func TestPhoneRealReceiveNotificationPreviewReviewAndReminder(t *testing.T) {
 		t.Fatalf("message notice: %+v", n)
 	}
 	provider := app.phone(client.DefaultWorkspace, app.session)
+	if _, err = provider.Act(ui.Action{Do: ui.DoRead, IDs: []string{sent.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	notices.mu.Lock()
+	readDismissed := append([]string(nil), notices.dismissed...)
+	notices.mu.Unlock()
+	if len(readDismissed) != 1 || readDismissed[0] != "default:msg="+sent.ID+"&dir=in" {
+		t.Fatalf("committed read did not dismiss its exact notification: %v", readDismissed)
+	}
 	if err = provider.NotifySeen(sent.ID, []string{sent.ID}); err != nil {
 		t.Fatal(err)
 	}
 	notices.mu.Lock()
 	dismissed := append([]string(nil), notices.dismissed...)
 	notices.mu.Unlock()
-	if len(dismissed) != 1 || dismissed[0] != "default:msg="+sent.ID+"&dir=in" {
+	if len(dismissed) != 2 || dismissed[1] != "default:msg="+sent.ID+"&dir=in" {
 		t.Fatalf("exact read dismissal: %v", dismissed)
 	}
 	task, err := sender.SendMessage(ctx, client.Outgoing{To: address, Kind: envelope.KindTask, Body: "Exact request needs the phone owner's decision"})
@@ -119,6 +129,25 @@ func TestPhoneRealReceiveNotificationPreviewReviewAndReminder(t *testing.T) {
 	n = take("review")
 	if n.fragment != "msg="+task.ID+"&dir=in" || !strings.Contains(n.title, "Decision needed") || !strings.Contains(n.body, "Exact request") {
 		t.Fatalf("review notice: %+v", n)
+	}
+	beforeRead, err := app.session.a.PageReview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = provider.Act(ui.Action{Do: ui.DoRead, IDs: []string{sent.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	notices.mu.Lock()
+	if len(notices.dismissed) != 3 || notices.dismissed[2] != "default:msg="+sent.ID+"&dir=in" {
+		t.Errorf("reading another message changed unrelated notification tags: %v", notices.dismissed)
+	}
+	notices.mu.Unlock()
+	afterRead, err := app.session.a.PageReview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(beforeRead.Device) != 1 || len(afterRead.Device) != 1 || afterRead.Device[0].ID != task.ID || afterRead.Device[0].State != beforeRead.Device[0].State {
+		t.Fatalf("reading another message changed pending work: before=%+v after=%+v", beforeRead, afterRead)
 	}
 	if _, err = app.session.a.SetReminder(sent.ID, time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
@@ -139,4 +168,17 @@ func TestPhoneRealReceiveNotificationPreviewReviewAndReminder(t *testing.T) {
 		t.Fatalf("already notified work repeated: %d", count)
 	}
 	t.Log("Actual isolated core receive -> Notifier with bounded local preview, exact review/reminder/read destinations. Android OS/physical behavior remains separate.")
+}
+
+func TestPhoneFailedReadDoesNotDismissNotification(t *testing.T) {
+	s, _ := fixture(t)
+	var dismissed []string
+	p := &phoneProvider{Live: ui.NewLive(s.a), dismiss: func(fragment string) { dismissed = append(dismissed, fragment) }}
+	s.Close() // Real storage failure; the dismiss callback remains active.
+	if _, err := p.Act(ui.Action{Do: ui.DoRead, IDs: []string{"0123456789abcdef0123456789abcdef"}}); err == nil {
+		t.Fatal("read on closed storage succeeded")
+	}
+	if len(dismissed) != 0 {
+		t.Fatalf("failed read dismissed notifications: %v", dismissed)
+	}
 }

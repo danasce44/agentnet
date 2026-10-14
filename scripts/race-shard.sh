@@ -18,7 +18,18 @@ fi
 
 run_partition() {
 	local package=$1 k=$2 n=$3 label=$4 tests
-	tests=$(go test -list '.*' "$package" | awk -v k="$k" -v n="$n" '/^Test/ { if (i++%n==k) print }')
+	# Three measured group fixtures overloaded client-10 at 600s. Keep the
+	# twelve partitions and every test, moving only these to shards with room.
+	tests=$(go test -list '.*' "$package" | awk -v k="$k" -v n="$n" -v client="$([[ $package = ./internal/client ]] && echo 1 || echo 0)" '
+		/^Test/ {
+			part=i++%n
+			if (client && n==12) {
+				if ($0=="TestGroupInteractionNamedMemberAndVisitor") part=1
+				if ($0=="TestGroupParticipationHistoryAfterHostReadmission") part=7
+				if ($0=="TestGroupReplyReceiverMemberAndVisitorPIDNative") part=11
+			}
+			if (part==k) print
+		}')
 	if [ -z "$tests" ]; then
 		echo "shard $label of $n has no tests"
 		return

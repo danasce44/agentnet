@@ -855,7 +855,11 @@ func TestBrowserEngineAgents(t *testing.T) {
 	}
 
 	// Dana invites Alice's agent, sharing both earlier messages exactly.
+	w.ok(map[string]any{"op": "conflictSend", "conv": conv})
 	pid := w.api("/api/dm/agent/invite", map[string]any{"conv": conv, "host": alice.Address, "share": []string{hello.ID, notes}, "note": "help"})["pid"].(string)
+	if w.ok(map[string]any{"op": "conflictSend"})["fired"] != float64(1) {
+		t.Fatal("send did not encounter its pre-commit storage conflict")
+	}
 	var info client.ParticipationInfo
 	w.until("the invitation at alice", func() bool {
 		info, err = alice.Participation(pid)

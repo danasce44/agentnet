@@ -13,6 +13,7 @@ import { createInterface } from "node:readline";
 const stats = { req: {}, reads: 0, rows: 0, scans: {}, writes: 0, changed: 0, renders: 0, pushed: 0, acking: 0, acksAtOnce: 0 };
 const scanned = (s, v) => { stats.reads++; stats.rows += v.length; stats.scans[s] = (stats.scans[s] || 0) + v.length; return v; };
 let latency = 0, writeDelay = 0;
+let conflictSend = "", sendConflicts = 0;
 let ackGate = null; // holdAcks: receipts wait here until released
 // page stands in for an open skin: on a change it reads the overview and
 // the open DM again, one read at a time (a change meanwhile reads again
@@ -33,7 +34,18 @@ const counted = (st) => ({ ...st,
   all: async (s) => scanned(s, await st.all(s)),
   after: async (s, k, n) => scanned(s, await st.after(s, k, n)),
   prefix: async (s, p) => scanned(s, await st.prefix(s, p)),
-  async write(ops, checks) { stats.writes++; if (writeDelay) await sleep(writeDelay); return st.write(ops, checks); } });
+  async write(ops, checks) {
+    stats.writes++; if (writeDelay) await sleep(writeDelay);
+    if (conflictSend && ops.some(o => o.s === "outbox" && o.v?.conv === conflictSend && o.v.sub === "event")) {
+      const key = "room-memberships/" + conflictSend;
+      if (!checks?.some(c => c.s === "kv" && c.k === key && c.v === undefined)) throw Error("Fixture expected absent room ledger check.");
+      conflictSend = ""; sendConflicts++;
+      // A concurrent empty ledger snapshot changes storage, not authority.
+      // The real checked write must abort before any send is committed.
+      await st.write([{s:"kv", k:key, v:[]}]);
+    }
+    return st.write(ops, checks);
+  } });
 const raw = memoryStore(); // the test's own reads (count) are not counted
 let store = counted(raw);
 let engine = null;
@@ -229,6 +241,9 @@ async function handle(req) {
   }
   case "api":
     return { v: await engine.api(req.path, req.body) };
+  case "conflictSend":
+    if (req.conv) conflictSend = req.conv;
+    return { fired: sendConflicts };
   case "offline":
     offline = req.on;
     if (offline) engine.offline();

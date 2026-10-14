@@ -6,6 +6,11 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Reading an Android chat now clears its exact OS message notifications after
+  the read is stored; unrelated pending decisions remain.
+- Browser DM agent invitations and dismissals retry a pre-commit storage conflict
+  with the same signed event and fresh authority checks, without duplicate sends.
+
 - Restore validated profile pictures along with Hub backups.
 - Show locally decrypted Android message previews with truthful agent/device
   attribution. Read existing notification-channel settings and offer their

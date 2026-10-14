@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/protocol"
@@ -65,9 +67,32 @@ func groupTurnsFixture(t *testing.T, beforeRun ...func(*Agent)) (*world, *Agent,
 		stops[a] = runAgent(t, a)
 		publishGroupFixtureCaps(t, a, true)
 	}
+	last := map[string]string{}
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		t.Logf("fixture context wanted seq=%d hash=%s; observations=%v", next.State.Seq, next.State.Hash(), last)
+		for _, a := range []*Agent{w.alice, w.bob, carol} {
+			rows, err := a.store.db.Query(`SELECT recipient, coalesce(sub,''), state, count(*) FROM outbox WHERE conv=? GROUP BY recipient, sub, state`, next.State.Conv)
+			if err != nil {
+				t.Logf("%s outbox diagnostic: %v", a.Address, err)
+				continue
+			}
+			for rows.Next() {
+				var to, sub, state string
+				var count int
+				if err := rows.Scan(&to, &sub, &state, &count); err == nil {
+					t.Logf("%s -> %s sub=%s state=%s count=%d", a.Address, to, sub, state, count)
+				}
+			}
+			rows.Close()
+		}
+	})
 	for _, a := range []*Agent{w.bob, carol} {
 		eventually(t, "ordinary member current context", func() bool {
 			got, e := a.GroupContext(next.State.Conv)
+			last[a.Address] = fmt.Sprintf("%s seq=%d hash=%s error=%v", time.Now().UTC().Format(time.RFC3339Nano), got.State.Seq, got.State.Hash(), e)
 			return e == nil && got.State.Hash() == next.State.Hash()
 		})
 	}

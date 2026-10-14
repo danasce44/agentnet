@@ -24,7 +24,13 @@ func (p *phoneProvider) Act(x ui.Action) (string, error) {
 	case ui.DoAccept, ui.DoAcceptAlways, ui.DoApprove, ui.DoGrantTasks, ui.DoContinue, ui.DoCancel:
 		return "", phoneUnsupported()
 	}
-	return p.Live.Act(x)
+	note, err := p.Live.Act(x)
+	if err == nil && x.Do == ui.DoRead && p.dismiss != nil {
+		for _, id := range x.IDs {
+			p.dismiss("msg=" + id + "&dir=in")
+		}
+	}
+	return note, err
 }
 func (p *phoneProvider) SetResponder(ui.ResponderChange) (string, error) {
 	return "", phoneUnsupported()

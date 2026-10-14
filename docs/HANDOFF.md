@@ -4,6 +4,17 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## v0.8.27 qualification correction
+
+No v27 publication yet. Bounded browser event pre-commit retries and phone
+read-to-OS dismissal are independently reviewed; actual original-key emulator
+read succeeds. Full mobile/core race78.127s and browser611-check negatives pass.
+The measured client10 partition is balanced by moving only three fixtures to
+1/7/11, retaining the exact1,171-test union/twelve shards/600s bound. Requalify
+changed partitions and affected native/UI packages; retain unchanged passing
+coverage. Current scope, evidence and remaining Windows/artifact gates are in
+[the v27 record](plans/V0_8_27.md).
+
 ## Next release — v0.8.27, supervised implementation
 
 The owner assigned the existing tab-3 Codex worker to the agreed V1–V9 scope,

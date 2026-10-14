@@ -3234,7 +3234,8 @@ export class Engine {
     ops.checks=checks;return ops;
   }
 
-  async sendConv(c, { id: sendID = "", queued = false, kind, body, topic="",topic_event=null,quote="",reply_to: replyTo = "", origin = "", sub = "", pid = "", send_group = "", followup = null, target = null, files = [], receiver = null, proposal_choice = null, organization_review = null,organization_batch=null }) {
+  async sendConv(c, fields, attempt = 0) {
+    let { id: sendID = "", queued = false, kind, body, topic="",topic_event=null,quote="",reply_to: replyTo = "", origin = "", sub = "", pid = "", send_group = "", followup = null, target = null, files = [], receiver = null, proposal_choice = null, organization_review = null,organization_batch=null } = fields;
     if(wire.topicOrganization(topic_event)){wire.checkTopic({v:wire.Version2,kind,topic,topic_event,origin,sub,pid,followup,target,attachments:files,receiver_route:receiver});await this.topicOrganizationAuthor(c);}
     if (pid) {
       const ev = sub === "event" ? await this.eventRecord(body) : null;
@@ -3311,7 +3312,13 @@ export class Engine {
     if(sub==="event"){const e=wire.parseEvent(body);await this.checkTopicGrants(c.id,e.topic,e.grant,checks);}
     if(pid){const evs=await this.convEvents(c.id,checks),info=this.resolveAgent(pid,evs,await this.dmMembers(c,evs,checks));await this.checkParticipationTopic(info.topic,{conv:c.id,sub,topic,reply_to:replyTo},checks);}
     if(organization_batch){organization_batch.copies.push(...recs);organization_batch.checks.push(...checks);const least=copyOrder(recs);return {id:recs[0].id,lid,state:least.state,detail:least.detail,copies:recs.map(r=>({id:r.id,to:r.to,state:r.state,detail:r.detail}))};}
-    await this.commitReceiverCopies(recs, prepared, checks, [], queued);
+    try { await this.commitReceiverCopies(recs, prepared, checks, [], queued); }
+    catch (e) {
+      // Nothing was stored on a checked-write conflict. Rebuild and verify
+      // the same requested turn against current keys, membership and scope.
+      if (sub === "event" && e instanceof StoreConflict && attempt < 3) return this.sendConv(c, fields, attempt + 1);
+      throw e;
+    }
     this.changed();
     await this.keepSent(plain);
     if (queued) this.queueOutbox();
