@@ -6,8 +6,8 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-The [v0.8.28 package](plans/V0_8_28.md) contains eleven focused bug-fix
-items, stable chat/topic links (MEL-625) and three qualification tracks. Its Linear
+The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
+items, stable chat/topic links (MEL-625) and four qualification tracks. Its Linear
 milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
 are recorded. Implementation has started with three GPT-6.1-sol xhigh workers
 on isolated crash, skin-cache and moved-topic slices; two further workers in the

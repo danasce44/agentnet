@@ -26,6 +26,8 @@ This record starts with v0.8.1; earlier releases remain on the
 - Copy and open exact chat/topic links across enrolled devices. Refused or
   unavailable destinations preserve drafts and files; organization results
   return their actual stored destination.
+- Fix native file saves through the app's page security policy, retaining
+  authenticated-host, native-origin and filename checks.
 
 ## [0.8.27] — 2026-10-14
 

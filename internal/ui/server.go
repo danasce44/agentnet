@@ -159,12 +159,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		connect := "connect-src 'self' " + static.GalleryConnectSources
-		if s.mobile {
-			// Android's document export reads an owned same-origin blob URL.
-			// The native bootstrap checks ownership before fetching it.
-			connect += " blob:"
-		}
+		// Native downloads and Android exports fetch owned Blob URLs. Their
+		// native bridges still verify the page and Blob origin before handover.
+		connect := "connect-src 'self' " + static.GalleryConnectSources + " blob:"
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; "+
 			"img-src 'self' blob:; "+connect+"; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")

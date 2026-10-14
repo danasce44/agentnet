@@ -46,7 +46,7 @@ func TestMobilePageKeepsAuthenticatedComicHost(t *testing.T) {
 	}
 }
 
-func TestMobileBlobFetchPolicyLeavesDesktopStrict(t *testing.T) {
+func TestNativeBlobFetchPolicyKeepsPageStrict(t *testing.T) {
 	const host = "127.0.0.1:43871"
 	desktop := New(NewFixture(time.Now), host, testToken)
 	mobile := New(NewFixture(time.Now), host, testToken)
@@ -56,8 +56,8 @@ func TestMobileBlobFetchPolicyLeavesDesktopStrict(t *testing.T) {
 		handler http.Handler
 		blob    bool
 	}{
-		{"desktop", desktop.Handler(), false}, {"mobile", mobile.Handler(), true},
-		{"desktop setup", NewSetup(nil, host, testToken), false}, {"mobile setup", NewMobileSetup(nil, host, testToken), true},
+		{"desktop", desktop.Handler(), true}, {"mobile", mobile.Handler(), true},
+		{"desktop setup", NewSetup(nil, host, testToken), true}, {"mobile setup", NewMobileSetup(nil, host, testToken), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
