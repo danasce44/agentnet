@@ -14,6 +14,29 @@ Do not tag or publish the next release until both are fixed and verified:
 Both Linear issues remain open at High priority. This is the owner's release
 hold, not a claim that the new evidence or either fix is already qualified.
 
+## Linear status audit — October 14, 2026
+
+The project had 117 open tickets. Release records, full ticket scope and relevant
+comments establish 26 shipped completions; their Linear statuses are now Done
+and were read back after the updates:
+
+MEL-427, 476, 477, 478, 529, 541, 548, 571, 574, 575, 581, 584, 585, 586,
+589, 591, 592, 595, 597, 600, 601, 603, 609, 611, 616 and 618.
+
+With the newly recorded [MEL-624](https://linear.app/mellanni/issue/MEL-624),
+92 tickets remain open. MEL-624 corrects the misleading “Moved selected messages
+to this topic” notice when the actual destination is Main flow. Existing current
+defects are [MEL-622](https://linear.app/mellanni/issue/MEL-622) (inviting an agent
+with moved topic history) and [MEL-623](https://linear.app/mellanni/issue/MEL-623)
+(adding people to retained legacy lists), alongside the owner blockers above.
+
+Updated scope notes distinguish shipped portions from remaining work in
+MEL-502, 583, 605, 606, 608, 610 and 617. Whole-topic cross-chat continuation,
+explicit request supersession, complete native approval parity, physical-phone
+notification acceptance and the reported Windows journeys remain open. Agent
+organization has shipped; its full requested selection/report/link journey still
+needs closure evidence. Preserve existing implementations and qualified gates.
+
 ## Current release — v0.8.27, October 14, 2026
 
 [Download v0.8.27](https://github.com/misunders2d/agentnet/releases/tag/v0.8.27)
