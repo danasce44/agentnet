@@ -6,17 +6,21 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-Qualification base40017619 has the same production code as9e7dc6e5. Actual Codex
-concurrency/steering81.477s, mixed exactv0.8.27 57.701s, real IndexedDB
-race1.701s and native Linux/macOS client/UI succeed. Client10 now passes locally
-in583.920s; a measured two-fixture swap requalifies only6/9, preserving the other
-ten ordered selections,1206-test coverage and600s bounds. Both UI race partitions
-pass. The corrected native Windows four-case gate and vet pass76.471s; its T5
-fixture no longer reseals redundant context for already-current readers.
-Original-key APK8bbcf474 build/units/lint/16KiB verification passes. Android's
-test-only document-absolute imports work; guarded recovery remains in progress.
-All-skins still fails three Zoom stored-message touch assertions; automatic
-review refused its test-only page-global probe and an owner exception is pending.
+Qualification source23ef420c has unchanged production/Comic from9e7dc6e5.
+All12 required client race selections now have passing evidence at600s, preserving
+unchanged partitions and the focused T5 correction. Final6/9 pass565.161s/485.258s;
+both UI partitions pass. Native Linux/macOS succeed; the corrected Windows
+four-case gate and vet pass76.471s. Mixed exactv0.8.27 passes57.701s and real
+IndexedDB race1.701s. Original-key APK8bbcf474 builds and verifies successfully.
+
+Android's retained synthetic v27 seed preserves200 messages, queued ciphertext,
+managed files and a healthy skin. A test-only app-owner index injector is being
+reviewed before actual corruption/upgrade/repair/cold preservation; no recovery
+pass or physical-phone claim yet. All-skins still fails three Zoom stored-message
+touch assertions; automatic review refused its test-only page-global probe and
+an owner exception is pending. Actual Codex independent steering81.477s covers
+only part of B9/B12: the existing owner multi-agent/peer-reply/correction+goal
+journey remains unqualified and is assigned as one bounded fixture proposal.
 MEL587 remains an owner release hold with no causal fix. No tag/publication.
 
 
