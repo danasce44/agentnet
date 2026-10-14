@@ -82,12 +82,16 @@ func (s *store) markRunVisibility(id string, stalled bool) (bool, error) {
 	}
 	defer tx.Rollback()
 	var since int64
-	if err := tx.QueryRow(`SELECT last_attempt_at FROM inbox WHERE id=? AND state='running'`, id).Scan(&since); errors.Is(err, sql.ErrNoRows) {
+	var current string
+	if err := tx.QueryRow(`SELECT last_attempt_at,coalesce(detail,'') FROM inbox WHERE id=? AND state='running'`, id).Scan(&since, &current); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
 	detail := "Running since " + time.Unix(since, 0).UTC().Format(time.RFC3339) + ". Stop is available; nothing stops automatically unless you set a time limit."
+	if current == roomWaitDetail {
+		return false, nil
+	} // a known dependency is not unexplained silence
 	if stalled {
 		detail = fmt.Sprintf("Seems stuck: no harness output or progress for %d minutes. ", int64(runStallNotice/time.Minute)) + detail
 	}

@@ -16,11 +16,11 @@ import (
 	"github.com/misunders2d/agentnet/internal/protocol"
 )
 
-func nativeFollowupFixture(t *testing.T) (*Agent, job, envelope.Ref) {
+func nativeFollowupFixture(t *testing.T, files ...OutgoingFile) (*Agent, job, envelope.Ref) {
 	t.Helper()
 	w, _, packet, _ := groupTurnsFixture(t)
 	participant := p6Member(t, w.alice, w.alice, packet.State.Conv)
-	root, err := w.alice.AskAgent(tctx(t), participant.PID, envelope.KindQuestion, "Prepare contribution-margin.md in Russian")
+	root, err := w.alice.AskAgent(tctx(t), participant.PID, envelope.KindQuestion, "Prepare contribution-margin.md in Russian", files...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,16 +203,13 @@ func TestNativeRequestFollowupUnsupportedAndUnknownDoNotReplay(t *testing.T) {
 			go func() { defer close(done); a.watchNativeFollowups(ctx, parent, bridge, processFinished) }()
 			m := <-messages
 			text := m["params"].(map[string]any)["input"].([]any)[0].(map[string]any)["text"].(string)
-			var stagedPath string
-			for _, line := range strings.Split(text, "\n") {
-				if strings.HasPrefix(line, `- "terms.md"`) {
-					if err := json.Unmarshal([]byte(line[strings.LastIndex(line, ": ")+2:]), &stagedPath); err != nil {
-						t.Fatal(err)
-					}
-				}
+			entries, err := os.ReadDir(filepath.Join(a.home, "runs", id, "in"))
+			if err != nil || len(entries) != 1 {
+				t.Fatal("native correction lacks one staged file", err, text)
 			}
-			if stagedPath == "" {
-				t.Fatal("native correction lacks readable staged path", text)
+			stagedPath := filepath.Join(a.home, "runs", id, "in", entries[0].Name())
+			if !strings.Contains(text, stagedPath) {
+				t.Fatal("native input did not contain the readable staged path", text)
 			}
 			state, err := a.store.jobState(id)
 			if err != nil || state != stateRunning {

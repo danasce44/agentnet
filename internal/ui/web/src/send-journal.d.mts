@@ -1,7 +1,7 @@
 export interface JournalEntry {
  id: string;
  conversation: string;
- endpoint: "/api/send" | "/api/dm/send" | "/api/dm/agent/ask" | "/api/act";
+ endpoint: "/api/send" | "/api/dm/send" | "/api/dm/agent/ask" | "/api/act" | "/api/request/followup";
  request: Record<string, unknown>;
  createdAt: string;
  error?: string;

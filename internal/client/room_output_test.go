@@ -33,7 +33,7 @@ func TestRoomCompletedChildOutputAfterParentAnswer(t *testing.T) {
 	claim := func(id, cause string) job {
 		t.Helper()
 		j, ok, _, _, _, err := a.store.claimAgentPageForCause("agentstub", a.Address, a.Self().Fingerprint(), 0, agentPage, conv, cause, nil,
-			func(q dbq, id string) (*ExecutorStamp, error) { return a.ResolveExecutorIn(q, id, nil) })
+			func(q dbq, j job) (*ExecutorStamp, error) { return a.ResolveExecutorIn(q, j.AgentID, nil) })
 		if err != nil || !ok || j.ID != id {
 			t.Fatalf("claim %s: %+v %v %v", id, j, ok, err)
 		}

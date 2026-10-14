@@ -782,7 +782,32 @@ func (m ConvMessage) Status() string { return m.status }
 // own names the devices of this installation's person (any step of its
 // chain): received messages from them are this person's own, sent from
 // another device.
-func (s *store) convMessages(conv, self, selfFP string, own map[string]bool) ([]ConvMessage, error) {
+type contextMessageSelection struct {
+	PID   string
+	Grant []protocol.GrantRef
+}
+
+func (s *store) convMessages(conv, self, selfFP string, own map[string]bool, selection ...*contextMessageSelection) ([]ConvMessage, error) {
+	// Scope narrows candidate bodies, but never excludes a previously supplied
+	// ref: verified revisions/deletions must be projected before deduplication.
+	partial := len(selection) > 0 && selection[0] != nil
+	cursorIn, cursorOut := "", ""
+	args := []any{conv}
+	if partial {
+		selected := selection[0]
+		granted, _ := json.Marshal(selected.Grant)
+		cursorIn = ` AND (i.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=i.conv AND r.pid=? AND r.lid=i.lid AND r.fingerprint=i.verified_by)
+		 OR EXISTS(SELECT 1 FROM json_each(?) x WHERE json_extract(x.value,'$.lid')=coalesce(i.lid,i.id) AND json_extract(x.value,'$.fingerprint')=coalesce(i.verified_by,i.claimed_fp,'')))`
+		args = append(args, selected.PID, selected.PID, string(granted))
+		cursorOut = ` AND (o.pid=? OR EXISTS(SELECT 1 FROM room_context r WHERE r.conv=o.conv AND r.pid=? AND r.lid=o.lid AND r.fingerprint=?)
+		 OR EXISTS(SELECT 1 FROM json_each(?) x WHERE json_extract(x.value,'$.lid')=coalesce(o.lid,o.id) AND json_extract(x.value,'$.fingerprint')=?))`
+	}
+	args = append(args, self, selfFP, conv, selfFP)
+	if partial {
+		selected := selection[0]
+		granted, _ := json.Marshal(selected.Grant)
+		args = append(args, selected.PID, selected.PID, selfFP, string(granted), selfFP)
+	}
 	persons, err := s.devicePersons()
 	if err != nil {
 		return nil, err
@@ -797,14 +822,14 @@ func (s *store) convMessages(conv, self, selfFP string, own map[string]bool) ([]
 		       CASE WHEN verified_by IS NULL THEN coalesce(claimed_fp, '') ELSE '' END,
 		       CASE WHEN kind IN ('question', 'task') THEN '' ELSE coalesce(agent_id, '') END, coalesce(status, ''), coalesce(quote,''), ts, '', coalesce(topic,''),coalesce(topic_event,''),topic_done,0,0,send_group
 		  FROM inbox i WHERE conv = ? AND local = 0 AND ref_id IS NULL AND coalesce(sub, '') NOT IN `+recordSubs+`
-		   AND NOT `+erasedIn+`
+		   AND NOT `+erasedIn+cursorIn+`
 		UNION ALL
 		SELECT o.id, o.lid, 'out', ?, ?, o.kind, o.body, coalesce(o.reply_to, ''), coalesce(o.sub, ''), 0, coalesce(o.origin, ''),
 		       coalesce(o.emotion, ''), coalesce(o.target, ''), o.state, coalesce(o.error, ''), o.created_at, o.created_ms, coalesce(o.pid, ''),
 		       coalesce(j.state, ''), coalesce(j.detail, ''), o.recipient, '', coalesce(o.agent_id, ''), coalesce(o.status, ''),coalesce(o.quote,''),json_extract(o.envelope,'$.ts'),coalesce(o.recipient_person,''),coalesce(o.topic,''),coalesce(o.topic_event,''),o.topic_done,o.send_stopped,o.send_stopped=1 AND o.state='not_delivered' AND coalesce(o.handover_started,1)=1,o.send_group
 		  FROM outbox o LEFT JOIN inbox j ON j.id = o.id AND j.local = 1 WHERE o.conv = ? AND coalesce(o.sub, '') NOT IN ('read-sync', 'root-sync', 'history', 'file', 'drive-space', 'group-proof', 'group-context','group-invite','group-consent','group-withdrawal') AND o.ref_id IS NULL
-		   AND NOT `+erasedOut+`
-		ORDER BY ms, 1`, conv, self, selfFP, conv, selfFP)
+		   AND NOT `+erasedOut+cursorOut+`
+		ORDER BY ms, 1`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -892,12 +917,26 @@ func (s *store) convMessages(conv, self, selfFP string, own map[string]bool) ([]
 		}
 		out[i].State, out[i].Detail = notSentFirst(out[i].State, out[i].Detail, out[i].Copies)
 	}
-	files, err := s.convFiles(conv)
-	if err != nil {
-		return nil, err
+	var files map[string][]FileInfo
+	if !partial {
+		files, err = s.convFiles(conv)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for i := range out {
-		out[i].Attachments = files[fileKey(out[i])]
+		if partial {
+			if out[i].Dir == "out" && out[i].Via == "" {
+				out[i].Attachments, err = s.sentAttachments(out[i].ID)
+			} else {
+				out[i].Attachments, err = s.attachments(out[i].ID)
+			}
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			out[i].Attachments = files[fileKey(out[i])]
+		}
 		out[i].Delivery = deliveryOf(out[i].Copies)
 		for _, copy := range out[i].Copies {
 			if copy.State == "custody" || copy.State == "delivered" {

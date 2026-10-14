@@ -1192,7 +1192,7 @@ func (j job) followUp() bool {
 // question or task is eligible if the local user accepted it, or if it is
 // pending and, at claim time, its sender is still approved (question) or
 // still holds a task grant for the key that verified it (task).
-func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*ExecutorStamp, error)) (job, bool, error) {
+func (s *store) claimJob(responder string, resolve ...func(dbq, job) (*ExecutorStamp, error)) (job, bool, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return job{}, false, err
@@ -1306,11 +1306,16 @@ func (s *store) claimJob(responder string, resolve ...func(dbq, string) (*Execut
 		}
 		var stamp *ExecutorStamp
 		if len(resolve) > 0 {
-			stamp, err = resolve[0](tx, j.AgentID)
+			stamp, err = resolve[0](tx, j)
 		} else if j.AgentID != "" {
 			err = ErrUnknownAgent
 		}
 		if errors.Is(err, errExecutorBusy) {
+			wrote, e := noteExecutionWait(tx, j.ID, err.Error())
+			if e != nil {
+				return job{}, false, e
+			}
+			changed = changed || wrote
 			continue
 		}
 		if err == nil && j.AgentID != "" && (stamp == nil || stamp.Record == nil || stamp.AgentID != j.AgentID || stamp.Record.Host != j.Target.Address || stamp.Record.HostKey != j.Target.Fingerprint) {

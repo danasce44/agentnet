@@ -473,8 +473,8 @@ func (a *Agent) ConversationMessages(conv string) ([]ConvMessage, error) {
 // reply selects only one exact request and its replies for a local waiter.
 // Selection grants no authority: the usual attribution and control resolution
 // below still checks every selected turn against current stored evidence.
-func (a *Agent) conversationMessages(conv, reply string) ([]ConvMessage, error) {
-	msgs, err := a.store.convMessages(conv, a.Address, a.id.Public(a.Address).Fingerprint(), a.ownDevices())
+func (a *Agent) conversationMessages(conv, reply string, selection ...*contextMessageSelection) ([]ConvMessage, error) {
+	msgs, err := a.store.convMessages(conv, a.Address, a.id.Public(a.Address).Fingerprint(), a.ownDevices(), selection...)
 	if err != nil {
 		return nil, err
 	}

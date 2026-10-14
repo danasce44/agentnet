@@ -142,3 +142,9 @@ test("unknown authority fields, changed IDs, attachment stages and lookup failur
   const duplicate = rawMessage();
   assert.equal(await isSendPersisted(host({ ["/api/thread?id=" + id]: { peer, messages: [duplicate, duplicate] } }), rawEntry()), false);
 });
+
+test("ordinary projection cannot prove exact bound follow-up admission",async()=>{
+ const entry={...dmEntry(),endpoint:"/api/request/followup",request:{id,conv,body:"original",ref:{id:parentID,fingerprint:me.fingerprint}}};
+ const h=dmHost({...dmMessage(),kind:"question",reply_to:parentID});
+ assert.equal(await isSendPersisted(h,entry),false);assert.deepEqual(h.calls,[],"unproven intent remains saved without replay");
+});

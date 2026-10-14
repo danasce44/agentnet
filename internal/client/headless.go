@@ -390,9 +390,20 @@ func (a *Agent) tellStatus(ctx context.Context, id string) bool {
 		}
 	}
 	public, detail, ok := statusOf(state)
-	if state == statePending || state == stateAccepted { // the worker's queue; a waiting request is not in it yet
-		if busy, err := a.store.busyDetail(id); err == nil && busy != "" {
-			detail = busy
+	if state == stateRunning {
+		var stored string
+		if a.store.db.QueryRow(`SELECT coalesce(detail,'') FROM inbox WHERE id=?`, id).Scan(&stored) == nil && stored == roomWaitDetail {
+			detail = stored
+		}
+	}
+	if state == statePending || state == stateAccepted || state == stateAgentWaiting {
+		var queued string
+		if a.store.db.QueryRow(`SELECT coalesce(detail,'') FROM inbox WHERE id=?`, id).Scan(&queued) == nil {
+			if at := strings.Index(queued, "waiting: "); at >= 0 && len(queued) <= 512 {
+				detail = queued[at:]
+			} else if queued == "Queued; not accepted into the native run" {
+				detail = queued
+			}
 		}
 	}
 	// A local addressed conversation job has remote sibling copies too.

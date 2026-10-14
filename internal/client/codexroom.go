@@ -132,6 +132,12 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 	default:
 		return "", errors.New("room question tool supports only ask and wait; it cannot assign tasks")
 	}
+	waiting := false
+	defer func() {
+		if waiting {
+			a.noteRoomWait(cause, -1)
+		}
+	}()
 	for {
 		// Subscribe before reading so a stored answer cannot race the wakeup.
 		_, changed := a.Changed()
@@ -141,6 +147,10 @@ func (a *Agent) codexRoomTool(ctx context.Context, cause string, raw json.RawMes
 		}
 		if reply != nil {
 			return fmt.Sprintf("reply %s from agent participation %s\n%s", reply.ReplyTo, reply.PID, reply.Body), nil
+		}
+		if !waiting {
+			a.noteRoomWait(cause, 1)
+			waiting = true
 		}
 		select {
 		case <-ctx.Done():
@@ -162,6 +172,7 @@ type codexRoomBridge struct {
 	native               func(context.Context, nativeCallback) (json.RawMessage, error)
 	nativeCheck          func(nativeCallback) bool
 	nativeComplete       func(nativeCallback)
+	threadAvailable      func(string) bool
 	nativeSerial         sync.Mutex
 	nativeEnd            chan struct{}
 	nativePending        map[string]context.CancelFunc
@@ -333,6 +344,11 @@ func (b *codexRoomBridge) event(raw []byte) {
 				return
 			}
 			b.thread = r.Thread.ID
+			if b.threadAvailable != nil && !b.threadAvailable(b.thread) {
+				fmt.Fprintln(b.output, needsHumanMarker+"\nThe native session is already owned by another active request, or its reservation could not be confirmed. No turn input was sent; check the existing work before explicitly continuing.")
+				b.failLocked()
+				return
+			}
 			_ = json.Unmarshal(r.ApprovalPolicy, &b.nativePolicy)
 			if protocol.ValidReportedModel(r.Model) {
 				b.model = nativeModelObservation(r.Model, r.Reasoning)

@@ -760,7 +760,7 @@ func TestSuspendedDeviceFinishesConversationReply(t *testing.T) {
 		}
 	}
 	eventually(t, "the host holds it", func() bool { return inboxCount(t, host, `id=? AND state=?`, q.ID, stateAgentWaiting) == 1 })
-	j, found, _, _, err := host.store.claimAgentPage("", host.Address, host.Self().Fingerprint(), 0, agentPage, func(qq dbq, id string) (*ExecutorStamp, error) { return host.ResolveExecutorIn(qq, id, nil) })
+	j, found, _, _, err := host.store.claimAgentPage("", host.Address, host.Self().Fingerprint(), 0, agentPage, func(qq dbq, j job) (*ExecutorStamp, error) { return host.ResolveExecutorIn(qq, j.AgentID, nil) })
 	if err != nil || !found || j.ID != q.ID {
 		t.Fatalf("claim %+v %v %v", j, found, err)
 	}

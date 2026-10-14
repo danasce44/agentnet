@@ -314,7 +314,7 @@ func TestExternalAgentProofReplayAndQueuedGates(t *testing.T) {
 		_, during = other.Exec(`UPDATE persons SET state=? WHERE person=?`, personConflict, p.Inviter.Person)
 	}
 	t.Cleanup(func() { beforeAgentClaim = func() {} })
-	j, found, _, _, err := reopened.store.claimAgentPage("", host.Address, host.Self().Fingerprint(), 0, agentPage, func(q dbq, id string) (*ExecutorStamp, error) { return reopened.ResolveExecutorIn(q, id, nil) })
+	j, found, _, _, err := reopened.store.claimAgentPage("", host.Address, host.Self().Fingerprint(), 0, agentPage, func(q dbq, j job) (*ExecutorStamp, error) { return reopened.ResolveExecutorIn(q, j.AgentID, nil) })
 	beforeAgentClaim = func() {}
 	if err != nil || !found || j.ID != request.ID || j.Executor == nil || j.Executor.AgentID != records[0].ID || during == nil {
 		t.Fatalf("atomic named restarted claim %+v %v %v %v", j, found, err, during)

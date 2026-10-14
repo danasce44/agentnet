@@ -63,7 +63,7 @@ var afterRunFileStaged = func(path string) {}
 // AgentNet chooses (runfiles.go). Normal harness permissions still decide
 // whether paths can be read. The run folder is removed after the job, and
 // at the worker's start after a crash.
-func (a *Agent) agentSharedFiles(ctx context.Context, j job, info ParticipationInfo, c ParticipationContext) string {
+func (a *Agent) agentSharedFiles(ctx context.Context, j job, info ParticipationInfo, c ParticipationContext, delivered ...*agentContextCursor) string {
 	var b strings.Builder
 	remaining, omitted := c.Limit-c.Bytes, 0
 	// The current addressed request is passed separately from earlier
@@ -81,10 +81,17 @@ func (a *Agent) agentSharedFiles(ctx context.Context, j job, info ParticipationI
 		a.markOpenable(current, j.Local)
 		// The request's own files come first: selected context never takes
 		// the run's file limits from them (runfiles.go).
-		c.Messages = append([]ConvMessage{{ID: j.ID, Dir: requestDir, PID: j.PID, Attachments: current}}, c.Messages...)
+		ref := a.jobContextRef(j)
+		c.Messages = append([]ConvMessage{{ID: j.ID, LID: ref.LID, Key: ref.Fingerprint, Body: j.Body, Dir: requestDir, PID: j.PID, Attachments: current}}, c.Messages...)
 	}
 	for _, msg := range c.Messages {
+		if msg.Deleted {
+			continue
+		}
 		for i, f := range msg.Attachments {
+			if len(delivered) > 0 && (*delivered[0]).fileSent(msg, f) {
+				continue
+			}
 			if remaining < 256 {
 				omitted++
 				continue
@@ -133,6 +140,9 @@ func (a *Agent) agentSharedFiles(ctx context.Context, j job, info ParticipationI
 			}
 			b.WriteString(line)
 			remaining -= len(line)
+			if len(delivered) > 0 {
+				delivered[0].noteFile(msg, f)
+			}
 			// Small text is supplied directly as bytes too. Binary/large files
 			// remain complete at the private path, never truncated silently.
 			if f.Size < int64(remaining-48) {

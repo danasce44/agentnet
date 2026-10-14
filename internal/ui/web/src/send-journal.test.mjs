@@ -9,3 +9,10 @@ test("same ID cannot replace frozen audience/body/kind/reply or attachment inten
 test("storage failure is observable before caller clears draft or starts send",()=>{const s=storage();s.setItem=()=>{throw Error("quota")};let cleared=false,submitted=false;assert.throws(()=>{saveBatch(s,"one",[entry()]);cleared=true;submitted=true;});assert.equal(cleared,false);assert.equal(submitted,false);});
 test("corrupt and action-authority entries fail closed",()=>{const s=storage();assert.throws(()=>saveBatch(s,"one",[{...entry(),endpoint:"/api/act",request:{do:"approve",send_id:"a".repeat(32)}}]));s.setItem("agentnet.android.send-journal.v1.one","broken");assert.throws(()=>readPending(s,"one"));});
 test("change notices reach this package's listeners only, and a failing listener cannot undo a write",()=>{const s=storage();let seen=0;const off=onJournalChange(()=>{seen++;});const bad=onJournalChange(()=>{throw Error("listener");});saveBatch(s,"one",[entry()]);assert.equal(seen,1);assert.equal(readPending(s,"one").length,1,"written despite a failing listener");acknowledge(s,"one","a".repeat(32));assert.equal(seen,2);off();bad();saveBatch(s,"one",[entry()]);assert.equal(seen,2,"unsubscribed");});
+
+test("bound follow-up journal preserves exact original and send identity after a crash",()=>{
+ const s=storage(),a={...entry(),endpoint:"/api/request/followup",request:{id:"a".repeat(32),conv:"c".repeat(64),ref:{id:"b".repeat(32),fingerprint:"bbbbbbbb-bbbbbbbb-bbbbbbbb-bbbbbbbb"},body:"Use English",files:["saved-stage"]}};
+ saveBatch(s,"one",[a]);a.request.ref.id="d".repeat(32);
+ const recovered=readPending(s,"one")[0];assert.equal(recovered.request.ref.id,"b".repeat(32));
+ assert.throws(()=>saveBatch(s,"one",[a]));assert.equal(readPending(s,"one")[0].request.files[0],"saved-stage");
+});

@@ -61,13 +61,23 @@ if(variant==='report-history'){
  setReportHistory('active');
 }
 
-if(variant==='followup'){
+if(variant==='followup'||variant==='composer-followup'){
  const key='aaaaaaaa-aaaaaaaa-aaaaaaaa-aaaaaaaa',originalKey='eeeeeeee-eeeeeeee-eeeeeeee-eeeeeeee',id='1'.repeat(32);
  fixture.overview.me.fingerprint=key;fixture.overview.person.fingerprint=key;fixture.thread.members[0].fingerprint=key;fixture.overview.person.devices=[{address:'aster/laptop',fingerprint:key},{address:'aster/other-laptop',fingerprint:originalKey}];
  fixture.overview.group_invitations=[];fixture.thread.guests=[];fixture.followupOriginal='Prepare contribution-margin.md in Russian';
  fixture.thread.agents=[{pid:'followup-agent',host:fixture.thread.members[1],agent_id:'a'.repeat(32),state:'active',state_text:'Active',invited:'2026-10-05T10:00:00Z',host_here:false,shared:[],can_ask:true,inviter:fixture.overview.person}];
  fixture.thread.messages.push({id,lid:id,from:'aster/other-laptop',send_group_author:originalKey,via:'aster/other-laptop',dir:'out',kind:'question',body:fixture.followupOriginal,at:'2026-10-05T10:01:00Z',pid:'followup-agent',target:{address:'brin/desktop',fingerprint:'bbbbbbbb-bbbbbbbb-bbbbbbbb-bbbbbbbb',agent_id:'a'.repeat(32)},state:'delivered',exec:{state:'running',host:'brin/desktop'},actions:[]});
  fixture.followupID=id;fixture.followupStages=[];
+ if(variant==='composer-followup'){
+  fixture.thread.members[1].fingerprint='bbbbbbbb-bbbbbbbb-bbbbbbbb-bbbbbbbb';
+  fixture.thread.members[1].devices[0].fingerprint=fixture.thread.members[1].fingerprint;
+  fixture.thread.agents.push({...fixture.thread.agents[0],pid:'same-name-other-agent',agent_id:'b'.repeat(32)});
+  const root=fixture.thread.messages.at(-1);
+  fixture.thread.messages.push({...root,id:'2'.repeat(32),lid:'2'.repeat(32),body:'Prepare independent inventory report'});
+  fixture.thread.topics=[{id:'9'.repeat(32),title:'Other topic',state:'active',count:1,last_at:root.at}];
+  fixture.thread.messages.push({...root,id:'3'.repeat(32),lid:'3'.repeat(32),topic:'9'.repeat(32),body:'Other-topic work'},
+   {...root,id:'4'.repeat(32),lid:'4'.repeat(32),origin:'agent:codex',body:'Peer-authored work'});
+ }
 }
 if(variant==='browser-app'){
  fixture.overview.device={browser:true};fixture.overview.me.browser=true;
@@ -267,14 +277,15 @@ if(variant==='agent-child'){
 
 let open;
 const changeListeners=new Set(),changed=event=>{for(const fn of [...changeListeners])fn(event);};
-const host={version:1,platform:'daemon',workspace:{id:'default',name:'P6 fixture',endpoint:location.origin,address:seed.overview.me.address,realm:'',state:'enrolled'},workspaces:null,skins:[],onSkinsChange(){return()=>{};},onOpen(fn){open=fn;},listen(fn){changeListeners.add(fn);return()=>changeListeners.delete(fn);},stage:async f=>{if(variant==='followup'){if(fixture.followupStageFailure&&f.name==='fail-second.md'){fixture.followupStageFailure=false;throw Error('Synthetic second stage failure');}const id='followup-staged-'+(fixture.followupStages.length+1);fixture.followupStages.push({id,name:f.name,size:f.size,text:await f.text()});if(fixture.followupStagePause){fixture.followupStagePause=false;await new Promise(resolve=>{window.finishFollowupStage=resolve;});}return id;}if(variant==='multi-agent'){const id='multi-stage-'+(fixture.stages.length+1);fixture.stages.push({id,name:f.name,size:f.size});return {id};}if(variant==='oks'){fixture.staged={name:f.name,size:f.size};return {id:'staged-1'};}throw Error('fixture accepts no files');},file:async(id,index,dir)=>{if(variant==='direct-files'){fixture.download={id,index,dir};return {bytes:new TextEncoder().encode('hello')};}throw Error('fixture contains no files');},api:async(p,body)=>{
+const host={version:1,platform:'daemon',workspace:{id:'default',name:'P6 fixture',endpoint:location.origin,address:seed.overview.me.address,realm:'',state:'enrolled'},workspaces:null,skins:[],onSkinsChange(){return()=>{};},onOpen(fn){open=fn;},listen(fn){changeListeners.add(fn);return()=>changeListeners.delete(fn);},stage:async f=>{if(variant==='followup'||variant==='composer-followup'){if(fixture.followupStageFailure&&f.name==='fail-second.md'){fixture.followupStageFailure=false;throw Error('Synthetic second stage failure');}const id='followup-staged-'+(fixture.followupStages.length+1);fixture.followupStages.push({id,name:f.name,size:f.size,text:await f.text()});if(fixture.followupStagePause){fixture.followupStagePause=false;await new Promise(resolve=>{window.finishFollowupStage=resolve;});}return id;}if(variant==='multi-agent'){const id='multi-stage-'+(fixture.stages.length+1);fixture.stages.push({id,name:f.name,size:f.size});return {id};}if(variant==='oks'){fixture.staged={name:f.name,size:f.size};return {id:'staged-1'};}throw Error('fixture accepts no files');},file:async(id,index,dir)=>{if(variant==='direct-files'){fixture.download={id,index,dir};return {bytes:new TextEncoder().encode('hello')};}throw Error('fixture contains no files');},api:async(p,body)=>{
 fixture.requests.push({path:p,body});
-if(variant==='followup'&&p==='/api/upload/discard')return {};
-if(variant==='followup'&&p==='/api/request/followup'){
+if((variant==='followup'||variant==='composer-followup')&&p==='/api/upload/discard')return {};
+if((variant==='followup'||variant==='composer-followup')&&p==='/api/request/followup'){
  if(!fixture.followupFailed){fixture.followupFailed=true;throw Error('Synthetic uncertain response; retry the same follow-up');}
  fixture.followupSent=true;return {note:'Follow-up queued; native acceptance has not been proven.'};
 }
 
+if(variant==='composer-followup'&&p==='/api/dm/agent/ask')return {id:body.id,lid:body.id,state:'custody'};
 if(variant==='reactions'&&p==='/api/message/react'){
  if(body.conv!==fixture.thread.id||body.id!=='context'||body.dir!=='in')throw Error('Unexpected reaction target');
  if(fixture.failReaction){fixture.failReaction=false;throw Error('Synthetic reaction failed');}
@@ -814,6 +825,48 @@ if(process.env.AGENTNET_HELD_FLOOD_REGRESSION==='1'){
   assert(await page.evaluate(()=>fixture.overview.quarantine.some(q=>q.detail_code==='admission_failed')&&fixture.overview.quarantine.some(q=>q.id==='f'.repeat(32))),'new and changed records survive stale snapshot');
   assert(!await page.evaluate(()=>fixture.requests.some(r=>r.body?.do&&r.body.do!=='archive_held_batch')),'bulk archive never admits/trusts/runs');
   const shot=path.join(evidence,'comic-held-flood-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
+ }finally{await context.close();}
+ continue;
+}
+if(process.env.AGENTNET_COMPOSER_FOLLOWUP_REGRESSION==='1'){
+ const {page,context}=await openCase('composer-followup');
+ try{
+  const form=page.locator('form[aria-label="Write a message"]'),field=form.locator('textarea');
+  await field.fill('@');
+  await page.getByRole('option').filter({hasText:'Analyst'}).first().click();
+  await field.pressSequentially(' Use English instead');
+  const select=form.getByRole('combobox',{name:/^Request for/});await select.waitFor();
+  assert.equal(await select.locator('option').count(),4,'two exact requests, ambiguity placeholder and explicit new choice only');
+  const ambiguousShot=path.join(evidence,'comic-ordinary-choice-'+width+'.png');await page.screenshot({path:ambiguousShot});shots.push(ambiguousShot);
+  assert.equal(await form.locator('[data-part="send"]').getAttribute('aria-disabled'),'true','ambiguous runs require an explicit selection');
+  assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/ask'||r.path==='/api/request/followup').length),0);
+  await select.selectOption('1'.repeat(32));
+  await form.locator('input[type=file]').setInputFiles({name:'canonical.md',mimeType:'text/markdown',buffer:Buffer.from('canonical original bytes')});
+  await form.locator('[data-part="send"]').click();
+  await page.getByText(/Synthetic uncertain response/).first().waitFor();
+  const retry=page.getByRole('button',{name:/Retry/}).first();await retry.waitFor();
+  await field.fill('@');
+  await page.getByRole('option').filter({hasText:'Analyst'}).first().click();
+  await field.pressSequentially(' A newer draft stays here');
+  const newerDraft=await field.inputValue();
+  await select.selectOption('new');
+  await retry.click();
+  await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/api/request/followup').length===2);
+  const calls=await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/request/followup'));
+  assert.deepEqual({...calls[0].body,files:[]},{...calls[1].body,files:[]},'retry retains exact send ID and original request despite newer choices/draft');
+  const staged=await page.evaluate(()=>fixture.followupStages);
+  for(const call of calls){assert.equal(call.body.files.length,1);const file=staged.find(f=>f.id===call.body.files[0]);assert.equal(file.text,'canonical original bytes');assert.equal(file.name,'canonical.md');}
+  assert.deepEqual(calls[0].body.ref,{id:'1'.repeat(32),fingerprint:'eeeeeeee-eeeeeeee-eeeeeeee-eeeeeeee'});
+  assert.equal(calls[0].body.conv,conv);assert.match(calls[0].body.body,/Use English instead/);
+  assert.equal(await field.inputValue(),newerDraft);
+  assert.equal(await page.evaluate(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/ask').length),0,'ordinary correction did not create an independent root');
+  await form.locator('[data-part="send"]').click();
+  await page.waitForFunction(()=>fixture.requests.filter(r=>r.path==='/api/dm/agent/ask').length===1);
+  const fresh=await page.evaluate(()=>fixture.requests.find(r=>r.path==='/api/dm/agent/ask').body);
+  assert.equal(fresh.pid,'followup-agent');assert.match(fresh.body,/A newer draft stays here$/);
+  assert(!fresh.ref&&!fresh.request_followup,'independent work is explicit');
+  assert(!await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),'exact request controls fit phone width');
+  const shot=path.join(evidence,'comic-ordinary-followup-'+width+'.png');await page.screenshot({path:shot});shots.push(shot);
  }finally{await context.close();}
  continue;
 }
@@ -1397,6 +1450,6 @@ if(process.env.AGENTNET_DELIVERY_STOP_REGRESSION==='1'){
    }
   }
   if(process.env.AGENTNET_RENDERED_RETAIN){const keep=path.resolve(process.env.AGENTNET_RENDERED_RETAIN);assert(keep.startsWith('/tmp/'),'retained synthetic evidence must stay in /tmp');fs.mkdirSync(keep,{recursive:true,mode:0o700});for(const shot of shots)fs.copyFileSync(shot,path.join(keep,path.basename(shot)));}
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_LEGACY_LIST_REGRESSION==='1'?'Comic retained legacy list: exact identity/manager, add person, preserved leave, no agent catalog/control/grants; desktop/mobile':process.env.AGENTNET_AGENT_CHILD_REGRESSION==='1'?'Comic verified Codex author to Claude recipient, exact stopped-parent reason, no retry or replay, retained handling; desktop/mobile':process.env.AGENTNET_TOPIC_INVITE_REGRESSION==="1"?"Comic DM/group Main/named topic: Recent/Selected/Since, private files excluded, stable scope after rename/archive/arrival, broad grant disclosure; desktop/mobile":process.env.AGENTNET_REPORT_HISTORY_REGRESSION==="1"?"Comic exact blocker history: arbitrary follow-up success stays separate; confirmed/refused/new attempt and newest empty snapshots; desktop/mobile":completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,checks:process.env.AGENTNET_COMPOSER_FOLLOWUP_REGRESSION==='1'?'Comic ordinary composer: exact current request/host/key/topic, mandatory ambiguity choice, same-name agents, independent new request, same-ID/file-byte uncertain retry and newer draft preservation; desktop1280/mobile390':process.env.AGENTNET_LEGACY_LIST_REGRESSION==='1'?'Comic retained legacy list: exact identity/manager, add person, preserved leave, no agent catalog/control/grants; desktop/mobile':process.env.AGENTNET_AGENT_CHILD_REGRESSION==='1'?'Comic verified Codex author to Claude recipient, exact stopped-parent reason, no retry or replay, retained handling; desktop/mobile':process.env.AGENTNET_TOPIC_INVITE_REGRESSION==="1"?"Comic DM/group Main/named topic: Recent/Selected/Since, private files excluded, stable scope after rename/archive/arrival, broad grant disclosure; desktop/mobile":process.env.AGENTNET_REPORT_HISTORY_REGRESSION==="1"?"Comic exact blocker history: arbitrary follow-up success stays separate; confirmed/refused/new attempt and newest empty snapshots; desktop/mobile":completion?'Comic signed exact completion, queued secondary copies/details unchanged; inert/different-target/quote/unrelated negatives desktop1280/mobile390':process.env.AGENTNET_FOLLOWUP_REGRESSION==='1'?'Comic follow-up: exact original/target, no send on close, retained text/files, same-ID uncertain retry, unused staging cleanup, deleted-source refusal; desktop1280/mobile390':process.env.AGENTNET_REACTION_REGRESSION==='1'?'Comic: first-use/persisted frequency, success/failure/removal, human-count ordering and separate agent chips, desktop/mobile':process.env.AGENTNET_PHONE_REJOIN_REGRESSION==='1'?'Comic phone: active/pending rejoin, stale click/navigation, genuine return, exact key/agent/host identity and fresh-read error':process.env.AGENTNET_DIRECT_REVIEW_REGRESSION==='1'?'Direct review[]: held/running/stopping/complete; decision badge/list vs Working; exact request/Stop; desktop/mobile':process.env.AGENTNET_OKS_REGRESSION==='1'?'Comic: working excluded from OK count, exact topic/repeat focus, unsent draft/files preserved, full reason, future approve separate from held accept, exact Stop':process.env.AGENTNET_NOTIFY_REGRESSION==='1'?'Comic: one person grant across duplicate roots and separate conversation mute':(process.env.AGENTNET_TEST_SKINS||'comic')+': guest/member distinction, exact targets, retract/refresh, rights, desktop/mobile',shots}));
  }finally{await browser?.close();server.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});

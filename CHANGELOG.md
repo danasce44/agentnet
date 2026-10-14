@@ -32,6 +32,13 @@ This record starts with v0.8.1; earlier releases remain on the
   return their actual stored destination.
 - Fix native file saves through the app's page security policy, retaining
   authenticated-host, native-origin and filename checks.
+- Choose an exact active request from the ordinary composer for an ordered
+  correction, or explicitly start independent work. Native acceptance and queued
+  continuation stay distinct; fresh authorized evidence and ready files follow
+  the correction without repeating already supplied content.
+- Run independent conversations for a registered agent in fresh native sessions,
+  retaining exclusion for saved, selected or unverified shared sessions and
+  exact cancellation and cleanup ownership.
 
 ## [0.8.27] — 2026-10-14
 

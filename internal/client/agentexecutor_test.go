@@ -106,7 +106,9 @@ func TestNamedExecutorABAAndImmutableClaim(t *testing.T) {
 
 	// A selected running stamp survives mapping changes and restart storage.
 	request := namedExecutorRequest(t, w, a.ID, envelope.KindQuestion, previous)
-	resolve := func(q dbq, id string) (*ExecutorStamp, error) { return w.bob.ResolveExecutorIn(q, id, defaultBefore) }
+	resolve := func(q dbq, j job) (*ExecutorStamp, error) {
+		return w.bob.ResolveExecutorIn(q, j.AgentID, defaultBefore)
+	}
 	j, ok, err := w.bob.store.claimJob(defaultBefore.Harness, resolve)
 	if err != nil || !ok {
 		t.Fatal(err)
@@ -151,7 +153,7 @@ func TestNamedExecutorRefusalRollbackAndManualDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolve := func(q dbq, id string) (*ExecutorStamp, error) { return w.bob.ResolveExecutorIn(q, id, nil) }
+	resolve := func(q dbq, j job) (*ExecutorStamp, error) { return w.bob.ResolveExecutorIn(q, j.AgentID, nil) }
 	legacy := namedExecutorRequest(t, w, "", envelope.KindQuestion, "")
 	unknown := namedExecutorRequest(t, w, protocol.NewID(), envelope.KindQuestion, "")
 	valid := namedExecutorRequest(t, w, a.ID, envelope.KindQuestion, "")
@@ -193,7 +195,7 @@ func TestNamedExecutorRefusalRollbackAndManualDefault(t *testing.T) {
 	// Operational resolver failure must roll back claim/attempt/status; no text leaks.
 	retry := namedExecutorRequest(t, w, protocol.NewID(), envelope.KindQuestion, "")
 	sentinel := errors.New("private path operational failure")
-	if _, _, err = w.bob.store.claimJob("", func(dbq, string) (*ExecutorStamp, error) { return nil, sentinel }); !errors.Is(err, sentinel) {
+	if _, _, err = w.bob.store.claimJob("", func(dbq, job) (*ExecutorStamp, error) { return nil, sentinel }); !errors.Is(err, sentinel) {
 		t.Fatal(err)
 	}
 	var attempts int
@@ -215,7 +217,7 @@ func TestNamedExecutorRefusalRollbackAndManualDefault(t *testing.T) {
 	// Naming an executor does not grant task permission.
 	task := namedExecutorRequest(t, w, protocol.NewID(), envelope.KindTask, "")
 	calls := 0
-	if _, _, err = w.bob.store.claimJob("", func(dbq, string) (*ExecutorStamp, error) { calls++; return nil, sentinel }); err == nil {
+	if _, _, err = w.bob.store.claimJob("", func(dbq, job) (*ExecutorStamp, error) { calls++; return nil, sentinel }); err == nil {
 		t.Fatal("pending retry must still surface resolver failure")
 	}
 	if state, _ := w.bob.store.jobState(task); state != stateAwaiting {
@@ -236,7 +238,7 @@ func TestNamedExecutorParticipationResolverRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	sentinel := errors.New("private DB failure")
-	_, ok, _, _, err := w.bob.store.claimAgentPage("agentstub", w.bob.Address, w.bob.Self().Fingerprint(), 0, agentPage, func(dbq, string) (*ExecutorStamp, error) { return nil, sentinel })
+	_, ok, _, _, err := w.bob.store.claimAgentPage("agentstub", w.bob.Address, w.bob.Self().Fingerprint(), 0, agentPage, func(dbq, job) (*ExecutorStamp, error) { return nil, sentinel })
 	if !errors.Is(err, sentinel) || ok {
 		t.Fatalf("resolver failure %v %v", ok, err)
 	}
@@ -247,7 +249,7 @@ func TestNamedExecutorParticipationResolverRollback(t *testing.T) {
 	if err = w.bob.store.db.QueryRow(`SELECT attempts FROM inbox WHERE id=?`, in.ID).Scan(&attempts); err != nil || attempts != 0 {
 		t.Fatal(attempts, err)
 	}
-	_, ok, _, _, err = w.bob.store.claimAgentPage("agentstub", w.bob.Address, w.bob.Self().Fingerprint(), 0, agentPage, func(dbq, string) (*ExecutorStamp, error) { return nil, ErrUnknownAgent })
+	_, ok, _, _, err = w.bob.store.claimAgentPage("agentstub", w.bob.Address, w.bob.Self().Fingerprint(), 0, agentPage, func(dbq, job) (*ExecutorStamp, error) { return nil, ErrUnknownAgent })
 	if err != nil || ok || jobState(t, w.bob, in.ID) != stateNotRun {
 		t.Fatalf("terminal refusal %v %v", ok, err)
 	}

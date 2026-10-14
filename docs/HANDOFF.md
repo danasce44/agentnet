@@ -24,7 +24,8 @@ request cards are integrated with the rebuilt Comic bundle. Moved-topic sharing
 and truthful destination notices passed independent focused checks on the
 combined source, preserving model-reader and attachment admission guards.
 Comic preview/time formatting, literal topic names and portable link navigation
-also pass combined desktop/phone rendering. Steering remains under review. These are source checks; packaged
+also pass combined desktop/phone rendering. Steering and independent-session
+source is integrated with the combined Comic and focused checks. These are source checks; packaged
 Android recovery, all-skins/native/platform and release gates remain pending.
 The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
 `3599582f`; exact file bytes, limits and removal guards pass the four-case

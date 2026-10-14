@@ -213,14 +213,18 @@ func (s *store) sessionAncestor(peer, id string) (ref sessionRef, state, at stri
 // latest job that ran (or runs) in it. Only the head may lead to a resume,
 // so a branch from an older message of the conversation, or a job after a
 // later failure, starts fresh. Execution order, not arrival order, decides.
-func (s *store) setSessionRef(id string, ref sessionRef) error {
+func (s *store) setSessionRef(id string, ref sessionRef, requireRunning ...bool) error {
 	data, _ := json.Marshal(ref)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec(`UPDATE inbox SET session_ref = ? WHERE id = ? AND state IN (?, ?)`, string(data), id, stateRunning, stateCancelReq)
+	otherState := stateCancelReq
+	if len(requireRunning) > 0 && requireRunning[0] {
+		otherState = stateRunning
+	}
+	res, err := tx.Exec(`UPDATE inbox SET session_ref = ? WHERE id = ? AND state IN (?, ?)`, string(data), id, stateRunning, otherState)
 	if err != nil {
 		return err
 	}

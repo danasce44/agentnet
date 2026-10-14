@@ -22,7 +22,7 @@ import (
 )
 
 // The worker answers approved questions and runs accepted tasks with the
-// recipient's selected responder, one per executor, each in its own headless
+// recipient's selected responder, each in its own headless
 // harness session outside any conversation the user has open. It is woken
 // by new inbox rows, by the local kick socket and by Hub pings; it never
 // polls the network.
@@ -116,7 +116,7 @@ func (a *Agent) runNext(ctx context.Context, wake <-chan struct{}) bool {
 }
 
 // The single scheduler dispatches claimed jobs; inline callers keep the
-// existing synchronous behavior. A busy executor never claims another job.
+// existing synchronous behavior. Session/conversation safety precedes every claim.
 func (a *Agent) runNextWith(ctx context.Context, wake <-chan struct{}, dispatch func(func())) bool {
 	// Nested local execution may run alongside its waiting parent. Both hold
 	// readers; a whole-app replacement requires exclusive idle ownership.
@@ -130,6 +130,12 @@ func (a *Agent) runNextWith(ctx context.Context, wake <-chan struct{}, dispatch 
 		}
 	}()
 	a.workerLanes.Lock()
+	statusSeq, _ := a.Changed()
+	defer func() {
+		if seq, _ := a.Changed(); seq != statusSeq {
+			a.wakeStatus()
+		}
+	}() // committed queue reasons, once per changed scheduler pass
 	locked := true
 	defer func() {
 		if locked {
@@ -209,6 +215,7 @@ func (a *Agent) runRoomChildren(ctx context.Context, parent job) {
 				name = r.Harness
 			}
 			a.workerLanes.Lock()
+			statusSeq, _ := a.Changed()
 			resolve := a.availableResolver(r, parent.ID)
 			var child job
 			var found, full bool
@@ -221,6 +228,9 @@ func (a *Agent) runRoomChildren(ctx context.Context, parent job) {
 				a.reserveExecutor(child, parent.ID)
 			}
 			a.workerLanes.Unlock()
+			if seq, _ := a.Changed(); seq != statusSeq {
+				a.wakeStatus()
+			}
 			for _, id := range told {
 				a.noteStatus(id)
 			}
@@ -345,8 +355,6 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 	if _, err := a.store.markRunVisibility(j.ID, false); err != nil {
 		a.Logf("run visibility: %v", err)
 	}
-	a.noteBusyQueue()
-	defer a.noteBusyQueue()
 
 	// A cancel request from another process arrives as a wake-up. A request
 	// to this device's agent is also looked at again on every local change
@@ -491,6 +499,22 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		}
 		roomBridge.nativeCheck = func(c nativeCallback) bool { return a.nativeHandoverCurrent(j, c) }
 		roomBridge.nativeComplete = func(c nativeCallback) { a.endNativeCallback(j, c) }
+		roomBridge.threadAvailable = func(id string) bool {
+			ref := sessionRef{Harness: r.Harness, Mode: j.Kind, Dir: r.Dir, ID: id}
+			if plan.ref != nil {
+				ref = *plan.ref
+				ref.ID = id
+			}
+			return a.bindNativeThread(j, ref, !plan.resume)
+		}
+		if plan.ref == nil {
+			// This metadata only fences the live ephemeral thread. It does not
+			// make a named request resumable or keep a saved native session.
+			defer func() {
+				_, _ = a.store.db.Exec(`DELETE FROM config WHERE k=? AND v=?`, headKey(sessionRef{Harness: r.Harness, ID: roomBridge.thread}), j.ID)
+				_, _ = a.store.db.Exec(`UPDATE inbox SET session_ref=NULL WHERE id=?`, j.ID)
+			}()
+		}
 		defer roomBridge.close()
 		followupCtx, stopFollowups := context.WithCancel(runCtx)
 		followupsDone := make(chan struct{})

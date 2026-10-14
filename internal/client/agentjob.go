@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -283,7 +284,7 @@ var beforeAgentClaim = func() {}
 // looked at (nothing could let it run); storing one of its events is a
 // change that starts a new look. next is the position of the last request
 // looked at; full reports that the page was full (more may follow).
-func (s *store) claimAgentPage(responder, self, selfFP string, pos int64, limit int, resolve ...func(dbq, string) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, err error) {
+func (s *store) claimAgentPage(responder, self, selfFP string, pos int64, limit int, resolve ...func(dbq, job) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, err error) {
 	j, found, next, full, _, err = s.claimAgentPageTold(responder, self, selfFP, pos, limit, resolve...)
 	return j, found, next, full, err
 }
@@ -291,11 +292,11 @@ func (s *store) claimAgentPage(responder, self, selfFP string, pos int64, limit 
 // claimAgentPageTold is claimAgentPage that also reports the requests the
 // look moved to a state their requester is told of (headless.go
 // noteStatus): waiting for this host's person, or not run.
-func (s *store) claimAgentPageTold(responder, self, selfFP string, pos int64, limit int, resolve ...func(dbq, string) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, told []string, err error) {
+func (s *store) claimAgentPageTold(responder, self, selfFP string, pos int64, limit int, resolve ...func(dbq, job) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, told []string, err error) {
 	return s.claimAgentPageForCause(responder, self, selfFP, pos, limit, "", "", nil, resolve...)
 }
 
-func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64, limit int, conv, cause string, reciprocal func(dbq, job) (*ExecutorStamp, error), resolve ...func(dbq, string) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, told []string, err error) {
+func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64, limit int, conv, cause string, reciprocal func(dbq, job) (*ExecutorStamp, error), resolve ...func(dbq, job) (*ExecutorStamp, error)) (j job, found bool, next int64, full bool, told []string, err error) {
 	next = pos
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -387,7 +388,7 @@ func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64
 			}
 			var stamp *ExecutorStamp
 			if len(resolve) > 0 {
-				stamp, err = resolve[0](tx, id)
+				stamp, err = resolve[0](tx, r.j)
 			} else if id != "" {
 				err = ErrUnknownAgent
 			}
@@ -395,6 +396,11 @@ func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64
 				stamp, err = reciprocal(tx, r.j)
 			}
 			if errors.Is(err, errExecutorBusy) {
+				updated, e := noteExecutionWait(tx, r.j.ID, err.Error())
+				if e != nil {
+					return j, false, pos, false, nil, e
+				}
+				wrote = wrote || updated
 				continue
 			}
 			if err != nil && !errors.Is(err, ErrUnknownAgent) {
@@ -432,6 +438,12 @@ func (s *store) claimAgentPageForCause(responder, self, selfFP string, pos int64
 				stateAwaiting, why, r.j.ID, stateAgentWaiting)
 		case verdictStop:
 			res, err = tx.Exec(`UPDATE inbox SET state = ?, detail = ? WHERE id = ? AND state = ?`, stateNotRun, "not run: "+why, r.j.ID, r.state)
+		case verdictWait:
+			updated, e := noteExecutionWait(tx, r.j.ID, "waiting: "+why)
+			if e != nil {
+				return j, false, pos, false, nil, e
+			}
+			wrote = wrote || updated
 		}
 		if err != nil {
 			return j, false, pos, false, nil, err
@@ -478,7 +490,7 @@ type agentSweep struct {
 // follow; the caller continues at once. A request the look leaves waiting
 // for this host's person, or closes as not run, is told to its requester
 // (noteStatus), as a device message's state is when it arrives.
-func (a *Agent) claimAgentJob(responder string, resolve ...func(dbq, string) (*ExecutorStamp, error)) (j job, ok, more bool, err error) {
+func (a *Agent) claimAgentJob(responder string, resolve ...func(dbq, job) (*ExecutorStamp, error)) (j job, ok, more bool, err error) {
 	sw := &a.agentSweep
 	seq, _ := a.Changed()
 	if sw.pos == 0 {
@@ -520,11 +532,11 @@ func (a *Agent) agentStop(j job) string {
 // the conversation shared with it (bounded, omissions stated), the
 // recipient's context files, then the request once.
 func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...context.Context) (string, error) {
-	info, err := a.participation(j.Conv, j.PID)
+	info, err := a.requestContextParticipation(j)
 	if err != nil {
 		return "", err
 	}
-	c, err := a.agentContext(info, j.ID, agentContextBytes)
+	c, err := a.agentContext(info, "", agentContextBytes, []protocol.GrantRef{a.jobContextRef(j)})
 	if err != nil {
 		return "", err
 	}
@@ -682,7 +694,17 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 	if len(contexts) != 0 {
 		fileCtx = contexts[0]
 	}
-	b.WriteString(a.agentSharedFiles(fileCtx, j, info, c))
+	var delivered agentContextCursor
+	for _, m := range c.Messages {
+		delivered.noteText(m)
+	}
+	b.WriteString(a.agentSharedFiles(fileCtx, j, info, c, &delivered))
+	if data, _ := json.Marshal(delivered); len(data) > maxContext {
+		return "", errors.New("the owned run's bounded evidence cursor is full; review the exact work before continuing")
+	}
+	if j.run != nil {
+		j.run.context = delivered
+	}
 	for _, path := range r.Context {
 		data, err := readCapped(path, maxContext)
 		if err != nil {
@@ -696,6 +718,30 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 	}
 	fmt.Fprintf(&b, "\n## %s from %s\n%s\n", heading, asker, j.Body)
 	return b.String(), nil
+}
+
+// A broad invitation is not a reason to refresh another topic into this
+// specific request. Preserve the exact request's topic and physical/logical
+// identity while reusing the normal current participation/context selectors.
+func (a *Agent) requestContextParticipation(j job) (ParticipationInfo, error) {
+	info, err := a.participation(j.Conv, j.PID)
+	if err != nil {
+		return info, err
+	}
+	if info.Topic == nil {
+		var topic string
+		if err = a.store.db.QueryRow(`SELECT coalesce(topic,'') FROM inbox WHERE id=?`, j.ID).Scan(&topic); err != nil {
+			return info, err
+		}
+		info.Topic = &topic
+	}
+	return info, nil
+}
+
+func (a *Agent) jobContextRef(j job) protocol.GrantRef {
+	ref := protocol.GrantRef{LID: j.ID, Fingerprint: j.Key}
+	_ = a.store.db.QueryRow(`SELECT coalesce(lid,id) FROM inbox WHERE id=?`, j.ID).Scan(&ref.LID)
+	return ref
 }
 
 // requestGuests reads request j's captured audience (the HumanTurn stored
@@ -1101,11 +1147,67 @@ func (a *Agent) roomAgentNames(ctx context.Context, parts []ParticipationInfo) m
 // outputs, oldest first, before the request before (if given; the request
 // itself is given once, separately). Each is rendered as the agent sees
 // it; the newest are kept within limit bytes of that rendering.
-func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (ParticipationContext, error) {
+// Delivery facts belong only to this owned run. Refs in admittedAgentContext
+// remain selection/organization evidence, not proof that file bytes were sent.
+type agentContextDelivery struct {
+	Ref      protocol.GrantRef
+	Revision int64
+	Deleted  bool
+	TextHash string
+	Files    []string
+}
+type agentContextCursor []agentContextDelivery
+
+func contextRef(m ConvMessage) protocol.GrantRef {
+	key := m.Key
+	if m.ExcerptPID != "" {
+		key = m.Claimed
+	}
+	return protocol.GrantRef{LID: m.LID, Fingerprint: key}
+}
+func (c agentContextCursor) index(m ConvMessage) int {
+	return slices.IndexFunc(c, func(d agentContextDelivery) bool { return d.Ref == contextRef(m) })
+}
+func (c agentContextCursor) textSent(m ConvMessage) bool {
+	i := c.index(m)
+	return i >= 0 && c[i].Revision == m.Revision && c[i].Deleted == m.Deleted && c[i].TextHash == fmt.Sprintf("%x", sha256.Sum256([]byte(m.Controls.Shown(m.Body))))
+}
+func (c agentContextCursor) fileSent(m ConvMessage, f FileInfo) bool {
+	i := c.index(m)
+	return i >= 0 && slices.Contains(c[i].Files, f.SHA256+"/"+f.Name)
+}
+func (c *agentContextCursor) noteText(m ConvMessage) {
+	i := (*c).index(m)
+	if i < 0 {
+		*c = append(*c, agentContextDelivery{Ref: contextRef(m)})
+		i = len(*c) - 1
+	}
+	(*c)[i].Revision, (*c)[i].Deleted = m.Revision, m.Deleted
+	(*c)[i].TextHash = fmt.Sprintf("%x", sha256.Sum256([]byte(m.Controls.Shown(m.Body))))
+}
+func (c *agentContextCursor) noteFile(m ConvMessage, f FileInfo) {
+	if !(*c).fileSent(m, f) {
+		if (*c).index(m) < 0 {
+			*c = append(*c, agentContextDelivery{Ref: contextRef(m)})
+		}
+		i := (*c).index(m)
+		(*c)[i].Files = append((*c)[i].Files, f.SHA256+"/"+f.Name)
+	}
+}
+
+func (a *Agent) agentContext(info ParticipationInfo, before string, limit int, excluded ...[]protocol.GrantRef) (ParticipationContext, error) {
+	return a.agentContextForRun(info, before, limit, nil, nil, excluded...)
+}
+
+func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit int, delivered agentContextCursor, filesOnly *protocol.GrantRef, excluded ...[]protocol.GrantRef) (ParticipationContext, error) {
 	if limit <= 0 {
 		limit = defaultContextBytes
 	}
-	msgs, err := a.ConversationMessages(info.Conv)
+	var selection []*contextMessageSelection
+	if len(excluded) > 0 {
+		selection = []*contextMessageSelection{{PID: info.PID, Grant: info.Grant}}
+	}
+	msgs, err := a.conversationMessages(info.Conv, "", selection...)
 	if err != nil {
 		return ParticipationContext{}, err
 	}
@@ -1166,9 +1268,9 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (
 		if before != "" && msg.ID == before {
 			break
 		}
-		ref := protocol.GrantRef{LID: msg.LID, Fingerprint: msg.Key}
-		if msg.ExcerptPID != "" {
-			ref.Fingerprint = msg.Claimed
+		ref := contextRef(msg)
+		if len(excluded) > 0 && slices.Contains(excluded[0], ref) {
+			continue
 		}
 		_, frozen := grantSnapshot(ref, info.Snapshots)
 		if frozen && msg.ExcerptPID == "" {
@@ -1253,6 +1355,15 @@ func (a *Agent) agentContext(info ParticipationInfo, before string, limit int) (
 			}
 			if n := len(msg.Attachments); n > 0 {
 				line += fmt.Sprintf(" (%d selected file(s); byte availability reported separately)", n)
+			}
+			// Controls have already been verified and applied. An unchanged
+			// text can still carry newly available bytes that were never staged.
+			if filesOnly != nil && ref == *filesOnly || delivered.textSent(msg) {
+				ready := !msg.Deleted && slices.ContainsFunc(msg.Attachments, func(f FileInfo) bool { return f.Openable && !delivered.fileSent(msg, f) })
+				if !ready {
+					continue
+				}
+				line = ""
 			}
 			selected = append(selected, msg)
 			lines = append(lines, line)

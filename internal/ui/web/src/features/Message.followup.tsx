@@ -11,7 +11,7 @@ import type { StagedFile } from "../store";
 import { agentLabel, agentOf, isRequest, isThreadMsg, shownText, threadAgentName, whoWrote, type AnyMsg, type Ctx } from "./Message.model";
 
 export function followupRef(m: AnyMsg, ctx: Ctx) {
-  if (m._local || m.deleted || m.dir !== "out" || !isRequest(m) || whoWrote(m, ctx).agent) return null;
+  if (m._local || m.deleted || m.dir !== "out" || !isRequest(m) || !isThreadMsg(m) && m.origin?.startsWith("agent:") || whoWrote(m, ctx).agent) return null;
   const fingerprint = isThreadMsg(m) ? m.from_key : m.send_group_author || m.claimed_key;
   const key = fingerprint || (m.from === ctx.overview?.me.address ? ctx.overview.me.fingerprint : "");
   const id = isThreadMsg(m) ? m.id : m.lid || m.id;

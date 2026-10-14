@@ -55,11 +55,12 @@ var outboxStep = func(step, name string) {}
 
 // runDir is one job's run folder while the job runs.
 type runDir struct {
-	path  string   // <home>/runs/<job id>
-	made  bool     // path exists, made for this job
-	in    []string // the files staged in in/, in order
-	bytes int64    // their sizes together
-	out   *fileKey // out/ as made for an outbox; nil: none
+	path    string             // <home>/runs/<job id>
+	made    bool               // path exists, made for this job
+	in      []string           // the files staged in in/, in order
+	bytes   int64              // their sizes together
+	out     *fileKey           // out/ as made for an outbox; nil: none
+	context agentContextCursor // this owned run's acknowledged text and staged bytes
 }
 
 // fileKey is what the outbox compares and checks of a file (runfiles_unix.go).

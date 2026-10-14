@@ -1,7 +1,7 @@
 // Android's explicit send gestures survive process death. This records exact
 // API requests, not delivery claims; only a successful native admission clears
 // an entry. Reading never retries or grants authority.
-const endpoints = new Set(["/api/send", "/api/dm/send", "/api/dm/agent/ask", "/api/act"]);
+const endpoints = new Set(["/api/send", "/api/dm/send", "/api/dm/agent/ask", "/api/act", "/api/request/followup"]);
 const key = workspace => "agentnet.android.send-journal.v1." + workspace;
 const clone = value => JSON.parse(JSON.stringify(value));
 function valid(entry) {
