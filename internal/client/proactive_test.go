@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/misunders2d/agentnet/internal/envelope"
@@ -67,8 +69,18 @@ func TestProactiveAgentMessageAdmission(t *testing.T) {
 			}
 			stop()
 			host.stopBackgroundPosts() // queuedConv also schedules a sender outside Run
+			contents := []string{"# Agent report\n", `{"ready":true}`, "<!doctype html><html><body>Agent report</body></html>"}
+			names := []string{"report.md", "report.json", "report.html"}
+			files := make([]OutgoingFile, len(names))
+			for i, name := range names {
+				path := filepath.Join(t.TempDir(), name)
+				if err := os.WriteFile(path, []byte(contents[i]), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				files[i] = OutgoingFile{Path: path}
+			}
 			// No incoming request exists: queue using the ordinary durable sender.
-			sent, err := host.SendAgentMessage(WithQueuedSend(context.Background(), protocol.NewID()), p.PID, "", "Unsolicited admitted update")
+			sent, err := host.SendAgentMessage(WithQueuedSend(context.Background(), protocol.NewID()), p.PID, "", "Unsolicited admitted update", files...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,17 +98,55 @@ func TestProactiveAgentMessageAdmission(t *testing.T) {
 					m, n := convMsg(t, reader, conv, func(m ConvMessage) bool { return m.LID == sent.LID })
 					return n == 1 && m.VerifiedAgent && m.AgentID == agent && m.PID == p.PID && m.ReplyTo == "" && m.Topic == topic && m.Kind == envelope.KindMessage
 				})
+				m, _ := convMsg(t, reader, conv, func(m ConvMessage) bool { return m.LID == sent.LID })
+				if len(m.Attachments) != len(files) {
+					t.Fatalf("agent attachments missing: %+v", m.Attachments)
+				}
+				for i, name := range names {
+					r, f, err := reader.OpenFileFrom(tctx(t), "in", m.ID, i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if f.Name != name || string(readAll(t, r)) != contents[i] {
+						t.Fatalf("agent file %d name or bytes changed: %+v", i, f)
+					}
+				}
 			}
-			if _, err := host.SendAgentMessage(tctx(t), p.PID, protocol.NewID(), "outside scope"); err == nil {
+			fileOnly, err := host.SendAgentMessage(WithQueuedSend(context.Background(), protocol.NewID()), p.PID, "", "", files[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := host.FlushOutbox(tctx(t)); err != nil {
+				t.Fatal(err)
+			}
+			for _, reader := range readers {
+				eventually(t, "file-only agent message arrives", func() bool {
+					m, n := convMsg(t, reader, conv, func(m ConvMessage) bool { return m.LID == fileOnly.LID })
+					return n == 1 && m.Body == "" && m.VerifiedAgent && len(m.Attachments) == 1
+				})
+			}
+			tooMany := make([]OutgoingFile, envelope.MaxAttachments+1)
+			for i := range tooMany {
+				tooMany[i] = files[0]
+			}
+			if _, err := host.SendAgentMessage(tctx(t), p.PID, "", "too many", tooMany...); err == nil {
+				t.Fatal("agent bypassed attachment limit")
+			}
+			if mode == "dm" {
+				if _, err := host.SendConv(tctx(t), conv, ConvOutgoing{Kind: envelope.KindMessage, PID: p.PID, Origin: "agent:proactive", Emotion: "neutral", Topic: topic, Files: files}); err == nil {
+					t.Fatal("public origin marker bypassed the admitted agent-send path")
+				}
+			}
+			if _, err := host.SendAgentMessage(tctx(t), p.PID, protocol.NewID(), "outside scope", files...); err == nil {
 				t.Fatal("topic-bound agent wrote into another topic")
 			}
 			if host != inviter {
-				if _, err := inviter.SendAgentMessage(tctx(t), p.PID, "", "wrong host"); err == nil {
+				if _, err := inviter.SendAgentMessage(tctx(t), p.PID, "", "wrong host", files...); err == nil {
 					t.Fatal("human member impersonated another host's agent")
 				}
 			}
 			// A queued ordinary update cannot outlive its admission.
-			blocked, err := host.SendAgentMessage(WithQueuedSend(context.Background(), protocol.NewID()), p.PID, "", "Must not leave after removal")
+			blocked, err := host.SendAgentMessage(WithQueuedSend(context.Background(), protocol.NewID()), p.PID, "", "Must not leave after removal", files...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,7 +185,7 @@ func TestProactiveAgentMessageAdmission(t *testing.T) {
 					t.Fatalf("queued proactive message survived removal: %s %v", state, err)
 				}
 			}
-			if _, err := host.SendAgentMessage(tctx(t), p.PID, "", "removed"); err == nil {
+			if _, err := host.SendAgentMessage(tctx(t), p.PID, "", "removed", files...); err == nil {
 				t.Fatal("removed agent retained proactive send access")
 			}
 		})
