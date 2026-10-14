@@ -6,22 +6,28 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-Qualification source23ef420c has unchanged production/Comic from9e7dc6e5.
+Qualification source9c05129e has unchanged production/Comic from9e7dc6e5.
 All12 required client race selections now have passing evidence at600s, preserving
 unchanged partitions and the focused T5 correction. Final6/9 pass565.161s/485.258s;
 both UI partitions pass. Native Linux/macOS succeed; the corrected Windows
 four-case gate and vet pass76.471s. Mixed exactv0.8.27 passes57.701s and real
 IndexedDB race1.701s. Original-key APK8bbcf474 builds and verifies successfully.
 
-Android's retained synthetic v27 seed preserves200 messages, queued ciphertext,
-managed files and a healthy skin. A test-only app-owner index injector is being
-reviewed before actual corruption/upgrade/repair/cold preservation; no recovery
-pass or physical-phone claim yet. All-skins still fails three Zoom stored-message
-touch assertions; automatic review refused its test-only page-global probe and
-an owner exception is pending. Actual Codex independent steering81.477s covers
-only part of B9/B12: the existing owner multi-agent/peer-reply/correction+goal
-journey remains unqualified and is assigned as one bounded fixture proposal.
-MEL587 remains an owner release hold with no causal fix. No tag/publication.
+Actual owner-flow qualification now passes174.412s: retained-DM Codex73.92s
+consumes recovered initial/fresh verified refs and readonly file with two genuine
+ACKs; its peer is signed synthetic. The separate group100.48s uses actual
+Codex/Claude/Pi, simultaneous owned processes, a signed child-task/result chain,
+late peer/file evidence and two ordered owner inputs in the original Codex
+attempt. No configuration/permission changes or replay; exact fixture processes
+are gone. The implementation helper is dismissed; only Android preparation remains.
+
+Android's successful v27 seed is retained, but a later passive observation finds
+all three named caches unreadable and its browser draft absent before intentional
+corruption. Native200 messages, queued ciphertext and managed files remain exact.
+Origin/backing-storage diagnosis is pending; no repair/cold-preservation or
+physical-phone pass. All-skins still fails three Zoom stored-message touch
+assertions; automatic review refused its test-only page-global probe and an owner
+exception is pending. MEL587 has no causal fix. No tag/publication.
 
 
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
@@ -67,11 +73,12 @@ Do not tag or publish the next release until these are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
 - [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
-- [MEL-591](https://linear.app/mellanni/issue/MEL-591): reopened as **Urgent** by the owner. Ordinary follow-up/goal inputs waited behind active group work while agents requested baseline evidence already shared. Trace the exact continuing run, native input acceptance and authorized evidence availability; repair and qualify the actual flow. Eventual completion does not close this blocker; permanent deadlock is unproved.
-- [MEL-633](https://linear.app/mellanni/issue/MEL-633): **Urgent owner release blocker**. ThinkPad source `5590f729`, native proof-based retained-context recovery and browser/older-reader corrections are integrated. Focused source checks pass for admitted live turns, exact peer replies, independent reader waiting and unchanged-ciphertext release. Unprovable old unindexed incoming member turns remain selected-only. Actual affected-invitation/native and integrated release qualification are still required; policy `11ce9800` is documentation only.
 
-All four Linear issues remain open (MEL-591/633 Urgent, MEL-587/620 High). This is the owner's release
-hold, not a claim that the new evidence or either fix is already qualified.
+MEL-591/633 actual-flow acceptance now passes the two native journeys above,
+with source/race/browser boundaries retained. Unprovable old unindexed incoming
+member turns remain selected-only. These issues have not been marked shipped;
+remaining owner holds MEL-587/620 and the failed all-skins gate still prevent
+release. No physical-device or universal native-steering claim is made.
 
 ## Linear status audit — October 14, 2026
 
