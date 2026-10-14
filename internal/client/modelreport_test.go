@@ -63,12 +63,12 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 	fp := w.alice.Self().Fingerprint()
 	for _, id := range []string{"", named.ID} {
 		j := seedModelRun(t, w.alice, w.bob, r, id)
-		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol"); err != nil {
+		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol", "xhigh"); err != nil {
 			t.Fatal(err)
 		}
 		previous := modelAt(t, w.alice, fp, id)
 		seq, _ := w.alice.Changed()
-		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol"); err != nil {
+		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol", "xhigh"); err != nil {
 			t.Fatal(err)
 		}
 		next := modelAt(t, w.alice, fp, id)
@@ -79,9 +79,30 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 		if after != seq {
 			t.Fatalf("identical model changed quiet stream: before=%d after=%d", seq, after)
 		}
+		if next.Reasoning != "xhigh" {
+			t.Fatal("reasoning was not persisted")
+		}
+		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol", "medium"); err != nil {
+			t.Fatal(err)
+		}
+		changed := modelAt(t, w.alice, fp, id)
+		if changed.Model != next.Model || changed.Reasoning != "medium" || changed.Revision != next.Revision+1 {
+			t.Fatalf("effort-only update: %+v", changed)
+		}
+		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol", ""); err != nil {
+			t.Fatal(err)
+		}
+		cleared := modelAt(t, w.alice, fp, id)
+		if cleared.Reasoning != "" || cleared.Revision != changed.Revision+1 {
+			t.Fatal("absent effort reused old observation")
+		}
+		if err = w.alice.recordModelReport(j, &r, "gpt-6.1-sol", "medium"); err != nil {
+			t.Fatal(err)
+		}
+		previous = modelAt(t, w.alice, fp, id)
 		mismatch := r
 		mismatch.Dir = t.TempDir()
-		if err = w.alice.recordModelReport(j, &mismatch, "unbound"); err != nil {
+		if err = w.alice.recordModelReport(j, &mismatch, "unbound", ""); err != nil {
 			t.Fatal(err)
 		}
 		if modelAt(t, w.alice, fp, id) != previous {
@@ -89,7 +110,7 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 		}
 		receiver := j
 		receiver.Receiver = &ReplyReceiverBinding{}
-		if err = w.alice.recordModelReport(receiver, &r, "receiver-metadata"); err != nil {
+		if err = w.alice.recordModelReport(receiver, &r, "receiver-metadata", "high"); err != nil {
 			t.Fatal(err)
 		}
 		if modelAt(t, w.alice, fp, id) != previous {
@@ -98,7 +119,7 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 		if _, err = w.alice.store.db.Exec(`UPDATE inbox SET state=? WHERE id=?`, stateAnswered, j.ID); err != nil {
 			t.Fatal(err)
 		}
-		if err = w.alice.recordModelReport(j, &r, "late"); err != nil {
+		if err = w.alice.recordModelReport(j, &r, "late", ""); err != nil {
 			t.Fatal(err)
 		}
 		if modelAt(t, w.alice, fp, id) != previous {
@@ -137,6 +158,11 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 	if err != nil || len(got) != 2 {
 		t.Fatalf("remote private reports %+v %v", got, err)
 	}
+	for _, report := range got {
+		if report.Reasoning != "medium" {
+			t.Fatal("sync lost reasoning", report)
+		}
+	}
 	if count(t, phone, "inbox WHERE sub='model-sync'") != 0 {
 		t.Fatal("metadata became runnable/displayed inbox turn")
 	}
@@ -174,7 +200,7 @@ func TestModelReportExactOwnedSnapshotAndQuietSync(t *testing.T) {
 	if reports, err = phone.ModelReports(); err != nil || len(reports) != 2 {
 		t.Fatal("remote last known report lost", err)
 	}
-	foreign := protocol.ModelSync{V: 1, Person: phonePerson(t, phone).info.Person, Roster: phonePerson(t, phone).info.Roster, Reports: []protocol.AgentModel{old}}
+	foreign := protocol.ModelSync{V: 2, Person: phonePerson(t, phone).info.Person, Roster: phonePerson(t, phone).info.Roster, Reports: []protocol.AgentModel{old}}
 	raw, _ := json.Marshal(foreign)
 	forged := craft(t, w.bob, phone, envelope.Inner{Kind: envelope.KindMessage, Sub: envelope.SubModelSync, Replica: true, Body: string(raw)})
 	if err = phone.verifyAndStore(tctx(t), forged); err != nil {
@@ -201,7 +227,7 @@ func TestModelReportOlderReaderFIFOAndRestart(t *testing.T) {
 	phone := linked(t, w.alice)
 	stop()
 	me := phonePerson(t, w.alice)
-	m := protocol.AgentModel{Model: "reported fixture", Harness: "codex", Executor: strings.Repeat("a", 64), At: 1, Revision: 1}
+	m := protocol.AgentModel{Model: "reported fixture", Reasoning: "xhigh", Harness: "codex", Executor: strings.Repeat("a", 64), At: 1, Revision: 1}
 	tx, _ := w.alice.store.db.Begin()
 	if e := saveModelReport(tx, w.alice.Self().Fingerprint(), m); e != nil {
 		t.Fatal(e)
@@ -221,13 +247,14 @@ func TestModelReportOlderReaderFIFOAndRestart(t *testing.T) {
 	}
 	publish := func(ts int64, caps []string) {
 		t.Helper()
+		slices.Sort(caps)
 		r := protocol.CapsRecord{Address: phone.Address, Session: profile.Sessions[0], TS: ts, Caps: caps}
 		r.Sign(phone.id.Sign)
 		if e := phone.hub.do(tctx(t), "PUT", "/v1/caps", r, nil); e != nil {
 			t.Fatal(e)
 		}
 	}
-	publish(time.Now().Unix()+100, []string{protocol.CapEnv2, protocol.CapPerson, protocol.CapRoom})
+	publish(time.Now().Unix()+100, []string{protocol.CapEnv2, protocol.CapPerson, protocol.CapRoom, protocol.CapModelSync})
 	result, e := w.alice.deliver(tctx(t), env, nil)
 	if e != nil || result.State != stateConvWaiting {
 		t.Fatalf("old reader %+v %v", result, e)
@@ -287,8 +314,34 @@ func TestModelReportOlderReaderFIFOAndRestart(t *testing.T) {
 func TestReportedModelTerminalMarker(t *testing.T) {
 	for _, tt := range []struct{ body, answer, model string }{{"Answer\nAGENTNET-MODEL: gpt-6.1-sol", "Answer", "gpt-6.1-sol"}, {"AGENTNET-MODEL: gpt-6.1-sol", "", "gpt-6.1-sol"}, {"AGENTNET-MODEL: gpt-6.1-sol\nAnswer", "AGENTNET-MODEL: gpt-6.1-sol\nAnswer", ""}, {"Answer\nAGENTNET-MODEL: x\tbad", "Answer\nAGENTNET-MODEL: x\tbad", ""}} {
 		answer, model := reportedModel(tt.body)
-		if answer != tt.answer || model != tt.model {
+		if answer != tt.answer || model.Model != tt.model {
 			t.Fatalf("%q: %q %q", tt.body, answer, model)
+		}
+	}
+}
+
+func TestReportedRuntimeTerminalModel(t *testing.T) {
+	body, model := reportedModel("Answer\nAGENTNET-RUNTIME: {\"model\":\"gpt-6.1-sol\",\"reasoning\":\"xhigh\"}")
+	if body != "Answer" || model.Model != "gpt-6.1-sol" {
+		t.Fatalf("reported runtime metadata was not collected privately: body=%q model=%q", body, model)
+	}
+}
+
+func TestReportedRuntimeReasoningVectors(t *testing.T) {
+	for _, tt := range []struct{ line, model, reasoning string }{
+		{`{"model":"gpt-6.1-sol","reasoning":"xhigh"}`, "gpt-6.1-sol", "xhigh"},
+		{`{"model":"gpt-6.1-sol"}`, "gpt-6.1-sol", ""},
+		{`{"model":"gpt-6.1-sol","reasoning":null}`, "gpt-6.1-sol", ""},
+		{`{"model":"gpt-6.1-sol","reasoning":"bad\neffort"}`, "", ""},
+		{`{"model":"gpt-6.1-sol","reasoning":"` + strings.Repeat("x", 33) + `"}`, "", ""},
+		{`{"model":"gpt-6.1-sol","unknown":"high"}`, "", ""},
+		{`{"model":"gpt-6.1-sol"} {}`, "", ""},
+		{`{"reasoning":"high"}`, "", ""},
+	} {
+		input := "Answer\n" + runtimeReportMarker + tt.line
+		body, got := reportedModel(input)
+		if got.Model != tt.model || got.Reasoning != tt.reasoning || tt.model != "" && body != "Answer" || tt.model == "" && body != input {
+			t.Fatalf("%s => %q %+v", tt.line, body, got)
 		}
 	}
 }
@@ -427,7 +480,7 @@ func TestModelReportEnrolledAgentHostReportsOnlyItself(t *testing.T) {
 }
 
 func TestModelReportWorkerTerminalMetadata(t *testing.T) {
-	for _, mode := range []string{"answer", "metadata-only", "failed"} {
+	for _, mode := range []string{"answer", "runtime", "metadata-only", "failed"} {
 		t.Run(mode, func(t *testing.T) {
 			st := installStub(t, "answer")
 			bin := Harnesses["stub"].bin
@@ -435,6 +488,8 @@ func TestModelReportWorkerTerminalMetadata(t *testing.T) {
 			switch mode {
 			case "answer":
 				script += "printf 'ordinary answer\\nAGENTNET-MODEL: gpt-6.1-sol\\n'\n"
+			case "runtime":
+				script += "printf 'ordinary answer\\nAGENTNET-RUNTIME: {\"model\":\"gpt-6.1-sol\",\"reasoning\":\"xhigh\"}\\n'\n"
 			case "metadata-only":
 				script += "printf 'AGENTNET-MODEL: gpt-6.1-sol\\n'\n"
 			case "failed":
@@ -457,9 +512,12 @@ func TestModelReportWorkerTerminalMetadata(t *testing.T) {
 			var answer Message
 			eventually(t, "owned model answer", func() bool { var ok bool; answer, ok = findReply(w.alice, q.ID); return ok })
 			n := count(t, w.bob, "agent_models")
-			if mode == "answer" {
+			if mode == "answer" || mode == "runtime" {
 				if n != 1 || answer.Body != "ordinary answer" || answer.Status != envelope.StatusDone {
 					t.Fatalf("metadata was not privately stripped %+v reports=%d", answer, n)
+				}
+				if mode == "runtime" && modelAt(t, w.bob, w.bob.Self().Fingerprint(), "").Reasoning != "xhigh" {
+					t.Fatal("worker dropped reasoning")
 				}
 			} else if n != 0 || answer.Status != envelope.StatusFailed || strings.Contains(answer.Body, "AGENTNET-MODEL") {
 				t.Fatalf("invalid success or metadata leak %+v reports=%d", answer, n)

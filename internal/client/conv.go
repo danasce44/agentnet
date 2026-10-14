@@ -249,7 +249,7 @@ func (a *Agent) relayFeatures(ctx context.Context) ([]string, error) {
 // hint (advertisedCaps) it is at most protocol.MaxAdvertisedCaps long;
 // rm1 (protocol.CapRoom) says this program enforces every room reader rule
 // (ROOM_V1 §2.1), so what rm1 implies (rcv1 among them) is not listed.
-var ownCaps = []string{protocol.CapMentionReaction, protocol.CapProactiveAgent, protocol.CapAgentOrganization, protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSync, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 26 includes agent1; independent amr1/aorg1 leave six reader slots
+var ownCaps = []string{protocol.CapMentionReaction, protocol.CapProactiveAgent, protocol.CapAgentOrganization, protocol.CapContinuation, protocol.CapRootSync, protocol.CapControl, protocol.CapDriveSpace, protocol.CapEnv2, protocol.CapRequestFollowup, protocol.CapGroupInvitationManage, protocol.CapHistoryArchive, protocol.CapHeadless, protocol.CapGroupHumanParticipation, protocol.CapModelSyncV2, protocol.CapNotify, protocol.CapTopicOrganization, protocol.CapOwnSyncV2, protocol.CapOwnSyncV3, protocol.CapPerson, protocol.CapReadSync, protocol.CapRoom, protocol.CapSendGroup, protocol.CapTopicParticipation, protocol.CapTopicStateSync, protocol.CapTyping} // apx1 and aid1 are already implied by rm1; 26 includes agent1; independent amr1/aorg1 leave six reader slots
 
 // capsPublisher is the one publisher of this run's capability records:
 // the daemon's and link.go's waiting session share the session id, and the
@@ -1162,7 +1162,7 @@ func (a *Agent) releaseConv(ctx context.Context, feats []string) {
 			// reactions, version 1 progress, deletions) have no person gate:
 			// only what the reader's signed capabilities read.
 			case w.conv == "",
-				w.required == protocol.CapModelSync || w.required == protocol.CapReadSync || w.required == protocol.CapOwnSyncV2 || w.required == protocol.CapOwnSyncV3 || w.required == protocol.CapTopicStateSync,
+				w.required == protocol.CapModelSync || w.required == protocol.CapModelSyncV2 || w.required == protocol.CapReadSync || w.required == protocol.CapOwnSyncV2 || w.required == protocol.CapOwnSyncV3 || w.required == protocol.CapTopicStateSync,
 				w.required == protocol.CapProgress:
 				ok = a.readerCheck(ctx, to, key, n) == nil
 			default:

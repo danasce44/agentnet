@@ -450,20 +450,20 @@ func TestCodexRoomBridgeModelReportBound(t *testing.T) {
 	var output bytes.Buffer
 	b := &codexRoomBridge{ctx: context.Background(), input: out, output: &output, calls: map[string]bool{}}
 	defer b.close()
-	b.event([]byte(`{"id":2,"result":{"thread":{"id":"exact"},"model":"native-model"}}`))
-	if got := b.modelReport(); got != "native-model" {
-		t.Fatal(got)
-	}
-	b.event([]byte(`{"method":"thread/settings/updated","params":{"threadId":"foreign","threadSettings":{"model":"foreign-model"}}}`))
-	if got := b.modelReport(); got != "native-model" {
-		t.Fatal(got)
-	}
-	b.event([]byte(`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"new-native-model"}}}`))
-	if got := b.modelReport(); got != "new-native-model" {
-		t.Fatal(got)
-	}
-	b.event([]byte(`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"bad\nmodel"}}}`))
-	if got := b.modelReport(); got != "new-native-model" {
-		t.Fatal(got)
+	for _, tt := range []struct{ event, model, reasoning string }{
+		{`{"id":2,"result":{"thread":{"id":"exact"},"model":"native-model","reasoningEffort":"xhigh"}}`, "native-model", "xhigh"},
+		{`{"method":"thread/settings/updated","params":{"threadId":"foreign","threadSettings":{"model":"foreign-model","effort":"low"}}}`, "native-model", "xhigh"},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"new-native-model","effort":"medium"}}}`, "new-native-model", "medium"},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"bad\nmodel","effort":"high"}}}`, "new-native-model", "medium"},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"new-native-model","effort":null}}}`, "new-native-model", ""},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"new-native-model","effort":"high"}}}`, "new-native-model", "high"},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"changed-model"}}}`, "changed-model", ""},
+		{`{"method":"thread/settings/updated","params":{"threadId":"exact","threadSettings":{"model":"changed-model","effort":"bad\neffort"}}}`, "changed-model", ""},
+	} {
+		b.event([]byte(tt.event))
+		got := b.modelReport()
+		if got.Model != tt.model || got.Reasoning != tt.reasoning {
+			t.Fatalf("%s: %+v", tt.event, got)
+		}
 	}
 }

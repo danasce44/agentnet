@@ -14,7 +14,7 @@ if(process.env.AGENTNET_REMOVED_PERMISSIONS){
  overview.agent_devices.push('service/bot');
  overview.threads.push(...['sergey/android-phone-2','bob/laptop','service/bot'].map((peer,i)=>({id:String(i+1).repeat(32),peer,title:'Retained history',last:'Historical message',last_at:at,count:1,review:0,unread:0,running:0,waiting:false,state:'active',quiet_since:at})));
 }
-if(process.env.AGENTNET_MODEL_REPORT){overview.model_reports=[{host:local,host_key:"local-key",agent_id:"",model:"gpt-6.1-sol",harness:"codex",executor:"a".repeat(64),at:1791280800,revision:1},{host:remote,host_key:"remote-key",agent_id:remoteID,model:"Claude Opus 4.6",harness:"claude",executor:"b".repeat(64),at:1791280800,revision:1}];}
+if(process.env.AGENTNET_MODEL_REPORT){overview.model_reports=[{host:local,host_key:"local-key",agent_id:"",model:"gpt-6.1-sol",reasoning:"xhigh",harness:"codex",executor:"a".repeat(64),at:1791280800,revision:1},{host:remote,host_key:"remote-key",agent_id:remoteID,model:"Claude Opus 4.6",harness:"claude",executor:"b".repeat(64),at:1791280800,revision:1}];}
 const responder={chosen:true,manual:false,harness:'codex',dir:'/fixture',ready:true,harnesses:[{name:'codex',found:true}]};
 const record=(host,id,label)=>({v:1,id,host,host_key:host===local?'local-key':'remote-key',label,ts:1});
 const boot=`
@@ -30,6 +30,7 @@ if(p==='/api/send'){const staged=(body.files||[]).map(id=>fixture.uploads[id]);f
 if(p.startsWith('/api/thread?'))return structuredClone(fixture.threads[new URL(p,location.origin).searchParams.get('id')]);
 if(p==='/api/groups/invitations')return [];if(p.startsWith('/api/typing/status'))return {send:false,scopes:[]};if(p.includes('/topics'))return {topics:[],placements:[]};if(p==='/api/approvals')return {questions:[],tasks:[],removed_devices:seed.removedMode?['sergey/android-phone-2']:[],own_devices:fixture.overview.person.devices.map(d=>({address:d.address,questions:'own',tasks:'own',this:d.address===seed.local}))};return {};
 }};
+fixture.change=()=>changed?.({type:'change',seq:++fixture.overview.seq});
 const base='/assets/skins/comic/',manifest=await(await fetch(base+'skin.json')).json();
 if(manifest.document){const css=new CSSStyleSheet();css.replaceSync(await(await fetch(base+manifest.document)).text());document.adoptedStyleSheets=[css];}
 const shadow=document.querySelector('#skin').attachShadow({mode:'open'}),css=new CSSStyleSheet();css.replaceSync(await(await fetch(base+manifest.style)).text());shadow.adoptedStyleSheets=[css];
@@ -76,7 +77,7 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    if(process.env.AGENTNET_MODEL_REPORT){
     await settle(page);
     await yours.getByText(/^Last reported model: gpt-6.1-sol/).waitFor();await yours.getByText(/^Last reported model: Claude Opus 4.6/).waitFor();
-    assert.equal(await localCard.getByText('Model unknown',{exact:true}).count(),1,'named identity never borrows default model');
+    assert.equal(await localCard.getByText(/Model and reasoning not reported/).count(),1,'named identity never borrows default model');
     const modelRows=yours.locator('[data-agent-model]');assert(await modelRows.count()>=4,'metadata and unknown states beside each own identity');
     assert.equal(await modelRows.locator('time').count(),2,'reported values retain timestamps');
     for(const row of await modelRows.all()){const b=await row.boundingBox();if(!b||b.x<0||b.x+b.width>width+1)await page.screenshot({path:path.join(evidence,'model-overflow-'+width+'.png')});assert(b&&b.x>=0&&b.x+b.width<=width+1,'metadata fits desktop/mobile card '+JSON.stringify({b,width,text:await row.innerText()}));}
@@ -94,6 +95,7 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    await page.locator('[data-mid="00000000000000000000000000000001"]').waitFor();
    assert.match(await page.locator('[data-mid="00000000000000000000000000000001"]').innerText(),/Keep my named question/);
    const first=(await sent())[0];assert.equal(first.to,local);assert.equal(first.agent_id,localID);assert.equal(first.kind,'question');
+   if(process.env.AGENTNET_MODEL_REPORT){const runtime=page.locator('[data-part=agent-runtime]');await runtime.getByText(/Model and reasoning not reported/).waitFor();assert(!/gpt-6/.test(await runtime.innerText()),'active named agent never borrows default metadata');}
    if(width<1024){await settle(page);await page.getByRole('button',{name:'Back to chats',exact:true}).click();await settle(page);}
    await nav.getByRole('button',{name:/^Chats/}).click();await page.getByRole('button',{name:'New',exact:true}).click();
    const newChat=page.getByRole('dialog',{name:'New chat',exact:true});await newChat.getByRole('button',{name:'Chat with Zenbook agent',exact:true}).click();
@@ -101,10 +103,24 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    await page.evaluate(()=>fixture.badRemote=true);await sheet.getByRole('button',{name:'Send question',exact:true}).click();await sheet.getByRole('alert').waitFor();assert.match(await sheet.getByRole('alert').innerText(),/does not match/);assert.equal((await sent()).length,1);
    await page.evaluate(()=>fixture.badRemote=false);await sheet.getByRole('button',{name:'Send question',exact:true}).click();await sheet.waitFor({state:'hidden'});await newChat.waitFor({state:'hidden'});
    const second=(await sent())[1];assert.equal(second.to,remote);assert.equal(second.agent_id,remoteID);
+   if(process.env.AGENTNET_MODEL_REPORT){const runtime=page.locator('[data-part=agent-runtime]');await runtime.getByText(/Last reported model: Claude Opus 4.6/).waitFor();assert.match(await runtime.innerText(),/Reasoning: not reported/,'absent effort stays explicit in active remote agent chat');}
    if(width<1024){await settle(page);await page.getByRole('button',{name:'Back to chats',exact:true}).click();await settle(page);}
    await nav.getByRole('button',{name:'Agents',exact:true}).click();await page.getByRole('button',{name:'Chat with Your agent',exact:true}).click();
    sheet=page.getByRole('dialog',{name:'Chat with Your agent',exact:true});await sheet.getByRole('textbox',{name:'Your message',exact:true}).fill('Default question');await sheet.getByRole('button',{name:'Send question',exact:true}).click();await sheet.waitFor({state:'hidden'});
    const third=(await sent())[2];assert.equal(third.to,local);assert.equal(third.agent_id,undefined);
+   if(process.env.AGENTNET_MODEL_REPORT){
+    const runtime=page.locator('[data-part=agent-runtime]');await runtime.getByText(/Reasoning: xhigh/).waitFor();
+    assert.match(await runtime.innerText(),/Settings may have changed/,'historical metadata never becomes a current-setting assertion');
+    await settle(page);const activeShot=path.join(evidence,'comic-active-agent-model-'+width+'.png');await page.screenshot({path:activeShot});shots.push(activeShot);
+    await page.evaluate(()=>{fixture.overview.model_reports[0].reasoning='low';fixture.change();});await runtime.getByText(/Reasoning: low/).waitFor();
+    await page.evaluate(()=>{fixture.overview.model_reports[0].host_key='changed-key';fixture.change();});await runtime.getByText(/Model and reasoning not reported/).waitFor();
+    assert(!/gpt-6/.test(await runtime.innerText()),'changed host key cannot retain metadata');
+    await page.evaluate(()=>{fixture.overview.model_reports[0].host_key='local-key';fixture.overview.model_reports[0].reasoning='xhigh';fixture.change();});await runtime.getByText(/Reasoning: xhigh/).waitFor();
+    await page.evaluate(()=>{fixture.ownDevices=fixture.overview.person.devices;fixture.overview.person.devices=fixture.ownDevices.filter(d=>d.address!==fixture.local);fixture.change();});await runtime.waitFor({state:'hidden'});
+    await page.evaluate(()=>{fixture.overview.person.devices=fixture.ownDevices;fixture.change();});await runtime.getByText(/Reasoning: xhigh/).waitFor();
+
+   }
+
    if(process.env.AGENTNET_ASSIGN_MESSAGE){
     const source=page.locator('[data-mid="00000000000000000000000000000003"]');
     if(width>=1024){await source.locator('[data-message-bubble]').hover();await source.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Assign to your agent…',exact:true}).click();}

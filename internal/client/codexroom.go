@@ -169,7 +169,7 @@ type codexRoomBridge struct {
 	readyOnce            sync.Once
 	steerID              int
 	steering             map[string]chan codexSteerResult
-	model                string
+	model                modelObservation
 	closeOnce            sync.Once
 	prompt, cwd          string
 	resume               string
@@ -316,6 +316,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 		case "2":
 			var r struct {
 				Model          string          `json:"model"`
+				Reasoning      json.RawMessage `json:"reasoningEffort"`
 				ApprovalPolicy json.RawMessage `json:"approvalPolicy"`
 				Thread         struct {
 					ID string `json:"id"`
@@ -328,7 +329,7 @@ func (b *codexRoomBridge) event(raw []byte) {
 			b.thread = r.Thread.ID
 			_ = json.Unmarshal(r.ApprovalPolicy, &b.nativePolicy)
 			if protocol.ValidReportedModel(r.Model) {
-				b.model = r.Model
+				b.model = nativeModelObservation(r.Model, r.Reasoning)
 			}
 			b.send(map[string]any{"id": 3, "method": "turn/start", "params": map[string]any{"threadId": b.thread, "cwd": b.cwd, "input": []any{map[string]any{"type": "text", "text": b.prompt}}}})
 		case "3":
@@ -400,11 +401,12 @@ func (b *codexRoomBridge) event(raw []byte) {
 			ThreadID       string `json:"threadId"`
 			ThreadSettings struct {
 				Model          string          `json:"model"`
+				Reasoning      json.RawMessage `json:"effort"`
 				ApprovalPolicy json.RawMessage `json:"approvalPolicy"`
 			} `json:"threadSettings"`
 		}
 		if json.Unmarshal(m.Params, &settings) == nil && settings.ThreadID == b.thread && protocol.ValidReportedModel(settings.ThreadSettings.Model) {
-			b.model = settings.ThreadSettings.Model
+			b.model = nativeModelObservation(settings.ThreadSettings.Model, settings.ThreadSettings.Reasoning)
 		}
 		if settings.ThreadID == b.thread && len(settings.ThreadSettings.ApprovalPolicy) > 0 {
 			_ = json.Unmarshal(settings.ThreadSettings.ApprovalPolicy, &b.nativePolicy)
@@ -587,7 +589,17 @@ func (b *codexRoomBridge) markReady() {
 		b.readyOnce.Do(func() { close(b.ready) })
 	}
 }
-func (b *codexRoomBridge) modelReport() string {
+
+// Model and effort belong to the same native thread snapshot. Missing or
+// invalid effort clears the older value; metadata never changes native settings.
+func nativeModelObservation(model string, raw json.RawMessage) modelObservation {
+	var reasoning string
+	if json.Unmarshal(raw, &reasoning) != nil || !protocol.ValidReportedReasoning(reasoning) {
+		reasoning = ""
+	}
+	return modelObservation{Model: model, Reasoning: reasoning}
+}
+func (b *codexRoomBridge) modelReport() modelObservation {
 	b.stateMu.Lock()
 	defer b.stateMu.Unlock()
 	return b.model

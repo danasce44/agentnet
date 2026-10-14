@@ -436,6 +436,12 @@ types are the Go structs in `internal/ui/*.go`, generated into
 `internal/ui/web/src/api.ts` and `model.ts`:
 
 - Reads: `/api/overview`, `/api/thread?id=...`, `/api/dm?id=...`.
+  Private `overview.model_reports` are last reported runtime observations, not
+  settings or availability. Match exact `host`, `host_key` and `agent_id`
+  (empty means default), and show `model`, optional `reasoning` and `at` in
+  own-agent picker/details and active agent chat. Missing model/reasoning is
+  not reported, never inferred from names/configuration; a report can be stale
+  even while the host is online. No report grants access or controls a harness.
 - Device threads: `/api/send` `{to,kind,body,reply_to,files}`.
   Conversations: `/api/dm/new`; `/api/dm/send` `{conv,body,reply_to,files}`.
 - Decisions: `/api/act`; returned message actions determine availability.

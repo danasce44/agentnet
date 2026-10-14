@@ -40,3 +40,46 @@ func TestModelSyncStrictReportedMetadata(t *testing.T) {
 		t.Fatal("default agent", err)
 	}
 }
+
+func TestModelSyncReasoningCompatibility(t *testing.T) {
+	m := AgentModel{Model: "gpt-6.1-sol", Reasoning: "xhigh", Harness: "codex", Executor: strings.Repeat("a", 64), At: 1, Revision: 1}
+	r := ModelSync{V: 2, Person: NewID(), Roster: strings.Repeat("b", 64), Reports: []AgentModel{m}}
+	raw, _ := json.Marshal(r)
+	got, err := ParseModelSync(raw)
+	if err != nil || got.Reports[0].Reasoning != "xhigh" {
+		t.Fatalf("reasoning: %+v %v", got, err)
+	}
+	for _, value := range []string{"", " leading", "high\n", strings.Repeat("型", 33), "bad\x85effort"} {
+		if ValidReportedReasoning(value) {
+			t.Fatalf("accepted reasoning %q", value)
+		}
+	}
+	for _, value := range []string{"xhigh", "none", strings.Repeat("型", 32)} {
+		if !ValidReportedReasoning(value) {
+			t.Fatalf("rejected reasoning %q", value)
+		}
+	}
+	for _, field := range []string{`"reasoning":"xhigh",`, `"reasoning":"",`, `"reasoning":null,`} {
+		legacy := strings.Replace(strings.Replace(string(raw), `"v":2`, `"v":1`, 1), `"reasoning":"xhigh",`, field, 1)
+		if _, err := ParseModelSync([]byte(legacy)); err == nil {
+			t.Fatalf("legacy accepted %s", legacy)
+		}
+	}
+	r.V = 1
+	r.Reports[0].Reasoning = ""
+	raw, _ = json.Marshal(r)
+	if strings.Contains(string(raw), "reasoning") {
+		t.Fatal("legacy canonical vector changed")
+	}
+	if _, err := ParseModelSync(raw); err != nil {
+		t.Fatal(err)
+	}
+	if !(CapsRecord{Caps: []string{CapModelSyncV2}}).Reads(CapModelSync) || (CapsRecord{Caps: []string{CapModelSync}}).Reads(CapModelSyncV2) {
+		t.Fatal("capability boundary")
+	}
+	for _, raw := range [][]byte{append(make([]byte, 65537), raw...), []byte(strings.Replace(string(raw), `"v":1`, `"v":3`, 1))} {
+		if _, err := ParseModelSync(raw); err == nil {
+			t.Fatal("accepted invalid size/version")
+		}
+	}
+}

@@ -635,19 +635,21 @@ func (a *Agent) runJob(ctx context.Context, j job, r *Responder, wake <-chan str
 		output += "\n[output truncated]"
 	}
 	if status == envelope.StatusDone && !stdout.truncated && j.Executor != nil && j.Receiver == nil {
-		var model string
+		var model modelObservation
 		body, model = reportedModel(body)
-		if model != "" {
+		if model.Model != "" {
 			output = body
 		}
 		if body == "" {
 			status, body = envelope.StatusFailed, r.Harness+" produced no answer"
 		}
-		if roomBridge != nil && protocol.ValidReportedModel(roomBridge.modelReport()) {
-			model = roomBridge.modelReport()
+		if roomBridge != nil {
+			if native := roomBridge.modelReport(); protocol.ValidReportedModel(native.Model) {
+				model = native
+			}
 		}
-		if model != "" && status == envelope.StatusDone {
-			if err := a.recordModelReport(j, r, model); err != nil {
+		if model.Model != "" && status == envelope.StatusDone {
+			if err := a.recordModelReport(j, r, model.Model, model.Reasoning); err != nil {
 				a.Logf("model report could not be stored: %v", err)
 			}
 		}

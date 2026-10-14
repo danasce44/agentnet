@@ -900,6 +900,7 @@ export interface Presence {
 export interface PrivateModelReport {
   agent_id: string;
   model: string;
+  reasoning?: string;
   harness: string;
   executor: string;
   at: number;

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"time"
 
@@ -21,32 +22,48 @@ CREATE TABLE agent_models(host_key TEXT NOT NULL,agent_id TEXT NOT NULL,body TEX
 CREATE TABLE agent_model_copies(recipient_fp TEXT NOT NULL,agent_id TEXT NOT NULL,revision INTEGER NOT NULL,carrier TEXT NOT NULL,PRIMARY KEY(recipient_fp,agent_id));
 `
 const modelReportMarker = "AGENTNET-MODEL: "
-const modelReportPrompt = "\nOptional private runtime metadata: only if your current native context already identifies your exact active model, append one final line AGENTNET-MODEL: NAME after all other output. Otherwise omit it. Do not guess, read configuration, call tools or change settings to obtain this metadata. It is shown only to your owner as an agent-reported value.\n"
+const runtimeReportMarker = "AGENTNET-RUNTIME: "
+const modelReportPrompt = "\nOptional private runtime metadata: only if your current native context already identifies your exact active model, append one final line AGENTNET-RUNTIME: {\"model\":\"NAME\",\"reasoning\":\"EFFORT\"} after all other output. Include reasoning only if already explicitly known; otherwise omit that field. If the model is unknown, omit the line. Do not guess, read configuration, call tools or change settings to obtain metadata. It is shown only to your owner as an agent-reported value.\n"
 
-func reportedModel(body string) (string, string) {
+type modelObservation struct {
+	Model     string `json:"model"`
+	Reasoning string `json:"reasoning,omitempty"`
+}
+
+func reportedModel(body string) (string, modelObservation) {
 	text := strings.TrimSpace(body)
 	i := strings.LastIndexByte(text, '\n')
 	line := text[i+1:]
-	if !strings.HasPrefix(line, modelReportMarker) {
-		return body, ""
+	var report modelObservation
+	if strings.HasPrefix(line, runtimeReportMarker) {
+		raw := strings.TrimPrefix(line, runtimeReportMarker)
+		d := json.NewDecoder(strings.NewReader(raw))
+		d.DisallowUnknownFields()
+		var extra any
+		if len(raw) > 1024 || d.Decode(&report) != nil || d.Decode(&extra) != io.EOF {
+			return body, modelObservation{}
+		}
+	} else if strings.HasPrefix(line, modelReportMarker) {
+		report.Model = strings.TrimPrefix(line, modelReportMarker)
+	} else {
+		return body, modelObservation{}
 	}
-	name := strings.TrimPrefix(line, modelReportMarker)
 	// Invalid metadata is never interpreted as a setting or retained as a model.
-	if !protocol.ValidReportedModel(name) {
-		return body, ""
+	if !protocol.ValidReportedModel(report.Model) || report.Reasoning != "" && !protocol.ValidReportedReasoning(report.Reasoning) {
+		return body, modelObservation{}
 	}
 	if i < 0 {
-		return "", name
+		return "", report
 	}
-	return strings.TrimSpace(text[:i]), name
+	return strings.TrimSpace(text[:i]), report
 }
 func modelExecutor(r Responder) string {
 	raw, _ := json.Marshal(r)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
-func (a *Agent) recordModelReport(j job, r *Responder, name string) error {
-	if r == nil || j.Executor == nil || j.Receiver != nil || !protocol.ValidReportedModel(name) {
+func (a *Agent) recordModelReport(j job, r *Responder, name, reasoning string) error {
+	if r == nil || j.Executor == nil || j.Receiver != nil || !protocol.ValidReportedModel(name) || reasoning != "" && !protocol.ValidReportedReasoning(reasoning) {
 		return nil
 	}
 	tx, e := a.store.db.Begin()
@@ -67,14 +84,14 @@ func (a *Agent) recordModelReport(j job, r *Responder, name string) error {
 	if e = tx.QueryRow(`SELECT coalesce(max(revision),0) FROM agent_models WHERE host_key=? AND agent_id=?`, fp, j.AgentID).Scan(&n); e != nil {
 		return e
 	}
-	m := protocol.AgentModel{AgentID: j.AgentID, Model: name, Harness: r.Harness, Executor: modelExecutor(*r), At: time.Now().Unix(), Revision: n + 1}
+	m := protocol.AgentModel{AgentID: j.AgentID, Model: name, Reasoning: reasoning, Harness: r.Harness, Executor: modelExecutor(*r), At: time.Now().Unix(), Revision: n + 1}
 	if n > 0 {
 		var raw string
 		if e = tx.QueryRow(`SELECT body FROM agent_models WHERE host_key=? AND agent_id=?`, fp, j.AgentID).Scan(&raw); e != nil {
 			return e
 		}
 		var previous protocol.AgentModel
-		if json.Unmarshal([]byte(raw), &previous) == nil && previous.Model == m.Model && previous.Harness == m.Harness && previous.Executor == m.Executor {
+		if json.Unmarshal([]byte(raw), &previous) == nil && previous.Model == m.Model && previous.Reasoning == m.Reasoning && previous.Harness == m.Harness && previous.Executor == m.Executor {
 			return nil
 		}
 	}
@@ -236,7 +253,7 @@ func (a *Agent) syncModelReports() (bool, error) {
 		} else if full {
 			continue
 		}
-		r := protocol.ModelSync{V: 1, Person: me.info.Person, Roster: me.info.Roster}
+		r := protocol.ModelSync{V: 2, Person: me.info.Person, Roster: me.info.Roster}
 		if modelSyncAuthority(tx, r, a.Address, fp, dev.Address, dev.Fingerprint()) != nil {
 			continue
 		}
@@ -276,7 +293,7 @@ func (a *Agent) syncModelReports() (bool, error) {
 		if e != nil {
 			return false, e
 		}
-		copies = append(copies, outCopy{env: env, in: in, state: stateQueued, required: protocol.CapModelSync, recipientFP: dev.Fingerprint()})
+		copies = append(copies, outCopy{env: env, in: in, state: stateQueued, required: protocol.CapModelSyncV2, recipientFP: dev.Fingerprint()})
 		if len(copies) == historyPage {
 			break
 		}
@@ -370,7 +387,11 @@ func (a *Agent) mayDeliverModelSync(env envelope.Envelope) (bool, bool, error) {
 	if e != nil || !ok {
 		return true, false, e
 	}
-	if e = a.requireParticipationCaps(context.Background(), key, protocol.CapModelSync); e != nil {
+	cap := protocol.CapModelSync
+	if r.V == 2 {
+		cap = protocol.CapModelSyncV2
+	}
+	if e = a.requireParticipationCaps(context.Background(), key, cap); e != nil {
 		if errors.Is(e, errAgentIdentityUnsupported) {
 			return true, false, a.store.setOutboxState(env.ID, stateConvWaiting, WaitPeerUpdate+e.Error(), "")
 		}

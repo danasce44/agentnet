@@ -4,6 +4,12 @@ Notable changes to AgentNet, newest first. Dates use `YYYY-MM-DD`.
 This record starts with v0.8.1; earlier releases remain on the
 [releases page](https://github.com/misunders2d/agentnet/releases).
 
+## Unreleased
+
+- Show the exact own agent's reported model and reasoning in the picker,
+  details and active agent chat, with timestamps and clear missing-report
+  explanations. Native settings and permissions stay unchanged.
+
 ## [0.8.27] — 2026-10-14
 
 - Reading an Android chat now clears its exact OS message notifications after

@@ -18,7 +18,7 @@ const fetch=async(url,o={})=>{
  if(p.endsWith('/ack'))return json(null,204);
  throw Error('Unexpected synthetic route '+p);
 };
-async function caps(e,names=[wire.CapEnv2,wire.CapPerson,wire.CapRootSync,wire.CapReadSync,wire.CapModelSync,wire.CapRoom,wire.CapOwnSyncV2,wire.CapOwnSyncV3,wire.CapControl]){
+async function caps(e,names=[wire.CapEnv2,wire.CapPerson,wire.CapRootSync,wire.CapReadSync,wire.CapModelSyncV2,wire.CapRoom,wire.CapOwnSyncV2,wire.CapOwnSyncV3,wire.CapControl]){
  const session=wire.newID();profiles.set(e.address,{person:JSON.parse(wire.rosterJSON(e.roster)),sessions:[session],caps:[JSON.parse(wire.capsJSON(await wire.newCaps(e.keys,e.address,session,names)))],live:true});
 }
 async function device(address){
@@ -46,8 +46,8 @@ async function rootCopies(e,conv){return(await e.store.all('outbox')).filter(r=>
 
 
 const a=await person('owner/host'),p=await sibling(a,'owner/phone'),foreign=await person('other/host');
-const model={agent_id:'',model:'gpt-6.1-sol',harness:'codex',executor:'a'.repeat(64),at:1,revision:1},named={...model,agent_id:wire.newID(),model:'Claude Opus 4.6'};
-const record=(reports=[model,named])=>({v:1,person:a.me.person,roster:a.me.hash,reports});
+const model={agent_id:'',model:'gpt-6.1-sol',reasoning:'xhigh',harness:'codex',executor:'a'.repeat(64),at:1,revision:1},named={...model,agent_id:wire.newID(),model:'Claude Opus 4.6'};
+const record=(reports=[model,named])=>({v:2,person:a.me.person,roster:a.me.hash,reports});
 const carrier=async(sender=a,body=record(),target=p,extra={})=>wire.seal({v:2,id:wire.newID(),from:sender.address,to:target.address,ts:1,kind:'message',sub:wire.SubModelSync,replica:true,body:JSON.stringify(body),...extra},sender.keys,target.pub);
 const id=await receive(await carrier(),p);
 check((await p.modelReports()).length===2,'default and named own-host reports are privately projected');
@@ -56,7 +56,14 @@ const previous=JSON.stringify(await p.modelReports());await receive(await carrie
 await receive(await carrier(a,record([{...model,revision:2,at:2,model:'new model'}])),p);await receive(await carrier(a,record([model])),p);
 check((await p.modelReports()).find(r=>!r.agent_id).model==='new model','older report never replaces newer snapshot');
 const conflict=await receive(await carrier(a,record([{...model,revision:2,at:2,model:'conflict'}])),p);check((await p.store.get('held',conflict))?.reason==='invalid','same revision conflict is held');
-const reverse={revision:2,at:2,executor:model.executor,harness:model.harness,model:'new model',agent_id:''};const reversed=await receive(await carrier(a,record([reverse])),p);check(!await p.store.get('held',reversed),'JSON field order does not create a revision conflict');
+const reverse={revision:2,at:2,executor:model.executor,harness:model.harness,reasoning:'xhigh',model:'new model',agent_id:''};const reversed=await receive(await carrier(a,record([reverse])),p);check(!await p.store.get('held',reversed),'JSON field order does not create a revision conflict');
+await receive(await carrier(a,record([{...model,model:'new model',reasoning:'medium',revision:3,at:3}])),p);
+check((await p.modelReports()).find(r=>!r.agent_id).reasoning==='medium','effort-only revision survives browser storage');
+const legacy={...record(),v:1,reports:[Object.fromEntries(Object.entries(model).filter(([k])=>k!=='reasoning'))]};
+check(wire.parseModelSync(JSON.stringify(legacy)).reports[0].reasoning===undefined,'legacy model-only vector preserved');
+for(const value of ['',null,'high']){await assert.rejects(async()=>wire.parseModelSync(JSON.stringify({...legacy,reports:[{...legacy.reports[0],reasoning:value}]})),/agent model/);checks++;}
+for(const value of [' leading','x'.repeat(33),'bad\nvalue']){await assert.rejects(async()=>wire.parseModelSync(JSON.stringify(record([{...model,reasoning:value}]))),/model report/);checks++;}
+check(wire.capsReads({caps:[wire.CapModelSyncV2]},wire.CapModelSync)&&!wire.capsReads({caps:[wire.CapModelSync]},wire.CapModelSyncV2),'mdl2 implies legacy only for new readers');
 const other=await receive(await carrier(foreign),p);check((await p.store.get('held',other))?.reason==='invalid','foreign sender cannot inject private model metadata');
 for(const mode of ['agent-host-reader','removed','frozen','pending-pin','changed-pin']){
  const own=await p.store.get('kv','person'),pin=await p.store.get('pins',a.address),changed=mode==='agent-host-reader'?{...own,human_keys:[a.fp]}:mode==='removed'?{...own,devices:own.devices.filter(d=>d.address!==a.address)}:mode==='frozen'?{...own,state:'conflict'}:own;
@@ -77,8 +84,8 @@ check((await p.store.all('inbox')).length===0&&(await p.store.all('convs')).leng
 for(const bad of [{...model,model:''},{...model,model:'x\ncontrol'},{...model,model:'x'.repeat(121)},{...model,model:'\ud800'},{...model,revision:0},{...model,at:9007199254740992},{...model,effort:'high'}]){await assert.rejects(()=>carrier(a,record([bad])),/model report|agent model/);checks++;}
 for(const extra of [{send_group:wire.newID()},{session:wire.newID()},{fallback:true},{chan:wire.newID()},{target:{address:p.address,fingerprint:p.fp}},{pid:wire.newID()},{origin:'ui'}]){await assert.rejects(()=>carrier(a,record(),p,extra),/quiet|attention|root sync|send group|execution target/);checks++;}
 await assert.rejects(()=>carrier(a,record([model,model])),/duplicate/);checks++;
-const raw=await carrier(a,record(),p),env=wire.parseEnvelope(raw),rec={id:env.id,to:p.address,recipient_fp:p.fp,required_cap:wire.CapModelSync,sub:wire.SubModelSync,body:JSON.stringify(record()),envelope:raw,at:1,state:'queued'};
-await a.store.write([{s:'outbox',k:rec.id,v:rec}]);await caps(p,[wire.CapEnv2,wire.CapPerson,wire.CapRoom]);const beforePosts=posts.length;await a.post(rec);
+const raw=await carrier(a,record(),p),env=wire.parseEnvelope(raw),rec={id:env.id,to:p.address,recipient_fp:p.fp,required_cap:wire.CapModelSyncV2,sub:wire.SubModelSync,body:JSON.stringify(record()),envelope:raw,at:1,state:'queued'};
+await a.store.write([{s:'outbox',k:rec.id,v:rec}]);await caps(p,[wire.CapEnv2,wire.CapPerson,wire.CapRoom,wire.CapModelSync]);const beforePosts=posts.length;await a.post(rec);
 check(posts.length===beforePosts&&(await a.store.get('outbox',rec.id)).state==='waiting','older reader holds exact durable ciphertext quietly');
 const humanID=wire.newID(),humanRaw=await wire.seal({id:humanID,from:a.address,to:p.address,ts:1,kind:'message',body:'real turn'},a.keys,p.pub);
 await a.store.write([{s:'outbox',k:humanID,v:{id:humanID,v:1,to:p.address,fp:p.fp,envelope:humanRaw,kind:'message',body:'real turn',at:2,state:'queued'}}]);a.connected=true;await a.flushOutboxOnce();a.connected=false;
@@ -86,6 +93,6 @@ check((await a.store.get('outbox',humanID)).state==='custody','waiting rootless 
 await caps(p);await a.post({...rec,state:'queued'});check((await a.store.get('outbox',rec.id)).state==='custody','updated exact reader sends retained carrier');
 check((await a.store.get('outbox',rec.id)).envelope===raw,'capability retry preserves exact signature and ciphertext');
 if(typeof window!=='undefined'){p.store.close();p.store=await openIDB(p.fixtureStoreName);}
-const restarted=new Engine({store:p.store,base:p.base,fetch});Object.assign(restarted,{keys:p.keys,address:p.address,pub:p.pub,fp:p.fp,me:p.me,connected:false});check((await restarted.modelReports()).find(r=>!r.agent_id&&r.host_key===a.fp).model==='new model','private model snapshot survives restart');
+const restarted=new Engine({store:p.store,base:p.base,fetch});Object.assign(restarted,{keys:p.keys,address:p.address,pub:p.pub,fp:p.fp,me:p.me,connected:false});check((await restarted.modelReports()).find(r=>!r.agent_id&&r.host_key===a.fp).model==='new model'&&(await restarted.modelReports()).find(r=>!r.agent_id&&r.host_key===a.fp).reasoning==='medium','private model snapshot survives restart');
 check(wire.MaxAdvertisedCaps===26&&wire.MaxCaps===32,'independent amr1/aorg1 extensions retain six-token reader headroom');
 const result={ok:true,checks};if(typeof window!=='undefined')window.modelSyncResult=result;console.log(JSON.stringify(result));

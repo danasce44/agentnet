@@ -562,7 +562,7 @@ func (c CapsRecord) ValidateAdvertisement() error {
 // Reads reports whether c says its session reads capability name: it lists
 // it, or lists CapRoom, which implies each of RoomImplies.
 func (c CapsRecord) Reads(name string) bool {
-	return c.Has(name) || name == CapGroupInvitationControl && c.Has(CapGroupInvitationManage) || c.Has(CapRoom) && slices.Contains(RoomImplies, name)
+	return c.Has(name) || name == CapModelSync && c.Has(CapModelSyncV2) || name == CapGroupInvitationControl && c.Has(CapGroupInvitationManage) || c.Has(CapRoom) && slices.Contains(RoomImplies, name)
 }
 
 // Validate checks the shape of c.

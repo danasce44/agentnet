@@ -7,7 +7,7 @@ assert(evidence,'private screenshot directory required');fs.mkdirSync(evidence,{
 const at='2026-10-06T10:00:00Z',local='sergey/laptop',remote='sergey/zenbook',localID='a'.repeat(32),remoteID='b'.repeat(32);
 const me={person:'sergey',label:'Sergey',address:local,state:'self',devices:[{address:local,fingerprint:'local-key'},{address:remote,fingerprint:'remote-key'},{address:'sergey/iphone',fingerprint:'phone-key'}]};
 const overview={version:'fixture',seq:1,me:{address:local,fingerprint:'local-key',responder:'codex',responder_dir:'/fixture',agent:true},person:me,persons:true,agents:true,role:'person',people:[],review:[],links:[],reminders:[],threads:[],dms:[],agent_devices:[remote],directory:{current:true,members:[]},quarantine:[],files:{max_count:8,max_file:100000,max_message:200000}};
-if(true){overview.model_reports=[{host:local,host_key:"local-key",agent_id:"",model:"gpt-6.1-sol",harness:"codex",executor:"a".repeat(64),at:9007199254740991,revision:1},{host:remote,host_key:"remote-key",agent_id:remoteID,model:"Claude Opus 4.6 "+"x".repeat(90),harness:"claude",executor:"b".repeat(64),at:1791280800,revision:1}];}
+if(true){overview.model_reports=[{host:local,host_key:"local-key",agent_id:"",model:"gpt-6.1-sol",reasoning:"xhigh",harness:"codex",executor:"a".repeat(64),at:9007199254740991,revision:1},{host:remote,host_key:"remote-key",agent_id:remoteID,model:"Claude Opus 4.6 "+"x".repeat(90),harness:"claude",executor:"b".repeat(64),at:1791280800,revision:1}];}
 const responder={chosen:true,manual:false,harness:'codex',dir:'/fixture',ready:true,harnesses:[{name:'codex',found:true}]};
 const record=(host,id,label)=>({v:1,id,host,host_key:host===local?'local-key':'remote-key',label,ts:1});
 const boot=`
@@ -41,8 +41,8 @@ const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://127.0
    if(skin==='comic'){await page.getByRole('navigation',{name:'Main',exact:true}).getByRole('button',{name:'Agents',exact:true}).click();await page.getByText(/^Last reported model: Claude Opus 4.6/).waitFor();await page.getByText(/^Last reported model: gpt-6.1-sol/).waitFor();}
    await settle(page);
    const visibleRows=page.locator('[data-agent-model]:visible');assert(await visibleRows.count()>=2,'private model rows are discoverable '+JSON.stringify({skin,width,mobileBrowser,count:await visibleRows.count()}));
-   assert(await page.getByText('Model unknown',{exact:true}).count()>=1,'absent reports remain unknown');
-   assert.match(await page.getByText(/^Last reported model: gpt-6.1-sol/).first().innerText(),/Timestamp unavailable/,'signed timestamp beyond Date range never crashes UI');
+   assert(await page.getByText(/Model and reasoning not reported/).count()>=1,'absent reports remain unknown');
+   assert.match(await page.locator('[data-agent-model]').filter({hasText:'Last reported model: gpt-6.1-sol'}).first().innerText(),/Timestamp unavailable/,'signed timestamp beyond Date range never crashes UI');
    assert.equal(await page.getByRole('combobox',{name:/model/i}).count(),0,'metadata is readonly');
    assert(!await page.evaluate(()=>fixture.requests.some(r=>r.body!==undefined)),'opening model status never calls native model/tools or changes settings');
    for(const row of await visibleRows.all()){const b=await row.boundingBox();assert(b&&b.x>=-1&&b.x+b.width<=width+1,'model rows fit viewport');}

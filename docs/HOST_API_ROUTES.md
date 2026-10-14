@@ -125,7 +125,7 @@ and catch the error. Failures differ by platform.
 | `threads`, `topics` | D B | Device threads (`ThreadSummary`), and per-peer topic counts `{peer, total, archived, archived_unread, latest}`. |
 | `needs_you`, `held` | D B | `ConvItem`s that wait for this person: decisions, and held person turns. See Request states. |
 | `review`, `quarantine` | D B | Received device items and review notices, and held envelopes with `code` and `action`. |
-| `directory`, `agent_devices`, `model_reports` | D B | The relay's member list, the devices that say they run an agent (a hint), and private model reports. |
+| `directory`, `agent_devices`, `model_reports` | D B | The relay's member list, the devices that say they run an agent (a hint), and private model reports. Each report carries exact `host`, `host_key`, `agent_id`, `model`, optional `reasoning`, `harness`, `executor`, `at` (Unix seconds), and `revision`. Reports are historical observations for current own-human readers, not current settings; match the exact agent/host/key and show absent reasoning honestly. |
 | `link`, `links`, `history`, `group_invitations` | D B | This device's own join request, new devices asking to join, history copying, and group invitations. |
 | `reminders` | D | Pending reminders, soonest first. |
 | `picture_url` (any `PersonView`) | D B | D: `/workspaces/<id>/<handle>/api/picture/<64 hex>`, already qualified by the host. Use it only as `<img src>`, never through `host.api`. B: `""` until the picture loads, then a `blob:` URL that arrives with a later `change`. |

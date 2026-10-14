@@ -35,7 +35,7 @@ export const CapOwnSyncV3 = "own3", CapDeviceHistory = CapOwnSyncV3, SubDeviceHi
 export const SubTopicSync = "topic-sync";
 export const CapTopicStateSync = "tss1", SubTopicStateSync = "topic-state-sync"; // private topic marks between current own-human devices; NOT implied by rm1
 export const CapReadSync = "rd1", SubReadSync = "read-sync";
-export const CapModelSync = "mdl1", SubModelSync = "model-sync";
+export const CapModelSync = "mdl1", CapModelSyncV2 = "mdl2", SubModelSync = "model-sync";
 export const CapRootSync = "crs1", SubRootSync = "root-sync"; // explicit quiet DM-root copies, current own-human devices; NOT implied by rm1
 export const MaxHumanAudience = 16, MaxHumanProof = 32;
 export const SubGroupProof = "group-proof", SubGroupContext = "group-context"; // bounded quiet carriers; no capability advertisement
@@ -1067,14 +1067,15 @@ export function validLabel(s) {
 // value is measured as Go would write it (fitsRecord), which is how devices
 // write records.
 export const validReportedModel = s => typeof s === "string" && !!s && [...s].length <= 120 && s === s.trim() && !/[\p{Cc}\p{Cs}]/u.test(s);
+export const validReportedReasoning = s => validReportedModel(s) && [...s].length <= 32;
 export function parseModelSync(json) {
  const r=strictRecord(json,65536,"model report",{v:"int",person:"string",roster:"string",reports:"array"});
- if(r.v!==1||!validID(r.person)||!validHash(r.roster)||!r.reports?.length||r.reports.length>64)throw Error("model report: invalid owner or snapshot");
+ if(![1,2].includes(r.v)||!validID(r.person)||!validHash(r.roster)||!r.reports?.length||r.reports.length>64)throw Error("model report: invalid owner or snapshot");
  const seen=new Set();r.reports=r.reports.map(report=>{
-  const m=strict(report,"agent model",{agent_id:"string",model:"string",harness:"string",executor:"string",at:"int",revision:"int"});
+  const m=strict(report,"agent model",{agent_id:"string",model:"string",...(r.v===2?{reasoning:"string"}:{}),harness:"string",executor:"string",at:"int",revision:"int"});
   m.agent_id=m.agent_id||"";
-  if(m.agent_id&&!validID(m.agent_id)||!validReportedModel(m.model)||!validReportedModel(m.harness)||utf8.encode(m.harness).length>32||!validHash(m.executor)||!Number.isSafeInteger(m.at)||m.at<1||!Number.isSafeInteger(m.revision)||m.revision<1||seen.has(m.agent_id))throw Error("model report: invalid or duplicate agent");
-  seen.add(m.agent_id);return {agent_id:m.agent_id,model:m.model,harness:m.harness,executor:m.executor,at:m.at,revision:m.revision};
+  if(m.agent_id&&!validID(m.agent_id)||!validReportedModel(m.model)||m.reasoning&&!validReportedReasoning(m.reasoning)||!validReportedModel(m.harness)||utf8.encode(m.harness).length>32||!validHash(m.executor)||!Number.isSafeInteger(m.at)||m.at<1||!Number.isSafeInteger(m.revision)||m.revision<1||seen.has(m.agent_id))throw Error("model report: invalid or duplicate agent");
+  seen.add(m.agent_id);return {agent_id:m.agent_id,model:m.model,...(m.reasoning?{reasoning:m.reasoning}:{}),harness:m.harness,executor:m.executor,at:m.at,revision:m.revision};
  });return r;
 }
 export function parseReadSync(json) {
@@ -1885,7 +1886,7 @@ export async function verifyCaps(c, signKey) {
 // capsReads is protocol.CapsRecord.Reads: a record lists name, or rm1 when
 // rm1 implies it.
 export const RoomImplies = [CapExternalParticipation, CapAgentIdentity, CapHumanParticipation, CapAgentReaction, CapProgress, CapGroup, CapReplyReceiver, CapConvClear];
-export const capsReads = (c, name) => (c.caps || []).includes(name) || name===CapGroupInvitationControl&&(c.caps||[]).includes(CapGroupInvitationManage) || (c.caps || []).includes(CapRoom) && RoomImplies.includes(name);
+export const capsReads = (c, name) => (c.caps || []).includes(name) || name===CapModelSync&&(c.caps||[]).includes(CapModelSyncV2) || name===CapGroupInvitationControl&&(c.caps||[]).includes(CapGroupInvitationManage) || (c.caps || []).includes(CapRoom) && RoomImplies.includes(name);
 
 // profileSupports is protocol.Profile.Supports for a profile as the relay
 // sends it ({person, sessions, live, caps}): there are sessions, and each

@@ -11,7 +11,7 @@ import {
 import type { Api, T } from "../api";
 import { useApp } from "../context";
 import { useStore } from "../store";
-import { deviceKind, niceDevice, personName, threadRow, reminderOf, timeOf, type DeviceKind } from "../model";
+import { deviceKind, niceDevice, personName, threadRow, reminderOf, runsAgent, timeOf, type DeviceKind } from "../model";
 import { AgentAvatar, GroupAvatar, PersonAvatar } from "../ui/Avatar";
 import { Button, IconButton } from "../ui/Button";
 import { Tag } from "../ui/Tag";
@@ -22,6 +22,7 @@ import { DeviceGrantConfirm, type GrantChange } from "./Trust";
 import { agentLabel, eventKind, hostOf, roomTitle, threadAgentName, type Ctx } from "./Message.model";
 import { usePortal } from "../owned";
 import { ProjectSpaceSheet } from "./Drive";
+import { AgentModelReport } from "./AgentModelReport";
 
 // ---- who is helping -------------------------------------------------------------------
 
@@ -155,6 +156,7 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
   }
 
   const notify = overview?.notify;
+  const ownAgentThread = !!th && !!overview && runsAgent(th.peer, overview) && overview.person?.state === "self" && overview.person.devices?.some(d => d.address === th.peer);
   const muted = !!t && !!notify && (notify.mutes || []).includes(t.id);
   const remove = () => void store.run((a) => a.deleteConversation(t ? { conv: t.id } : { peer: th!.peer, thread: th!.topic?.id || ctx.conv })).then((r) => {
     if (!r) return;
@@ -164,7 +166,7 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
 
   const item = "flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-[15px] font-medium outline-none data-[highlighted]:bg-sunken";
   return (
-    <header data-part="conversation-head" className={"flex shrink-0 items-center gap-2 border-b-[1.5px] border-outline bg-surface " + (wide ? "h-[76px] px-5" : "h-16 pl-1 pr-1.5")}>
+    <><header data-part="conversation-head" className={"flex shrink-0 items-center gap-2 border-b-[1.5px] border-outline bg-surface " + (wide ? "h-[76px] px-5" : "h-16 pl-1 pr-1.5")}>
       {!wide && (
         <button type="button" onClick={() => store.close()} aria-label="Back to chats"
           className="flex h-11 shrink-0 items-center rounded-full pl-1 pr-1.5 hover:bg-sunken">
@@ -235,6 +237,10 @@ export function Header({ ctx, wide, helpers: hs, canInvite }: { ctx: Ctx; wide: 
         </>}
       </Confirm>
     </header>
+    {ownAgentThread && overview && th && <div className="shrink-0 border-b border-outline bg-surface px-4 pb-2" data-part="agent-runtime">
+      <AgentModelReport overview={overview} host={th.peer} agentId={th.topic?.agent_id} />
+    </div>}
+    </>
   );
 }
 

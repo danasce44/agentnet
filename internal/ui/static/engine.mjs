@@ -2000,7 +2000,7 @@ export class Engine {
     const r=wire.parseModelSync(rec.body);
     await this.modelSyncAuthority(r,this.address,this.fp,rec.to,rec.recipient_fp);
     const pin=await this.store.get("pins",rec.to),features=await this.features(),profile=await this.profile(rec.to);
-    if(!features.includes("env2")||!features.includes("caps")||!await wire.profileSupports(profile,rec.to,(await this.pubOf(pin)).sign_key,wire.CapModelSync))throw Object.assign(Error("This device needs to update AgentNet to read private model reports."),{code:"model_sync_unsupported"});
+    if(!features.includes("env2")||!features.includes("caps")||!await wire.profileSupports(profile,rec.to,(await this.pubOf(pin)).sign_key,r.v===2?wire.CapModelSyncV2:wire.CapModelSync))throw Object.assign(Error("This device needs to update AgentNet to read private model reports."),{code:"model_sync_unsupported"});
     await this.modelSyncAuthority(r,this.address,this.fp,rec.to,rec.recipient_fp);
     return {why:"",pin};
   }
@@ -7386,7 +7386,7 @@ export class Engine {
       if (teams) teams.connected(f.includes("teams1"));
       // This device reads conversations and the attention hint (it never
       // alerts from the stream: its service worker shows the relay's pushes).
-      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapProactiveAgent, wire.CapMentionReaction, wire.CapAgentOrganization, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSync, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; independent amr1/aorg1 retain the 26-cap producer ceiling and 32-cap reader bound
+      if (f.includes("caps")) await this.call("PUT", "/v1/caps", wire.capsJSON(await wire.newCaps(this.keys, this.address, this.session, [wire.CapEnv2, "notify1", wire.CapPerson, wire.CapControl, wire.CapHeadless, wire.CapDrive, wire.CapAgentIdentity, wire.CapGroupHumanParticipation, wire.CapGroup, wire.CapSendGroup, wire.CapRootSync, wire.CapGroupInvitationManage, wire.CapReadSync, wire.CapOwnSyncV2, wire.CapOwnSyncV3, wire.CapHistoryArchive, wire.CapTopicParticipation, wire.CapRoom, wire.CapProactiveAgent, wire.CapMentionReaction, wire.CapAgentOrganization, wire.CapRequestFollowup, wire.CapTopicOrganization, wire.CapModelSyncV2, wire.CapTopicStateSync, ...(f.includes("signals1") ? [wire.CapTyping] : [])]))); // rcv1 already implied by rm1; independent amr1/aorg1 retain the 26-cap producer ceiling and 32-cap reader bound
       await this.publishPerson().catch(() => {});
       // These existing, coalesced recovery jobs can wait for old proofs or
       // network replies. They must not delay the current user's durable send.
