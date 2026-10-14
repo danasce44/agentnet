@@ -6,17 +6,26 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-The prepared [v0.8.28 package](plans/V0_8_28.md) contains seven focused bug-fix
+The [v0.8.28 package](plans/V0_8_28.md) contains ten focused bug-fix
 items, stable chat/topic links (MEL-625) and three qualification tracks. Its Linear
 milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
-are recorded; implementation and new verification have not started.
+are recorded. Implementation has started with three GPT-6.1-sol xhigh workers
+on isolated crash, skin-cache and moved-topic slices; two further workers in the
+owner-authorized third tab handle steering/concurrency and list/status. Codex reviews and
+integrates. No new integrated qualification or rollout is claimed. MEL-626 adds
+truthful reported model/reasoning in agent selection and the active chat.
+The active goal explicitly requires lean code, least overhead and prevention of
+overthinking/overengineering; disputed designs have two evidence-backed rounds.
+MEL-628 adds independent conversations for the same agent using fresh native
+sessions, preserving actual same-session exclusion and cancellation isolation.
 
-Do not tag or publish the next release until both are fixed and verified:
+Do not tag or publish the next release until these are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
 - [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
+- [MEL-591](https://linear.app/mellanni/issue/MEL-591): reopened as **Urgent** by the owner. Ordinary follow-up/goal inputs waited behind active group work while agents requested baseline evidence already shared. Trace the exact continuing run, native input acceptance and authorized evidence availability; repair and qualify the actual flow. Eventual completion does not close this blocker; permanent deadlock is unproved.
 
-Both Linear issues remain open at High priority. This is the owner's release
+All three Linear issues remain open (MEL-591 Urgent, MEL-587/620 High). This is the owner's release
 hold, not a claim that the new evidence or either fix is already qualified.
 
 ## Linear status audit — October 14, 2026
