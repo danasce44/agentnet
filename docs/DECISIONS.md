@@ -1,5 +1,27 @@
 # AgentNet Revival — Architectural Decision Records & Linear Roadmap
 
+## 2026-10-14 — collaboration without manual relaying
+
+Owner explicitly restated: AgentNet is a communications platform. Each agent's
+native harness owns its tools, skills, execution permissions and guardrails.
+AgentNet must carry an authorized collaboration through peer questions, delegated
+work, results and follow-ups until the agreed outcome, without the owner relaying
+instructions, repeatedly restarting coordination or granting the same workflow
+step again. Do not add a second execution-policy layer or arbitrary workflow
+limits; preserve native settings unchanged.
+
+This supersedes the P6 rule that a question anywhere in an origin chain prevents
+task delegation. Request labels and causal links preserve attribution; they must
+not veto work the recipient's existing consent and native harness allow. Keep
+verified sender/host identities, current signed participation, selected context
+and audience, recipient consent and exact result/cancellation correlation.
+
+Verified failure: Pi's exact owner request resumed after an explicit reply, then
+returned Needs-you again because room.go refuses a task under a question. Both
+sender and receiver chain guards need qualification under MEL-540/MEL-608. The
+owner must not be sent back to manually create the child task. This records the
+required behavior; it does not claim those guards have been removed or released.
+
 ## 2026-10-12 — universal own-human consent (v0.8.23)
 
 Owner explicitly superseded the original D3 native-only trust set and the
