@@ -11,6 +11,18 @@ program, `agentnet`, that is both the laptop client and the Hub.
 
 ## Product rules that code must keep
 
+- **AgentNet communicates; native harnesses govern execution** (owner rule,
+  2026-10-14). Agents keep their own tools, skills, configuration and guardrails.
+  Authorized collaboration must proceed through peer questions, task delegation,
+  replies, steering and continuations without the owner manually relaying each
+  step or repeatedly telling agents to continue. AgentNet must not invent an
+  execution restriction because an upstream message is called a question,
+  impose arbitrary workflow/agent limits, or override native permissions.
+  Verified identity, current participation, selected audience/context and
+  recipient consent remain communication boundaries. The old rule that a
+  question cannot delegate a task is superseded; existing code enforcing it is
+  a defect to repair, not a product requirement. See docs/DECISIONS.md and
+  MEL-540/MEL-608; recording this rule is not proof that the code is repaired.
 - **Identity is a key, membership is an admin's invite.** Every Hub request
   and every message is signed; messages and files are end-to-end encrypted
   (age). The Hub stores ciphertext and routing metadata only. Nothing a

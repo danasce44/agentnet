@@ -225,7 +225,7 @@ New command `agentnet room ask --pid PB --kind question|task TEXT`, backed by `S
 
 **Group implementation (P6, MEL-540/541/542, 2026-10-05).**
 1. `AGENTNET_REQUEST_ID` names a running question or task addressed to the exact active group agent hosted here.
-2. PB is a different active agent in the same verified group. A question may ask questions; only a task may assign tasks.
+2. PB is a different active agent in the same verified group. **October 14 owner correction:** either request kind may initiate the work that PB's existing consent and native harness permit. The former question-to-question-only rule is superseded; see docs/DECISIONS.md. Current code still enforcing that rule is not completion evidence.
 3. There are no per-run, hourly or nesting limits. Every ask keeps its immutable cause; actual origin cycles stop. Cancel the originating run or remove the participation to stop further asks.
 
 The signed request retains `PID=PB`, `Human.AuthorPID=PA`, the captured room audience and `ReplyTo` equal to PA's running request logical ID. Its target binds PB's exact host key and agent ID. Display author and target are distinct.
@@ -236,7 +236,7 @@ The signed request retains `PID=PB`, `Human.AuthorPID=PA`, the captured room aud
 
 `roomChain` runs before the ordinary human requester admission check. Trace every locally verified cause back to a current human group member. At each hop the source participation, host key, agent ID and target must still agree. Missing cause proof waits; a forged, cyclic, changed or ended cause never gains permission from one-time acceptance.
 
-Standing permission must hold at the receiving host for every upstream human/agent key. Existing exact-key question approvals and task grants apply; own-person requests retain their authority. A one-time acceptance permits this exact request, never a new standing grant. A question anywhere in the chain cannot authorize a task. Normal harness permissions remain the final authority.
+Standing permission must hold at the receiving host for every upstream human/agent key. Existing exact-key question approvals and task grants apply; own-person requests retain their authority. A one-time acceptance permits this exact request, never a new standing grant. **October 14 owner correction:** an upstream question label must not veto an otherwise authorized task. Retain the exact causal evidence and recipient consent; normal harness permissions govern execution. Do not require the owner to relay or reauthorize every agent handoff.
 
 Group agents use accepted, signed room participations without expiry. A second Bring in at the same exact host key and agent ID signs a `share` anchored to the original invite; it unions exact selected message references and inviter attribution without changing task consent. UI collapses active legacy duplicate cards by exact identity; their signed records remain separate.
 
@@ -473,7 +473,7 @@ Every phase runs `go vet ./...` and `go test -race -count=1 -timeout 600s ./...`
 
 1. **Historical D3 trust set (superseded 2026-10-12; see §5).** Previously chosen: the host plus own native devices the person added. The literal D3 reading ("any linked device") would let a browser key enable execution.
 2. **Follower context.** Chosen: an agent run withholds turns from unapproved guests and agents (with a count); people still see everything.
-3. **May question runs ask other agents?** Owner P6 override: yes, questions only; tasks retain the full origin chain and recipient authority.
+3. **May question runs ask other agents?** Historical P6 answer was questions only. The October 14 owner correction supersedes that restriction: peer questions and tasks retain the full origin chain and recipient consent, with execution governed by the recipient's native harness.
 4. **Own agent asking own agent.** Owner decision D9: runs without asking, for any two agents of the same person.
 5. **Outbox review.** Chosen: no extra review for files from an approved task.
 6. **`Until` default.** Chosen: none; guests stay until dismissed.
