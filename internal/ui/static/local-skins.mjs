@@ -16,15 +16,56 @@ const hash = bytes => crypto.subtle.digest('SHA-256',bytes);
 const fail = text => { throw new Error(text); };
 const pathOK = s => typeof s==='string' && s.length>0 && !/[\\:%?#\x00-\x1f]/.test(s) && s.split('/').every(x=>x && x!=='.' && x!=='..');
 const url = id => new URL('/local-skin-catalog/'+encodeURIComponent(id),location.origin).href;
+const readyURL = () => new URL('/local-skins/ready',location.origin);
+const packageName = name => name.startsWith(prefix) && /^[0-9a-f]{64}$/.test(name.slice(prefix.length));
+const storageFailed = () => new Error('Skin storage could not be read, repaired or written. Reopen AgentNet and try installing this skin again.');
+const maxSnapshot = 16*1024*1024+16384;
+async function snapshotReady(name) {
+  if(!await caches.has(name))return null;
+  const cache=await caches.open(name);
+  try {
+    const response=await cache.match(readyURL());
+    const meta=response ? await response.json() : null;
+    if(!response)return null;
+    return meta && /^local:[a-z][a-z0-9-]{0,47}$/.test(meta.id) && Number.isSafeInteger(meta.size) && meta.size>0 && meta.size<=maxSnapshot ? meta : {invalid:true};
+  }catch(e){
+    // Chromium's malformed per-cache disk index reports UnknownError on
+    // reads. Missing/invalid ready metadata likewise cannot publish code.
+    // Other storage failures do not establish a damaged snapshot.
+    if(e.name==='UnknownError')return {unavailable:true};
+    if(e instanceof SyntaxError)return {invalid:true};
+    throw e;
+  }
+}
 export const supported = () => !!globalThis.caches && !!navigator.serviceWorker && !!navigator.locks && !!crypto.subtle;
+async function readCatalog() {
+  try {
+    const cache=await caches.open(catalogName), out=[];
+    for(const key of await cache.keys()) {
+      const response=await cache.match(key);let item;
+      try { item=await response.json(); } catch (_) { continue; }
+      if(!item?.local || !/^[0-9a-f]{64}$/.test(item.digest))continue;
+      out.push(item);
+    }
+    return out;
+  }catch(_){throw storageFailed();}
+}
 export async function catalog() {
   if (!supported()) return [];
-  const cache=await caches.open(catalogName), out=[];
-  for(const key of await cache.keys()) {
-    const response=await cache.match(key);
-    try { const item=await response.json(); if(item.local && /^[0-9a-f]{64}$/.test(item.digest)) out.push(item); } catch (_) { /* incomplete/corrupt metadata is not executable */ }
-  }
-  return out;
+  try {
+    const out=[];
+    for(const item of await readCatalog()){
+      const meta=await snapshotReady(prefix+item.digest);
+      if(!meta||meta.id!==item.id||meta.size!==item.size||!Array.isArray(item.files)||!item.files.length||item.files.length>32||!item.files.includes(item.entry)||!item.files.every(pathOK))continue;
+      // One bounded key listing detects incomplete snapshots without reading
+      // or hashing every package body whenever the skin menu refreshes.
+      try {
+        const keys=new Set((await (await caches.open(prefix+item.digest)).keys()).map(key=>key.url));
+        if(item.files.every(file=>keys.has(new URL('/local-skins/'+item.digest+'/'+file,location.origin).href)))out.push(item);
+      }catch(e){if(e.name!=='UnknownError')throw e;}
+    }
+    return out;
+  }catch(_){throw storageFailed();}
 }
 export async function prepare(files) {
   files=[...files];
@@ -58,30 +99,59 @@ export async function install(files) {
   if(!supported())fail('This browser cannot store skins.');
   const prepared=await prepare(files); // declared local File bytes only
   return navigator.locks.request('agentnet-local-skins',async()=>{
-    const {item,assets}=prepared, list=await catalog();
+    try {
+    const {item,assets}=prepared, list=await readCatalog();
     if(!list.some(x=>x.id===item.id)&&list.length>=32)fail('Remove a skin before importing another (limit 32).');
-    const names=(await caches.keys()).filter(x=>x.startsWith(prefix));let total=0;
-    for(const name of names){const cache=await caches.open(name);const ready=await cache.match(new URL('/local-skins/ready',location.origin));
-      if(!ready){await caches.delete(name);continue;}const meta=await ready.json();total+=Number(meta.size)||0;
+    const name=prefix+item.digest, names=(await caches.keys()).filter(packageName);let total=0, existing=null, existingSize=0;
+    for(const stored of names){const meta=await snapshotReady(stored);
+      const listed=list.find(x=>prefix+x.digest===stored);
+      if(!meta||meta.unavailable||meta.invalid){
+        // Verified new bytes may replace the chosen package's unreadable old
+        // snapshot. Unrelated damaged snapshots stay charged and removable;
+        // Missing/malformed ready metadata alone does not discard usable files.
+        if(stored===name&&(meta?.invalid||(!meta&&listed?.id===item.id))){existing={invalid:true};existingSize=maxSnapshot;total+=maxSnapshot;continue;}
+        if(stored===name||((!meta||meta.unavailable)&&listed?.id===item.id)||(!meta&&!listed)){await caches.delete(stored);continue;}
+        total+=maxSnapshot;continue;
+      }
+      const size=listed && (listed.id!==meta.id||listed.size!==meta.size) ? maxSnapshot : meta.size;
+      total+=size;if(stored===name){existing=meta;existingSize=size;}
     }
-    if(!names.includes(prefix+item.digest)&&total+item.size>64*1024*1024)fail('Skins stored in this browser use the 64 MiB limit. Remove one first.');
-    const name=prefix+item.digest, cache=await caches.open(name);
-    if(!await cache.match(new URL('/local-skins/ready',location.origin))){
+    if(total-existingSize+item.size>64*1024*1024)fail('Skins stored in this browser use the 64 MiB limit. Remove one first.');
+    let cache=await caches.open(name), intact=existing?.invalid||(existing?.id===item.id && existing.size===item.size);
+    // Reinstall checks only the chosen digest, using the already verified
+    // incoming bytes. A ready marker alone cannot repair missing/changed files.
+    if(intact)try{for(const f of assets){const response=await cache.match(new URL('/local-skins/'+item.digest+'/'+f.name,location.origin));
+      if(!response){intact=false;break;}const bytes=new Uint8Array(await response.arrayBuffer());
+      if(bytes.length!==f.bytes.length||!bytes.every((b,i)=>b===f.bytes[i])){intact=false;break;}
+    }}catch(e){if(e.name!=='UnknownError')throw e;intact=false;}
+    if(intact&&existing?.invalid)await cache.put(readyURL(),Response.json({id:item.id,size:item.size}));
+    if(!intact){
+      if(existing){await caches.delete(name);cache=await caches.open(name);}
       try { for(const f of assets)await cache.put(new URL('/local-skins/'+item.digest+'/'+f.name,location.origin),new Response(f.bytes,{headers:{'Content-Type':f.type,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}}));
-        await cache.put(new URL('/local-skins/ready',location.origin),Response.json({id:item.id,size:item.size}));
-      }catch(e){await caches.delete(name);throw new Error('Skin not stored: browser storage is unavailable or full.');}
+        await cache.put(readyURL(),Response.json({id:item.id,size:item.size}));
+      }catch(e){await caches.delete(name).catch(()=>{});throw storageFailed();}
     }
     await (await caches.open(catalogName)).put(url(item.id),Response.json(item));
     return item;
+    }catch(e){if(e instanceof DOMException||e instanceof TypeError)throw storageFailed();throw e;}
   });
 }
 export async function remove(id) {
   return navigator.locks.request('agentnet-local-skins',async()=>{
-    await (await caches.open(catalogName)).delete(url(id));
-    // Old immutable snapshots stay during replacement, so an already open
-    // interface never imports code from a different digest. Explicit removal
-    // deletes all snapshots of this package in this browser only.
-    for(const name of await caches.keys())if(name.startsWith(prefix)){const cache=await caches.open(name),r=await cache.match(new URL('/local-skins/ready',location.origin));if(r&&(await r.json()).id===id)await caches.delete(name);}
+    try {
+      const listed=(await readCatalog()).find(x=>x.id===id), names=new Set();
+      if(listed)names.add(prefix+listed.digest); // exact catalog binding survives unreadable package data
+      // Old usable versions still name their package in their ready metadata.
+      // Unreadable unrelated snapshots grant no binding to this removal.
+      for(const name of (await caches.keys()).filter(packageName)){
+        if(names.has(name))continue;
+        try { if((await snapshotReady(name))?.id===id)names.add(name); }
+        catch(_) { /* inaccessible unrelated data is kept */ }
+      }
+      for(const name of names)await caches.delete(name);
+      // Keep the recovery/removal entry until the exact named deletes succeed.
+      await (await caches.open(catalogName)).delete(url(id));
+    }catch(_){throw storageFailed();}
   });
 }
 const waitState=(worker,state)=>new Promise((resolve,reject)=>{
@@ -117,7 +187,7 @@ export function manager(root,{changed}) {
   if(!supported()){root.append(text('p','This browser cannot store skins.'));return stop;}
   const status=text('p',''),list=text('div','','items'),pickers=text('div','','pickers');status.setAttribute('role','status');
   const say=(s)=>{if(live)status.textContent=s;};
-  const refresh=async()=>{const items=await catalog();if(!live)return;list.replaceChildren();for(const item of items){const row=text('p','','item');row.append(text('strong',item.name),text('span','Fingerprint '+item.digest.slice(0,12)));const del=text('button','Remove');del.type='button';del.setAttribute('aria-label','Remove '+item.name);del.onclick=async()=>{if(!confirm('Remove '+item.name+' from this browser? A tab using it opens Comic the next time it loads.'))return;try{await remove(item.id);await changed();await refresh();say('Removed from this browser.');}catch(_){say('Could not remove this skin.');}};row.append(del);list.append(row);}};
+  const refresh=async()=>{const items=await readCatalog(), usable=new Set((await catalog()).map(x=>x.id));if(!live)return;list.replaceChildren();for(const item of items){const row=text('p','','item');row.append(text('strong',item.name),text('span','Fingerprint '+item.digest.slice(0,12)));if(!usable.has(item.id))row.append(text('span','Needs repair. Import this skin again or install its update from the gallery.'));const del=text('button','Remove');del.type='button';del.setAttribute('aria-label','Remove '+item.name);del.onclick=async()=>{if(!confirm('Remove '+item.name+' from this browser? A tab using it opens Comic the next time it loads.'))return;try{await remove(item.id);await changed();await refresh();say('Removed from this browser.');}catch(e){say(e.message);}};row.append(del);list.append(row);}};
   const picker=(folder)=>{const label=text('label',folder?'Import a skin folder':'Import skin files'),input=document.createElement('input');input.type='file';input.multiple=true;if(folder)input.webkitdirectory=true;input.setAttribute('aria-label',label.textContent);label.append(input);input.onchange=async()=>{say('Checking the package…');try{const item=await install(input.files);await changed();await refresh();say('Stored '+item.name+'. Choose it under Skin: you review trust before it runs.');}catch(e){say(e.message);}finally{input.value='';}};return label;};
   pickers.append(picker(false));
   if(nativeFolder){const folder=text('button','Import a skin folder');folder.type='button';folder.onclick=async()=>{folder.disabled=true;try{const files=await nativeFolder();if(!files)return;say('Checking the package…');const item=await install(files);await changed();await refresh();say('Stored '+item.name+'. Choose it under Skin: you review trust before it runs.');}catch(e){say(e.message);}finally{if(live)folder.disabled=false;}};pickers.append(folder);}

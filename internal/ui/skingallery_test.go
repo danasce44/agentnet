@@ -20,6 +20,25 @@ func TestSkinGallery(t *testing.T) {
 	}
 }
 
+func TestLocalSkinStorageRecovery(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	out, err := exec.Command(node, "testdata/local_skins_storage_check.mjs").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "local skin storage check PASS") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+func TestLocalSkinCacheRecovery(t *testing.T) {
+	out := browserCheck(t, "testdata/local_skins_cache_recovery.cjs", t.TempDir())
+	if !strings.Contains(out, "local skin cache recovery PASS") {
+		t.Fatalf("no pass line:\n%s", out)
+	}
+	t.Logf("%s", out)
+}
+
 // The gallery end to end in Chromium on the production host and Comic, with
 // GitHub faked: verified previews, the version gate, a tampered package
 // refused, install → Use → trust → mounted, and the installed mark.

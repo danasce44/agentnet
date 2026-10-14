@@ -104,7 +104,7 @@ export function gallery({ running = () => '', changed = async () => {}, fetcher 
     /** The latest published release's skins, with what this browser holds. */
     async list({ fresh = false } = {}) {
       if (!supported()) fail('This browser cannot store skins.');
-      const { release, skins } = await load(fresh), local = await stored().catch(() => []);
+      const { release, skins } = await load(fresh), local = await stored();
       return Object.freeze({ release, skins: Object.freeze(skins.map((s) => {
         const held = local.find((x) => x.package_id === s.id);
         const state = !compatible(s) ? 'incompatible' : !held ? 'install' : held.digest === s.digest ? 'installed' : 'update';
