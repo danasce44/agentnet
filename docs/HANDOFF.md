@@ -4,6 +4,16 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
+## Next release — blocking owner requirements, October 14, 2026
+
+Do not tag or publish the next release until both are fixed and verified:
+
+- [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
+- [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
+
+Both Linear issues remain open at High priority. This is the owner's release
+hold, not a claim that the new evidence or either fix is already qualified.
+
 ## Current release — v0.8.27, October 14, 2026
 
 [Download v0.8.27](https://github.com/misunders2d/agentnet/releases/tag/v0.8.27)
