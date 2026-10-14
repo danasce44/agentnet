@@ -65,10 +65,18 @@ func actualNativeRoomQuestionSmoke(t *testing.T, ctx context.Context, name, chil
 	if err = w.bob.SetResponder(&Responder{Harness: "agentstub", Dir: stub.dir, Timeout: 30 * time.Second}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = w.alice.sendKey(ctx, carol.Address); err != nil {
+		t.Fatal(err)
+	}
 	if err = w.alice.Approve(carol.Address); err != nil {
 		t.Fatal(err)
 	}
 	for _, address := range []string{w.alice.Address, carol.Address} {
+		// Resolve the fixture's current authenticated directory key before
+		// assigning its existing exact-key task consent.
+		if _, err = w.bob.sendKey(ctx, address); err != nil {
+			t.Fatal(err)
+		}
 		if err = w.bob.Approve(address); err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +123,8 @@ func actualNativeRoomQuestionSmoke(t *testing.T, ctx context.Context, name, chil
 			break
 		}
 		if state == stateJobFailed || state == stateNeedHuman || state == stateDeclined {
-			t.Fatalf("real native %s question ended %s; no model retry", name, state)
+			row := inboxRow(t, w.alice, root.LID)
+			t.Fatalf("real native %s question ended %s: %s; no model retry", name, state, row.Detail)
 		}
 		select {
 		case <-ctx.Done():

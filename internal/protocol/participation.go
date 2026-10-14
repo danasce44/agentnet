@@ -54,6 +54,10 @@ const CapExternalParticipation = "apx1"
 // Human guests are scoped participants, never members or executors.
 const CapHumanParticipation = "hgp1"
 
+// CapConversationAudience reads captured agent scopes with conversation
+// audience. It is independent of the original hgp1 reader requirement.
+const CapConversationAudience = "cau1"
+
 // CapGroupHumanParticipation explicitly advertises complete group guest lifecycle
 // and scoped sending. Older rm1 readers do not implement this capability.
 const CapGroupHumanParticipation = "hgg1"

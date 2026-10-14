@@ -65,7 +65,7 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 	}
 	dm := newDM(t, w.alice, w.bob)
 	convs := []string{dm, packet.State.Conv}
-	ids, pids, ready, tokens := make([]string, 2), make([]string, 2), make([]string, 2), make([]string, 2)
+	ids, lids, pids, ready, tokens := make([]string, 2), make([]string, 2), make([]string, 2), make([]string, 2), make([]string, 2)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	wait := func(what string, condition func() bool) {
@@ -79,20 +79,20 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 		}
 	}
 	type runProof struct {
-		state, thread, executor string
-		attempt                 int
+		state, thread, executor, detail string
+		attempt                         int
 	}
 	read := func(id string) runProof {
 		t.Helper()
 		var proof runProof
-		if err := w.alice.store.db.QueryRowContext(ctx, `SELECT state,attempts,coalesce(json_extract(session_ref,'$.id'),''),coalesce(json_extract(executor,'$.agent_id'),'') FROM inbox WHERE id=?`, id).Scan(&proof.state, &proof.attempt, &proof.thread, &proof.executor); err != nil {
+		if err := w.alice.store.db.QueryRowContext(ctx, `SELECT state,attempts,coalesce(json_extract(session_ref,'$.id'),''),coalesce(json_extract(executor,'$.agent_id'),''),coalesce(detail,'') FROM inbox WHERE id=?`, id).Scan(&proof.state, &proof.attempt, &proof.thread, &proof.executor, &proof.detail); err != nil {
 			t.Fatal("native run proof unavailable", err)
 		}
 		if pending := w.alice.nativeRequestFor(id); pending != nil {
 			t.Fatalf("native request %s needs %s approval; no approval/config override", id, pending.Method)
 		}
 		if proof.state != stateRunning && proof.state != stateAgentWaiting && proof.state != stateAnswered && proof.state != stateCancelReq && proof.state != stateCancelled {
-			t.Fatalf("native request %s ended or refused as %s; no retry", id, proof.state)
+			t.Fatalf("native request %s ended or refused as %s: %s; no retry", id, proof.state, proof.detail)
 		}
 		return proof
 	}
@@ -110,7 +110,12 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ids[i] = request.LID
+		lids[i] = request.LID
+		// Native work owns its physical local row; portable request refs use
+		// the logical turn. DM copies intentionally have different IDs.
+		if err = w.alice.store.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE conv=? AND lid=? AND pid=? AND local=1 AND replica=0`, conv, request.LID, part.PID).Scan(&ids[i]); err != nil {
+			t.Fatal("exact local native request row unavailable", err)
+		}
 	}
 	var proofs [2]runProof
 	wait("simultaneous actual native ready ownership", func() bool {
@@ -155,31 +160,35 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 	if _, err = w.alice.SendConv(ctx, convs[1], ConvOutgoing{Body: evidence, Files: []OutgoingFile{{Path: file}}}); err != nil {
 		t.Fatal(err)
 	}
-	ref := envelope.Ref{ID: ids[1], Fingerprint: w.alice.Self().Fingerprint()}
+	ref := envelope.Ref{ID: lids[1], Fingerprint: w.alice.Self().Fingerprint()}
 	correction := protocol.NewID()
 	// This is the ordinary exact followup API, never a direct bridge call/ACK.
 	if _, err = w.alice.QueueRequestFollowup(ctx, RequestFollowup{Conv: convs[1], Ref: ref, ID: correction, Body: fmt.Sprintf("Explicit correction: preserve this request and its current tool operation. Replace the INITIAL_ONLY answer with three lines: %s, the exact newly supplied FRESH_EVIDENCE marker, and the exact newly supplied FRESH_FILE contents. Use the authorized evidence/file actually supplied with this correction; do not guess or repeat effects.", marker)}); err != nil {
 		t.Fatal(err)
 	}
+	var correctionID string
+	if err = w.alice.store.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE conv=? AND lid=? AND local=1 AND replica=0`, convs[1], correction).Scan(&correctionID); err != nil {
+		t.Fatal("exact local correction row unavailable", err)
+	}
 	wait("exact correction native acknowledgment", func() bool {
-		state := jobState(t, w.alice, correction)
+		state := jobState(t, w.alice, correctionID)
 		if state == stateNeedHuman || state == stateJobFailed || state == stateNotRun {
 			t.Fatalf("real native steering refused or acceptance unknown: %s; no retry", state)
 		}
 		return state == stateSteered
 	})
-	stored, err := storedRequestFollowup(w.alice.store.db, "in", correction)
+	stored, err := storedRequestFollowup(w.alice.store.db, "in", correctionID)
 	if err != nil || stored == nil || *stored != ref {
 		t.Fatal("accepted correction differs from exact original ref", err)
 	}
 	if proof := read(ids[1]); proof.state != stateRunning || proof.thread != proofs[1].thread || proof.attempt != 1 {
 		t.Fatal("accepted correction replaced or restarted the native parent")
 	}
-	entries, err := os.ReadDir(filepath.Join(w.alice.home, "runs", correction, "in"))
+	entries, err := os.ReadDir(filepath.Join(w.alice.home, "runs", correctionID, "in"))
 	if err != nil || len(entries) != 1 {
 		t.Fatal("accepted correction has no exact staged evidence file", err)
 	}
-	staged := filepath.Join(w.alice.home, "runs", correction, "in", entries[0].Name())
+	staged := filepath.Join(w.alice.home, "runs", correctionID, "in", entries[0].Name())
 	data, err := os.ReadFile(staged)
 	info, statErr := os.Stat(staged)
 	if err != nil || string(data) != fileBytes || statErr != nil || info.Mode().Perm()&0222 != 0 {
@@ -193,7 +202,7 @@ func TestCodexActualIndependentSteering(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, msg := range messages {
-			if msg.ReplyTo == ids[1] && msg.PID == pids[1] && msg.Kind == envelope.KindAnswer && msg.VerifiedAgent && !msg.Replica && !msg.History && msg.From == w.alice.Address && msg.Key == w.alice.Self().Fingerprint() {
+			if (msg.ReplyTo == lids[1] || msg.ReplyTo == ids[1]) && msg.PID == pids[1] && msg.Kind == envelope.KindAnswer && msg.VerifiedAgent && !msg.Replica && !msg.History && msg.From == w.alice.Address && msg.Key == w.alice.Self().Fingerprint() {
 				answer = msg
 				return true
 			}

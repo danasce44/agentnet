@@ -1,0 +1,42 @@
+// Real encrypted archive bytes and signed own roster; availability fixture only.
+import assert from 'node:assert/strict';
+import {Engine,memoryStore} from '../static/engine.mjs';
+import * as wire from '../static/wire.mjs';
+const e=new Engine({store:memoryStore(),base:'https://fixture.invalid',fetch:async()=>new Response(JSON.stringify({state:'custody'}))});
+e.keys=await wire.newKeys();e.address='owner/desk';e.pub=await wire.publicEntry(e.keys,e.address);e.fp=await wire.fingerprint(e.pub);
+const phoneKeys=await wire.newKeys(),phone=await wire.publicEntry(phoneKeys,'owner/phone'),phoneFP=await wire.fingerprint(phone);
+const first=await wire.newRoster(e.keys,e.address,'Fixture owner'),next=await wire.nextRoster(e.keys,e.address,first,[e.pub,phone],await wire.joinConsent(phoneKeys,phone.address,first.person,1,await wire.rosterHash(first)),first.label,[e.fp,phoneFP]);
+e.me=await e.personRecord([first,next],'self',null);
+await e.store.write([{s:'kv',k:'person',v:e.me},{s:'kv',k:'identity',v:{keys:e.keys,address:e.address,fingerprint:e.fp}},...e.me.devices.map(d=>({s:'pins',k:d.address,v:{address:d.address,json:d.json,fingerprint:d.fingerprint,pending:null}}))]);
+e.connected=true;e.queueOutbox=()=>{};e.changed=()=>{};e.runHistory=async()=>{};e.uploadBlob=async()=>{};e.supports=async()=>[true,'',false];
+let missing='';
+e.ctlSupport=async()=>[true,''];
+e.profile=async()=>({live:true,sessions:['a'.repeat(32)],caps:[JSON.parse(wire.capsJSON(await wire.newCaps(phoneKeys,phone.address,'a'.repeat(32),[wire.CapEnv2,wire.CapHumanParticipation,wire.CapConversationAudience].filter(cap=>cap!==missing))))]});
+const root=await wire.newRoot(e.keys,{person:e.me.person,roster:e.me.hash,address:e.address,fingerprint:e.fp},{person:wire.newID(),roster:'c'.repeat(64)}),conv=await wire.rootID(root),pid=wire.newID();
+const event=await wire.signEvent(e.keys,{conv,pid,type:'invite',ts:1,author:{person:e.me.person,roster:e.me.hash,address:e.address,fingerprint:e.fp},host:{person:e.me.person,address:e.address,fingerprint:e.fp},audience:'conversation'});
+const scope=await wire.signEvent(e.keys,await wire.scopeOf(event,1)),accept=await wire.signEvent(e.keys,{conv,pid,type:'accept',prev:await wire.eventHash(event),ts:1,author:event.author});
+const human={audience:[{pid,invite:await wire.eventHash(event),decision:await wire.eventHash(accept)}],proof:[scope,accept]};
+const item={v:1,id:wire.newID(),lid:wire.newID(),from:e.address,from_key:e.fp,ts:1,at:1000,kind:'message',body:'Captured conversation',human,attachments:[]},id=wire.newID(),body=wire.historyJSON(item);
+const envelope=await wire.seal({v:2,id,lid:wire.newID(),from:e.address,to:phone.address,ts:1,kind:'message',conv,root:wire.rootJSON(root),sub:'history',body,replica:true},e.keys,phone);
+const child={id,to:phone.address,recipient_fp:phoneFP,conv,sub:'history',body,envelope,at:1000,state:'archive_staged',archive_chunk:''};
+await e.store.write([{s:'outbox',k:id,v:child}]);
+await e.archives().wake();
+let jobs=await e.store.prefix('kv','history-archive/out/'),job=jobs[0];
+assert.equal(job.required_cap,wire.CapHistoryArchive+"+"+wire.CapConversationAudience);
+const firstDescriptor=await e.store.get('outbox',job.id);
+await e.store.write([{s:'outbox',k:id,v:{...await e.store.get('outbox',id),body:''}},{s:'outbox',k:job.id,v:{...firstDescriptor,state:'expired'}}]);
+await e.archives().receipt({...firstDescriptor,state:'expired'});await e.archives().wake();
+jobs=await e.store.prefix('kv','history-archive/out/');job=jobs.find(j=>j.id!==firstDescriptor.id);
+assert.equal(job.required_cap,wire.CapHistoryArchive+"+"+wire.CapConversationAudience);
+const descriptor=await e.store.get('outbox',job.id),sealed=descriptor.envelope;
+assert.equal((await e.store.get('outbox',id)).envelope,envelope);
+for(const cap of [wire.CapConversationAudience,wire.CapHumanParticipation]) {
+ missing=cap;await e.post({...descriptor});
+ assert.equal((await e.store.get('outbox',job.id)).state,'waiting');
+ assert.equal((await e.store.get('outbox',job.id)).envelope,sealed);
+
+}
+missing='';await e.post({...descriptor,state:'queued'});
+assert.equal((await e.store.get('outbox',job.id)).envelope,sealed);
+assert.equal((await e.store.get('outbox',job.id)).state,'custody');
+console.log('Browser conversation audience archive: body erasure, repack, independent waiting and same sealed ciphertext release passed');

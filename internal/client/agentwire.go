@@ -136,10 +136,15 @@ func (a *Agent) requireAgentIdentity(ctx context.Context, key identity.Public) e
 }
 
 func copyRequirement(c outCopy) string {
-	if c.required != "" {
-		return c.required
+	required := c.required
+	if required == "" {
+		required = agentRequirement(c.in)
 	}
-	return agentRequirement(c.in)
+	needed := c.in.Human != nil && c.in.Human.ConversationAudience()
+	if !needed && c.in.Sub == envelope.SubHistory {
+		needed = conversationAudienceCopy(c.in.Sub, c.in.Body, "")
+	}
+	return conversationAudienceRequirement(required, needed)
 }
 
 func (a *Agent) requireParticipationCaps(ctx context.Context, key identity.Public, required string) error {
@@ -157,7 +162,7 @@ func (a *Agent) requireParticipationCaps(ctx context.Context, key identity.Publi
 		}
 		return nil
 	}
-	if required != protocol.CapTopicContext && required != protocol.CapModelSync && required != protocol.CapModelSyncV2 && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent && required != protocol.CapMentionReaction && required != protocol.CapAgentOrganization {
+	if required != protocol.CapConversationAudience && required != protocol.CapTopicContext && required != protocol.CapModelSync && required != protocol.CapModelSyncV2 && required != protocol.CapTopicStateSync && required != protocol.CapTopicOrganization && required != protocol.CapRequestFollowup && required != protocol.CapTopicParticipation && required != protocol.CapOwnSyncV3 && required != protocol.CapOwnSyncV2 && required != protocol.CapContinuation && required != protocol.CapSendGroup && required != protocol.CapReadSync && required != protocol.CapGroupInvitationManage && required != protocol.CapGroupInvitationControl && required != protocol.CapGroupHumanParticipation && required != protocol.CapRootSync && required != protocol.CapHumanParticipation && required != protocol.CapAgentIdentity && required != protocol.CapExternalParticipation && required != protocol.CapGroup && required != protocol.CapHeadless && required != protocol.CapReplyReceiver && required != protocol.CapProgress && required != protocol.CapAgentReaction && required != protocol.CapConvClear && required != protocol.CapRoom && required != protocol.CapProactiveAgent && required != protocol.CapMentionReaction && required != protocol.CapAgentOrganization {
 		return errors.New("unknown queued capability requirement")
 	}
 	label, device, err := protocol.SplitAddress(key.Address)

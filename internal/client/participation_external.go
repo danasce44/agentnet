@@ -1401,6 +1401,7 @@ func (a *Agent) mayDeliverExternal(env envelope.Envelope) (bool, bool, error) {
 	if err != nil {
 		return true, false, err
 	}
+	required, _ = splitConversationAudienceRequirement(required)
 	if topicEvent != "" {
 		if err = json.Unmarshal([]byte(topicEvent), &in.TopicEvent); err != nil {
 			return true, false, err

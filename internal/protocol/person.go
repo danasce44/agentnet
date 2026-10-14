@@ -514,7 +514,7 @@ const CapAgent = "agent1"
 // advertises (ROOM_V1 §2.1: parse headroom).
 const (
 	MaxCaps           = 32
-	MaxAdvertisedCaps = 27
+	MaxAdvertisedCaps = 28
 	MaxCapsRecord     = 1024
 )
 

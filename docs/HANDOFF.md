@@ -9,10 +9,10 @@ section at release; keep detailed verification and remaining work here.
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
 items, stable chat/topic links (MEL-625) and four qualification tracks. Its Linear
 milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
-are recorded. Implementation has started with three GPT-6.1-sol xhigh workers
-on isolated crash, skin-cache and moved-topic slices; two further workers in the
-owner-authorized third tab handle steering/concurrency and list/status. Codex reviews and
-integrates. No new integrated qualification or rollout is claimed. MEL-626 adds
+are recorded. The five assigned GPT-6.1-sol xhigh workers have returned their
+bounded source/evidence and are dismissed; their owned worktrees remain for
+verification and final cleanup. Codex reviews, integrates and qualifies the
+candidate. No full release qualification or rollout is claimed. MEL-626 adds
 truthful reported model/reasoning in agent selection and the active chat.
 The active goal explicitly requires lean code, least overhead and prevention of
 overthinking/overengineering; disputed designs have two evidence-backed rounds.
@@ -39,7 +39,7 @@ Do not tag or publish the next release until these are fixed and verified:
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
 - [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
 - [MEL-591](https://linear.app/mellanni/issue/MEL-591): reopened as **Urgent** by the owner. Ordinary follow-up/goal inputs waited behind active group work while agents requested baseline evidence already shared. Trace the exact continuing run, native input acceptance and authorized evidence availability; repair and qualify the actual flow. Eventual completion does not close this blocker; permanent deadlock is unproved.
-- [MEL-633](https://linear.app/mellanni/issue/MEL-633): **Urgent owner release blocker**. Invited agents must receive admitted live chat/topic messages and peer-agent replies while preserving unshared older history, topics, replicas and dismissal. ThinkPad source `5590f729` is integrated for correction. Browser/older-reader parity and proof-based retained-context recovery are still required; combined native prompt regression is currently red. Policy `11ce9800` is documentation, not qualification.
+- [MEL-633](https://linear.app/mellanni/issue/MEL-633): **Urgent owner release blocker**. ThinkPad source `5590f729`, native proof-based retained-context recovery and browser/older-reader corrections are integrated. Focused source checks pass for admitted live turns, exact peer replies, independent reader waiting and unchanged-ciphertext release. Unprovable old unindexed incoming member turns remain selected-only. Actual affected-invitation/native and integrated release qualification are still required; policy `11ce9800` is documentation only.
 
 All four Linear issues remain open (MEL-591/633 Urgent, MEL-587/620 High). This is the owner's release
 hold, not a claim that the new evidence or either fix is already qualified.

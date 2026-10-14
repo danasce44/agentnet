@@ -188,6 +188,7 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 		env                   envelope.Envelope
 		fp                    string
 		proactive, snapshot   bool
+		conversationAudience  bool
 		mention, organization bool
 	}
 	var selectedRows []selected
@@ -202,6 +203,8 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 		}
 		// Repacking retained ciphertext inherits its original requirement,
 		// even when a later local erase removed the plaintext classification.
+		priorRequired, r.conversationAudience = splitConversationAudienceRequirement(priorRequired)
+		r.conversationAudience = r.conversationAudience || conversationAudienceCopy(sub, body, "")
 		r.proactive = priorRequired == protocol.CapProactiveAgent || priorRequired == topicContextArchiveProactive
 		r.snapshot = priorRequired == protocol.CapTopicContext || priorRequired == topicContextArchiveProactive
 		if !r.snapshot {
@@ -256,6 +259,7 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 	chunk := envelope.HistoryArchiveChunk{V: 1}
 	required := protocol.CapHistoryArchive
 	snapshotExtension := false
+	conversationAudienceExtension := false
 	chunkBytes := len(`{"v":1,"entries":[]}`)
 	mentionExtension, organizationExtension := false, false
 	for _, r := range selectedRows {
@@ -292,6 +296,7 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 		mentionExtension = mentionExtension || r.mention
 		organizationExtension = organizationExtension || r.organization
 		snapshotExtension = snapshotExtension || r.snapshot
+		conversationAudienceExtension = conversationAudienceExtension || r.conversationAudience
 		if r.proactive {
 			// Persist this with the descriptor: later deletion of the local
 			// child body cannot narrow what its retained ciphertext requires.
@@ -305,6 +310,7 @@ func (a *Agent) archivePack(ctx context.Context) (err error) {
 			required = protocol.CapTopicContext
 		}
 	}
+	required = conversationAudienceRequirement(required, conversationAudienceExtension)
 	data, err := envelope.MarshalHistoryArchiveChunk(chunk)
 	if err != nil {
 		return err

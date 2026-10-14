@@ -2,7 +2,7 @@
 // device's real (non-extractable) keys and answers one JSON request per
 // line on stdin with one JSON line on stdout. The Go test checks every
 // answer with the Go code.
-import * as wire from "../static/wire.mjs";
+const wire = await import(process.env.AGENTNET_TEST_WIRE || "../static/wire.mjs");
 import { createInterface } from "node:readline";
 
 let keys = null;

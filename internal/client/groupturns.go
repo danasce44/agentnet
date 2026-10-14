@@ -587,6 +587,7 @@ func (a *Agent) mayDeliverGroupTurn(env envelope.Envelope) (bool, bool, error) {
 	if err != nil || conv == "" {
 		return false, false, nil
 	}
+	required, _ = splitConversationAudienceRequirement(required)
 	packet, e := groupTurnPacketIn(a.store.db, conv)
 	if e != nil {
 		if required == protocol.CapGroup {

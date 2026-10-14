@@ -43,3 +43,15 @@ func TestTopicOrganizationComicRendered(t *testing.T) {
 		t.Log(string(out))
 	}
 }
+
+func TestBrowserConversationAudienceArchive(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/conversationaudience_archive_check.mjs").CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	} else {
+		t.Log(string(out))
+	}
+}

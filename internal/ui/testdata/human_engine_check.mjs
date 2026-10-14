@@ -49,7 +49,7 @@ async function world() {
     await e.store.write([{ s: 'kv', k: 'identity', v: { keys: e.keys, address: e.address, fingerprint: e.fp } }, { s: 'kv', k: 'person', v: e.me }]);
     e.connected = false; pubs.set(e.address, e.pub); rosters.set(e.me.person, [JSON.parse(wire.rosterJSON(e.roster))]); users.push(e);
   }
-  const caps = async (e, names = [wire.CapEnv2, wire.CapPerson, wire.CapAgentIdentity, wire.CapExternalParticipation, wire.CapHumanParticipation]) => {
+  const caps = async (e, names = [wire.CapEnv2, wire.CapPerson, wire.CapAgentIdentity, wire.CapExternalParticipation, wire.CapHumanParticipation, wire.CapConversationAudience]) => {
     const session = id(); profiles.set(e.address, { person: JSON.parse(wire.rosterJSON(e.roster)), live: true, sessions: [session], caps: [JSON.parse(wire.capsJSON(await wire.newCaps(e.keys, e.address, session, names)))] });
   };
   for (const e of users) { await caps(e); for (const other of users) {
@@ -744,4 +744,72 @@ for (const ending of ['original', 'self']) {
  await refuses(()=>a.inviteAgent({conv,host:host.address,agent_id:w.agent.id}),/key.*changed|trust|pinned/i);
 }
 
+// An accepted outside helper reads only explicitly captured live turns.
+{
+ const w=await world(),{alice:a,bob:b,carol:c,conv}=w;
+ await a.sendDM({conv,body:'Before helper acceptance'});await w.drain(b);
+ const p=await a.inviteAgent({conv,host:c.address,agent_id:w.agent.id});await w.drain(c);await w.drain(b);await w.accept(p.pid);
+ const sent=await a.sendDM({conv,body:'Captured helper discussion'});
+ const copies=(await a.store.all('outbox')).filter(r=>r.lid===sent.lid),helper=copies.find(r=>r.to===c.address),member=copies.find(r=>r.to===b.address);
+ check(!!helper&&wire.conversationAudience(helper.human),'current accepted helper is an exact captured reader');
+ check(helper.required_cap===wire.CapHumanParticipation+'+'+wire.CapConversationAudience,'persist independent cau1 beside hgp1');
+ await w.drain(c);await w.drain(b);
+ const helperHeld=await c.store.get('held',helper.id);check(!!(await c.store.get('inbox',helper.id))&&!helperHeld,'actual receiver admits signed role-empty conversation scope: '+JSON.stringify(helperHeld?.detail||helperHeld?.reason||{state:(await a.store.get('outbox',helper.id))?.state,detail:(await a.store.get('outbox',helper.id))?.detail}));
+ check(!(await c.store.all('inbox')).some(r=>r.body==='Before helper acceptance'),'helper gets no ambient pre-invitation context');
+ const humanReply=await b.sendDM({conv,body:'Ordinary human reply',reply_to:sent.lid});await w.drain(c);
+ check((await c.store.all('inbox')).some(r=>r.lid===humanReply.lid&&r.reply_to===sent.lid),'ordinary human reply reaches exact captured helper');
+ const base=[wire.CapEnv2,wire.CapPerson,wire.CapAgentIdentity,wire.CapExternalParticipation,wire.CapHumanParticipation];
+ for(const missing of [wire.CapConversationAudience,wire.CapHumanParticipation]) {
+   await w.caps(b,missing===wire.CapConversationAudience?base:[...base.filter(x=>x!==missing),wire.CapConversationAudience]);
+   const turn=await a.sendDM({conv,body:'Waiting for '+missing});
+   const copy=(await a.store.all('outbox')).find(r=>r.lid===turn.lid&&r.to===b.address),before=copy.envelope;
+   await a.post(copy);
+   check((await a.store.get('outbox',copy.id)).state==='waiting'&&!w.posts.some(raw=>wire.parseEnvelope(raw).id===copy.id),'missing '+missing+' prevents actual transport');
+   const supported=(await a.store.all('outbox')).find(r=>r.lid===turn.lid&&r.to===c.address);await a.post(supported);
+   check(w.posts.some(raw=>wire.parseEnvelope(raw).id===supported.id),'one old reader does not block supported helper');
+   await w.caps(b,[...base,wire.CapConversationAudience]);await a.post(await a.store.get('outbox',copy.id));
+   check((await a.store.get('outbox',copy.id)).envelope===before&&w.posts.some(raw=>wire.parseEnvelope(raw).id===copy.id),'signed support releases exact unchanged sealed copy');
+ }
+ const phone=await w.sibling(a,'alice/captured-phone',true),dev=a.me.devices.find(d=>d.address===phone.address);
+ const history=await a.historyCopy(dev,await a.store.get('convs',conv),a.itemOf(member,true));
+ check(history.required_cap===wire.CapHumanParticipation+'+'+wire.CapConversationAudience,'inert own history retains independent extension');
+ await w.receive(history.envelope,phone);
+ check(!await phone.store.get('held',history.id)&&(await phone.store.get('receipts',history.id))?.state==='delivered','actual history receiver admits same proof without execution');
+ // Replies to a human guest's exact request retain the captured requester authority.
+ const guest=w.mallory,invited=await a.changeHuman('invite',{conv,host:guest.address});await w.drain(guest);await w.drain(b);
+ await guest.changeHuman('decide',{pid:invited.pid,accept:true});await w.drain(a);await w.drain(b);
+ await a.sendDM({conv,body:'Current captured guest and helper'});await w.drain(guest);
+ const asked=await guest.askAgent({pid:p.pid,kind:'question',body:'Exact guest question'});await w.drain(a);await w.drain(b);
+ const request=(await a.store.all('inbox')).find(r=>r.lid===asked.lid),replyHuman={...request.human};delete replyHuman.author_pid;
+ const reply={kind:'answer',pid:p.pid,agent_id:w.agent.id,reply_to:asked.lid,body:'Exact guest answer',human:replyHuman};
+ const acceptedReply=await w.receive(await w.from(c,b,reply),b);
+ check(!!await b.store.get('inbox',acceptedReply)&&!await b.store.get('held',acceptedReply),'actual receiver checks exact original human guest request and accepts its output');
+ const wrongReply=await w.receive(await w.from(c,b,{...reply,reply_to:wire.newID()}),b);
+ check(!!await b.store.get('held',wrongReply)&&!await b.store.get('inbox',wrongReply),'output without exact original request fails closed');
+ await a.changeHuman('end',{pid:invited.pid});await w.drain(b);
+ const endedReply=await w.receive(await w.from(c,b,{...reply,body:'After requester ended'}),b);
+ check(!!await b.store.get('held',endedReply)&&!await b.store.get('inbox',endedReply),'ended captured guest requester cannot authorize later output');
+ // A member-hosted helper's output requester also needs its exact captured invitation and decision.
+ const local=await a.inviteAgent({conv,host:b.address});await w.drain(b);
+ const localInfo=(await a.agentConv(local.pid)).info,accepted=await wire.signEvent(b.keys,{conv,pid:local.pid,type:'accept',prev:localInfo.invite,ts:Math.floor(now/1000),author:b.author()});
+ for(const e of [a,b])await w.receive(await w.from(b,e,{sub:'event',pid:local.pid,body:wire.eventJSON(accepted)}),e);
+ const agentHuman=await a.livePlan(await a.store.get('convs',conv),local.pid,local.pid),agentRequest=wire.newID();
+ const peerRequestID=await w.receive(await w.from(b,a,{kind:'question',pid:p.pid,lid:agentRequest,origin:'agent:claude',emotion:'curious',body:'Peer agent question',target:{address:c.address,fingerprint:c.fp,agent_id:w.agent.id},human:agentHuman}),a);
+ check(!!await a.store.get('inbox',peerRequestID)&&!await a.store.get('held',peerRequestID),'actual receiver admits captured local-helper question');
+ const outputHuman={...agentHuman};delete outputHuman.author_pid;
+ const peerOutput={kind:'answer',pid:p.pid,agent_id:w.agent.id,reply_to:agentRequest,body:'Peer agent answer',human:outputHuman};
+ const peerReplyID=await w.receive(await w.from(c,a,peerOutput),a);
+ check(!!await a.store.get('inbox',peerReplyID)&&!await a.store.get('held',peerReplyID),'actual receiver accepts output for exact original peer-agent request');
+ await a.dismissAgent(local.pid);
+ const endedPeerID=await w.receive(await w.from(c,a,{...peerOutput,body:'After peer requester ended'}),a);
+ check(!!await a.store.get('held',endedPeerID)&&!await a.store.get('inbox',endedPeerID),'ended captured peer requester cannot authorize later output');
+ const checks=[],chat=await a.store.get('convs',conv),pin=await a.store.get('pins',c.address);
+ await a.store.write([{s:'pins',k:c.address,v:{...pin,pending:'changed'}}]);
+ check(!!(await a.humanGate(chat,helper,checks)).why,'captured current-key change fails closed');await a.store.write([{s:'pins',k:c.address,v:pin}]);
+ const changedAudience={...helper.human,audience:helper.human.audience.map(scope=>({...scope,decision:'b'.repeat(64)}))};
+ check(!!(await a.humanGate(chat,{...helper,human:changedAudience})).why,'captured acceptance witness mismatch fails closed');
+ await a.dismissAgent(p.pid);await w.drain(c);
+ const afterEnd=await w.receive(await w.from(a,c,{body:'Delayed old captured turn',human:helper.human}),c);
+ check(!!await c.store.get('held',afterEnd)&&!await c.store.get('inbox',afterEnd),'dismissed exact captured helper cannot receive another live turn');
+}
 console.log('human engine isolated lifecycle checks passed: ' + checks);

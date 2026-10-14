@@ -23,6 +23,7 @@ export const CapContinuation = "cont1";
 export const CapHeadless = "hdl1";        // protocol cap: reads status controls and version 2 reports, sends decisions
 export const CapExternalParticipation = "apx1"; // selected DM excerpts and exact outside-host participation
 export const CapGroupHumanParticipation = "hgg1"; // complete group human guest lifecycle; NOT implied by rm1
+export const CapConversationAudience = "cau1";
 export const CapHumanParticipation = "hgp1"; // protocol.CapHumanParticipation: reads human guests' scoped turns
 export const CapSendGroup = "sg1"; // optional signed presentation; never a routing or execution capability
 export const CapRequestFollowup = "flw1";
@@ -1025,7 +1026,7 @@ export const convRootVersionLimit = (v) => v === GroupRootVersion ? MaxGroupRoot
 const convRootSizeLimit = (json) => { try { return convRootVersionLimit(JSON.parse(json).v); } catch (_) { return MaxConvRoot; } };
 export const CapProactiveAgent = "ams1";
 export const proactiveAgent = n => n.kind === "message" && !n.sub && !n.status && !n.reply_to && !n.target && !!n.conv && !!n.pid && n.origin === "agent:proactive" && !n.receiver_route;
-export const MaxCaps = 32, MaxAdvertisedCaps = 27; // older readers already parse up to 32 names
+export const MaxCaps = 32, MaxAdvertisedCaps = 28; // older readers already parse up to 32 names
 export const MaxCapsRecord = 1024;
 export const CapEnv2 = "env2";
 export const CapPerson = "person2"; // reads person roster chains, roots v2, fan-out and history
@@ -1819,9 +1820,21 @@ export async function verifyAgent(r, host) {
 // The durable outbox keeps this requirement even when ciphertext cannot be reopened.
 // A room shape keeps its conversation's primary (a group's grp1, a DM's
 // hgp1); delivery adds rm1 to it (engine roomCopy, ROOM_V1 §2.5).
+export const conversationAudience = h => !!h?.proof?.some(e=>e.type==="scope"&&!e.role&&e.audience==="conversation");
+export function conversationAudienceBase(required="") {
+ return required===CapConversationAudience?"":required.endsWith("+"+CapConversationAudience)?required.slice(0,-CapConversationAudience.length-1):required;
+}
+export function conversationAudienceCopy(row) {
+ if(row.required_cap && conversationAudienceBase(row.required_cap)!==row.required_cap)return true;
+ let item=row;if(row.sub==="history"&&row.body)try{item=parseHistory(row.body);}catch{}
+ return conversationAudience(item.human);
+}
+export function conversationAudienceRequirement(required="",needed=false) {
+ return !needed||required===CapConversationAudience||conversationAudienceBase(required)!==required?required:required?required+"+"+CapConversationAudience:CapConversationAudience;
+}
 export function retainedAgentActionRequirements(row) {
  let n=row;if(row.sub==="history"&&row.body)try{n=parseHistory(row.body);}catch{}
- return {mention_cap:!!(row.mention_cap||row.required_cap===CapMentionReaction||n.origin===OriginMentionReaction&&n.pid&&n.sub===SubReaction),organization_cap:!!(row.organization_cap||row.required_cap===CapAgentOrganization||organizationReaderExtension(n))};
+ return {...(conversationAudienceCopy(row)?{required_cap:conversationAudienceRequirement(row.required_cap||agentRequirement(row),true)}:{}),mention_cap:!!(row.mention_cap||row.required_cap===CapMentionReaction||n.origin===OriginMentionReaction&&n.pid&&n.sub===SubReaction),organization_cap:!!(row.organization_cap||row.required_cap===CapAgentOrganization||organizationReaderExtension(n))};
 }
 export function agentRequirement(n) {
   try {
@@ -2122,7 +2135,7 @@ export async function validateHumanTurn(h, conv) {
   for (const e of h.proof || []) {
     validateEvent(e);
     const scope = scopes.get(e.pid);
-    if (!scope || e.sig?.length !== 64 || utf8.encode(eventJSON(e)).length > MaxParticipationEvent || e.conv !== conv || !["scope", "accept"].includes(e.type) || (e.type === "scope" && e.role !== "human" && e.audience !== "room")) throw new Error("human: proof outside audience"); // an agent only as a room participant
+    if (!scope || e.sig?.length !== 64 || utf8.encode(eventJSON(e)).length > MaxParticipationEvent || e.conv !== conv || !["scope", "accept"].includes(e.type) || (e.type === "scope" && e.role !== "human" && e.audience !== "room" && e.audience !== "conversation")) throw new Error("human: proof outside audience"); // captured room or conversation agent scope
     const hash = await eventHash(e);
     if (events.has(hash) || e.prev !== scope.invite || (e.type === "accept" && hash !== scope.decision)) throw new Error("human: duplicate or unrelated proof");
     events.add(hash);

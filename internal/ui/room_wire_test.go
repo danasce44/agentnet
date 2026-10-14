@@ -335,7 +335,7 @@ func TestBrowserRoomTurnsMatchGo(t *testing.T) {
 			in.Kind, in.Target, in.PID, in.Human = envelope.KindQuestion, target, protocol.NewID(), turn(as.PID, guest, agent)
 		})
 		add("an agent's ordinary turn", false, func(in *envelope.Inner) { in.PID, in.Human = as.PID, turn(as.PID, guest, agent) })
-		add("an assistant's conversation scope as audience", false, func(in *envelope.Inner) { in.Human = turn("", guest, assistant) })
+		add("an assistant's conversation scope as audience", true, func(in *envelope.Inner) { in.Human = turn("", guest, assistant) })
 		add("a guest's edit", true, func(in *envelope.Inner) {
 			in.V, in.Sub, in.Body, in.Root, in.Origin, in.Ref = envelope.Version3, envelope.SubRevision, `{"rev":1,"text":"fixed"}`, nil, "", &envelope.Ref{ID: protocol.NewID(), Fingerprint: r.bob.Fingerprint()}
 			in.Human = turn(gs.PID, guest, agent)

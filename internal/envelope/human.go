@@ -32,6 +32,16 @@ type HumanTurn struct {
 	Proof     []protocol.ParticipationEvent `json:"proof"`
 }
 
+// ConversationAudience identifies the reader extension, never authority.
+func (h HumanTurn) ConversationAudience() bool {
+	for _, e := range h.Proof {
+		if e.Type == protocol.EventScope && e.Role == "" && e.Audience == protocol.AudienceConversation {
+			return true
+		}
+	}
+	return false
+}
+
 func (h HumanTurn) Validate(conv string) error {
 	if h.AuthorPID != "" && !protocol.ValidID(h.AuthorPID) || len(h.Audience) == 0 || len(h.Audience) > MaxHumanAudience || len(h.Proof) > MaxHumanProof {
 		return errors.New("human: invalid author or audience bound")
