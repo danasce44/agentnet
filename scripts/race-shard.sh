@@ -27,7 +27,8 @@ run_partition() {
 				if ($0=="TestGroupInteractionNamedMemberAndVisitor") part=1
 				if ($0=="TestGroupParticipationHistoryAfterHostReadmission") part=7
 				if ($0=="TestGroupReplyReceiverMemberAndVisitorPIDNative") part=11
-				if ($0=="TestOwnPersonTasksDirectAndGroup") part=9
+				if ($0=="TestOwnPersonTasksDirectAndGroup") part=6
+				if ($0=="TestGroupParticipationFilesLateLinkedRequestAndNamedOutput") part=9
 				if ($0=="TestGroupHistoryWitnessRetiredTaskDevice") part=4
 				if ($0=="TestRoomReciprocalRootQuestions") part=5
 				if ($0=="TestHistoryArchiveImportedTailRemainsBounded") part=10

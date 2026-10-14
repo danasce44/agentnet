@@ -6,16 +6,15 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-Qualification base6d936bdf has the same production code as9e7dc6e5. Actual Codex
+Qualification base40017619 has the same production code as9e7dc6e5. Actual Codex
 concurrency/steering81.477s, mixed exactv0.8.27 57.701s, real IndexedDB
-race1.701s and native Linux/macOS client/UI succeed. Ten client race partitions
-and both UI partitions pass; client9/10 still exhaust600s in CI and are being
-qualified locally with unchanged selection and bounds. The focused native
-Windows gate still fails T5's fresh10s bulk flush. Its reviewed test-only
-correction removes redundant carriers for already-current readers; the focused
-Linux race case passes23.631s, with native Windows verification pending.
-Original-key APK8bbcf474
-build/units/lint/16KiB verification passes; Android recovery remains unqualified.
+race1.701s and native Linux/macOS client/UI succeed. Client10 now passes locally
+in583.920s; a measured two-fixture swap requalifies only6/9, preserving the other
+ten ordered selections,1206-test coverage and600s bounds. Both UI race partitions
+pass. The corrected native Windows four-case gate and vet pass76.471s; its T5
+fixture no longer reseals redundant context for already-current readers.
+Original-key APK8bbcf474 build/units/lint/16KiB verification passes. Android's
+test-only document-absolute imports work; guarded recovery remains in progress.
 All-skins still fails three Zoom stored-message touch assertions; automatic
 review refused its test-only page-global probe and an owner exception is pending.
 MEL587 remains an owner release hold with no causal fix. No tag/publication.
