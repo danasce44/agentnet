@@ -24,7 +24,7 @@ run_partition() {
 		return
 	fi
 	echo "shard $label of $n: $(echo "$tests" | wc -l) tests"
-	go test -race -count=1 -timeout 600s -run "^($(echo "$tests" | paste -sd'|'))\$" "$package"
+	go test -race -json -count=1 -timeout 600s -run "^($(echo "$tests" | paste -sd'|'))\$" "$package"
 }
 
 if [ "$shard" = others ]; then

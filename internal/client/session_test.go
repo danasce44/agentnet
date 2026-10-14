@@ -442,8 +442,16 @@ func TestCodexAnswerFromEvents(t *testing.T) {
 		if strings.Contains(row.Detail, "partial commentary") {
 			t.Fatal("partial answer mistaken for completion")
 		}
-		if mode == "approval" && !strings.Contains(row.Detail, "fixture native permission") {
-			t.Fatalf("native reason lost: %s", row.Detail)
+		if mode == "approval" {
+			// This legacy stub omits itemId: it is a malformed approval,
+			// not a supported callback. Its private Reason must not leak.
+			if row.Detail != codexRoomUnavailable {
+				t.Fatalf("malformed native approval was not refused: %s", row.Detail)
+			}
+			var callbacks int
+			if err := w.bob.store.db.QueryRow(`SELECT count(*) FROM native_requests WHERE request=?`, sent.ID).Scan(&callbacks); err != nil || callbacks != 0 {
+				t.Fatalf("malformed approval became actionable: callbacks=%d err=%v", callbacks, err)
+			}
 		}
 	}
 }
