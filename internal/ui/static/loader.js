@@ -23,7 +23,6 @@
   "use strict";
   const page = document.getElementById("skin");
   const browser = window.agentnetEngine;
-  const { parseLink, linkTo, matchingWorkspace, checkTarget } = await import('/assets/conversation-links.mjs');
   let openPortable;
 
   // ---- what the page waits for, and how long
@@ -81,6 +80,7 @@
   // Which skin opens and whether it needs consent: built-in skins are
   // trusted by the host's fixed list, never by a manifest (skin-choice.mjs).
   const { HOME, mark, choose, trusted: isTrusted, takenName } = await import("/assets/skin-choice.mjs");
+  const { parseLink, linkTo, matchingWorkspace, checkTarget } = await import('/assets/conversation-links.mjs');
   const json = async (path, body) => {
     if (!path.startsWith("/api/")) throw new Error("Expected an AgentNet API path");
     if (browser) return browser.api(path, body);

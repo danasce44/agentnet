@@ -69,8 +69,8 @@ func pair(s HumanScope, proof []protocol.ParticipationEvent) []any { return []an
 
 // ROOM_V1 §2.3: a captured audience rides on group turns too; an agent
 // room participant authors only requests, labelled as an agent, and a
-// person never carries an agent origin; an agent's proof scope must be a
-// room's; an edit carries its turn's captured audience.
+// person never carries an agent origin. Invited conversation helpers also
+// follow the sealed live audience; an edit carries its original audience.
 func TestHumanTurnRoomShapes(t *testing.T) {
 	f := newRoomFixture(t)
 	for name, root := range map[string]json.RawMessage{"dm": f.dmRaw, "group": f.gRaw} {
@@ -110,6 +110,9 @@ func TestHumanTurnRoomShapes(t *testing.T) {
 		out.Kind, out.PID, out.ReplyTo, out.Origin, out.Emotion = KindAnswer, agent[0].(HumanScope).PID, protocol.NewID(), "agent:claude", "calm"
 		out.Human = f.turn(conv, "", guest, agent)
 		ok["an agent participant's output"] = out
+		liveHelper := member
+		liveHelper.Human = f.turn(conv, "", guest, pair(f.scope(conv, "", protocol.AudienceConversation)))
+		ok["an invited conversation helper's live context"] = liveHelper
 		for what, in := range ok {
 			if err := checkVersion2(in); err != nil {
 				t.Errorf("%s: %s refused: %v", name, what, err)
@@ -131,9 +134,10 @@ func TestHumanTurnRoomShapes(t *testing.T) {
 		x = base
 		x.PID, x.Human = agent[0].(HumanScope).PID, f.turn(conv, agent[0].(HumanScope).PID, guest, agent)
 		bad["an agent's ordinary turn"] = x
-		x = member
+		x = liveHelper
 		x.Human = f.turn(conv, "", guest, pair(f.scope(conv, "", protocol.AudienceConversation)))
-		bad["an assistant (conversation scope) as audience"] = x
+		x.Human.Audience[1].Invite = strings.Repeat("f", 64)
+		bad["a helper without its exact invitation proof"] = x
 		x = member
 		x.Root = f.dmRaw
 		if name == "dm" {

@@ -23,6 +23,12 @@ program, `agentnet`, that is both the laptop client and the Hub.
   question cannot delegate a task is superseded; existing code enforcing it is
   a defect to repair, not a product requirement. See docs/DECISIONS.md and
   MEL-540/MEL-608; recording this rule is not proof that the code is repaired.
+- **Invited helpers follow live chat context** (MEL-633, owner rule,
+  2026-10-14). An active helper sees new messages and other agents' verified
+  replies within its invited chat or topic, for DMs and groups alike. Earlier
+  history remains limited to selected grants. Dismissal stops future access;
+  other chats/topics and other agents' native sessions remain outside scope.
+  Reading a peer's reply never starts another job or grants execution authority.
 - **Identity is a key, membership is an admin's invite.** Every Hub request
   and every message is signed; messages and files are end-to-end encrypted
   (age). The Hub stores ciphertext and routing metadata only. Nothing a

@@ -691,7 +691,7 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 			m.PID = pid // an accepted guest's device: its own exact participation, as the page names it ("" for a member)
 		}
 		if humanAuthor && !envelope.TopicOrganization(m.TopicEvent) {
-			h, e := a.humanPlan(ctx, conv, m.PID, m.Topic)
+			h, e := a.livePlan(ctx, conv, m.PID, "", m.Topic)
 			if e != nil {
 				return ConvSent{}, e
 			}
@@ -711,14 +711,12 @@ func (a *Agent) SendConv(ctx context.Context, conv string, m ConvOutgoing) (Conv
 						return ConvSent{}, e
 					}
 				}
-				h, e := a.humanPlan(ctx, conv, authorPID, m.Topic)
+				h, e := a.livePlan(ctx, conv, authorPID, m.PID, m.Topic)
 				if e != nil {
 					return ConvSent{}, e
 				}
 				if h != nil {
-					if h != nil {
-						return a.sendHumanTurn(ctx, root, raw, m, h, binding)
-					}
+					return a.sendHumanTurn(ctx, root, raw, m, h, binding)
 				}
 			}
 		}

@@ -332,7 +332,10 @@ func externalOutputRequestMode(q dbq, in envelope.Inner, info ParticipationInfo,
 	}
 	defer rows.Close()
 	var originalLID, originalKey string
-	var agentAuthors []struct{ pid, from, fp string }
+	var capturedAuthors []struct {
+		pid, from, fp, invite, decision string
+		agent                           bool
+	}
 	found := false
 	for rows.Next() {
 		var conv, pid, lid, kind, sub, raw, from, fp, human string
@@ -347,12 +350,22 @@ func externalOutputRequestMode(q dbq, in envelope.Inner, info ParticipationInfo,
 			}
 		}
 		agent := h.AgentAuthor()
-		if agent {
-			agentAuthors = append(agentAuthors, struct{ pid, from, fp string }{h.AuthorPID, from, fp})
+		guest := h.AuthorPID != "" && !agent
+		if agent || guest {
+			var scope envelope.HumanScope
+			for _, s := range h.Audience {
+				if s.PID == h.AuthorPID {
+					scope = s
+				}
+			}
+			capturedAuthors = append(capturedAuthors, struct {
+				pid, from, fp, invite, decision string
+				agent                           bool
+			}{h.AuthorPID, from, fp, scope.Invite, scope.Decision, agent})
 		}
 		if conv != in.Conv || pid != info.PID || sub != "" || kind != envelope.KindQuestion && kind != envelope.KindTask || !progress && replyKind(kind) != in.Kind ||
 			json.Unmarshal([]byte(raw), &target) != nil || target.Address != info.Host.Address || target.Fingerprint != info.Host.Fingerprint || target.AgentID != info.AgentID ||
-			!agent && (!m.device(from, fp) || !m.requestEpoch(from, fp, &target)) || lid == "" || found && (lid != originalLID || fp != originalKey) {
+			!agent && !guest && (!m.device(from, fp) || !m.requestEpoch(from, fp, &target)) || lid == "" || found && (lid != originalLID || fp != originalKey) {
 			return reasonInvalid, errors.New("external output does not match one exact member request and participation host")
 		}
 		found, originalLID, originalKey = true, lid, fp
@@ -361,20 +374,23 @@ func externalOutputRequestMode(q dbq, in envelope.Inner, info ParticipationInfo,
 		return "", err
 	}
 	rows.Close()
-	for _, au := range agentAuthors {
+	for _, au := range capturedAuthors {
 		p, err := participationIn(q, in.Conv, au.pid, m, self)
 		if err != nil {
 			return reasonProof, err
 		}
 		authorized := p.Claimable()
-		if !authorized && historical {
+		if !au.agent {
+			authorized = p.HumanActive() || historical && p.State == PartDismissed && p.Held == 0 && p.Conflict == ""
+		}
+		if au.agent && !authorized && historical {
 			authorized, err = retainedAssistant(q, p, m.historyEvents)
 			if err != nil {
 				return reasonProof, err
 			}
 		}
-		if !authorized || p.Host.Address != au.from || p.Host.Fingerprint != au.fp {
-			return reasonInvalid, errors.New("output requester agent no longer has its original authority")
+		if !authorized || (p.Role == "") != au.agent || p.Invite != au.invite || p.Decision != au.decision || p.Host.Address != au.from || p.Host.Fingerprint != au.fp {
+			return reasonInvalid, errors.New("output requester no longer has its exact captured authority")
 		}
 	}
 	if !found {
@@ -439,6 +455,9 @@ func parseGrantedExcerpt(in envelope.Inner, info ParticipationInfo) (HistoryItem
 }
 
 func (a *Agent) sendExternalParticipation(ctx context.Context, root protocol.ConvRoot, raw []byte, info ParticipationInfo, out ConvOutgoing) (ConvSent, error) {
+	if envelope.Blank(out.Body) && len(out.Files) == 0 {
+		return ConvSent{}, errors.New("nothing to send")
+	}
 	binding, err := a.prepareReplyReceiver(out.ReplyReceiver)
 	if err != nil {
 		return ConvSent{}, err
@@ -475,6 +494,13 @@ func (a *Agent) sendExternalParticipation(ctx context.Context, root protocol.Con
 		out.Origin = envelope.OriginUI
 	}
 	lid, _ := sendID(ctx)
+	if m.group == nil && out.sub == "" && out.human == nil &&
+		!envelope.AgentTopicOrganization(envelope.Inner{PID: out.PID, Origin: out.Origin, TopicEvent: out.TopicEvent}) {
+		out.human, err = a.livePlan(ctx, info.Conv, "", info.PID, out.Topic)
+		if err != nil {
+			return ConvSent{}, err
+		}
+	}
 	if m.group != nil && out.sub == "" && out.human == nil && info.Member && !envelope.AgentTopicOrganization(envelope.Inner{PID: out.PID, Origin: out.Origin, TopicEvent: out.TopicEvent}) {
 		if out.Target == nil && out.ReplyTo != "" {
 			c, e := roomCauseIn(a.store.db, info.Conv, out.ReplyTo, a.Address, a.Self().Fingerprint())

@@ -739,6 +739,7 @@ type ConvMessage struct {
 	SendStopped       bool                 `json:"send_stopped,omitempty"`
 	DeliveryUncertain bool                 `json:"delivery_uncertain,omitempty"`
 	At                int64                `json:"at"` // received or created here, unix seconds (listed in that order, to the millisecond)
+	admittedMS        int64                // local storage time; never the sender's timestamp
 
 	// An agent's turn (agentTurn) sent by its participation's exact host
 	// key, as admission checks it (checkConversationAgent): for history,
@@ -844,6 +845,7 @@ func (s *store) convMessages(conv, self, selfFP string, own map[string]bool, sel
 			&m.Emotion, &target, &m.State, &m.Detail, &m.At, &ms, &m.PID, &m.Job, &m.JobDetail, &to, &m.Claimed, &m.AgentID, &m.status, &m.Quote, &m.Sent, &person, &m.Topic, &topicEvent, &m.TopicDone, &m.SendStopped, &m.DeliveryUncertain, &m.SendGroup); err != nil {
 			return nil, err
 		}
+		m.admittedMS = ms
 		if topicEvent != "" {
 			json.Unmarshal([]byte(topicEvent), &m.TopicEvent)
 		}

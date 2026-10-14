@@ -619,14 +619,14 @@ func (a *Agent) agentPrompt(j job, r *Responder, lookupText string, contexts ...
 			audience = append(audience, promptLabel(p.info.Label))
 		}
 		slices.Sort(audience)
-		fmt.Fprintf(&b, "You are the agent of %s, running on their device %s. Your owner accepted bounded participation in the group between %s. Replies go only to its current human members and this exact invited host.%s Use selected earlier grants and new group turns explicitly granted while your membership is active; never other assistants' native sessions.\n", host, hostAt, strings.Join(audience, ", "), also)
+		fmt.Fprintf(&b, "You are the agent of %s, running on their device %s. Your owner accepted bounded participation in the group between %s. Replies stay within its current authorized audience.%s Use selected earlier grants and new messages within your invited chat or topic while participating, including other agents' verified replies; never other assistants' native sessions.\n", host, hostAt, strings.Join(audience, ", "), also)
 	} else if info.External {
 		var audience []string
 		for _, member := range m.root.Members {
 			p := m.persons[member.Person]
 			audience = append(audience, promptLabel(p.info.Label))
 		}
-		fmt.Fprintf(&b, "You are the agent of %s, running on their device %s. %s accepted bounded participation in the direct conversation between %s; your reply is sent to those two members.%s You are an invited external agent, with selected snapshots and addressed turns only, not ordinary room membership or ambient history access.\n", host, hostAt, host, strings.Join(audience, " and "), also)
+		fmt.Fprintf(&b, "You are the agent of %s, running on their device %s. %s accepted bounded participation in the direct conversation between %s; your reply is sent to those two members.%s You are an invited external agent. You see selected earlier snapshots and new messages within your invited chat or topic while participating. This does not make your host a conversation member or share other topics or native sessions.\n", host, hostAt, host, strings.Join(audience, " and "), also)
 	} else {
 		fmt.Fprintf(&b, "You are the agent of %s, running on their device %s. %s accepted your participation in their direct conversation with %s; your reply is sent to both of them.%s\n", host, hostAt, host, other, also)
 	}
@@ -1242,7 +1242,7 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 		granted[g] = true
 	}
 	roomRefs := map[protocol.GrantRef]bool{}
-	if info.Member && info.Claimable() {
+	if info.Claimable() {
 		rows, err := a.store.db.Query(`SELECT lid,fingerprint FROM room_context WHERE conv=? AND pid=?`, info.Conv, info.PID)
 		if err != nil {
 			return ParticipationContext{}, err
@@ -1264,9 +1264,23 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 	found := map[protocol.GrantRef]bool{}
 	var selected []ConvMessage
 	var lines []string
+	// Old DM clients did not index live context. Recover only after this
+	// exact host's original signed acceptance in local admission order;
+	// sender-claimed times alone never create access. Replicas and snapshots
+	// cannot supply the boundary or become live turns.
+	legacyDM := m.group == nil && info.Claimable()
+	accepted := false
+	var acceptedMS int64
 	for _, msg := range msgs {
 		if before != "" && msg.ID == before {
 			break
+		}
+		if legacyDM && msg.Sub == envelope.SubEvent && !msg.History && !msg.Replica &&
+			msg.From == info.Host.Address && msg.Key == info.Host.Fingerprint {
+			if ev, e := protocol.ParseParticipationEvent([]byte(msg.Body)); e == nil &&
+				ev.Type == protocol.EventAccept && ev.Hash() == info.Decision {
+				accepted, acceptedMS = true, msg.admittedMS
+			}
 		}
 		ref := contextRef(msg)
 		if len(excluded) > 0 && slices.Contains(excluded[0], ref) {
@@ -1312,7 +1326,7 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 			} else {
 				c.Unrelated++
 			}
-		case roomRefs[ref] && msg.Sub == "" && !msg.History && msg.ExcerptPID == "":
+		case (roomRefs[ref] || legacyDM && accepted && msg.admittedMS > acceptedMS) && msg.Sub == "" && (!msg.Replica || info.Member) && !msg.History && msg.ExcerptPID == "":
 			c.Addressed++
 			authorPID := msg.PID
 			if msg.Human != nil && msg.Human.AgentAuthor() {
@@ -1322,11 +1336,19 @@ func (a *Agent) agentContextForRun(info ParticipationInfo, before string, limit 
 			case msg.VerifiedAgent && authorPID == info.PID && msg.From == info.Host.Address && msg.Key == info.Host.Fingerprint:
 				line = "You (the agent), " + msg.Kind + ": " + shown
 			case msg.VerifiedAgent:
-				line = fmt.Sprintf("Verified group agent (PID %s; host device %s; claimed owner name %q), %s: %s", authorPID, msg.From, names[msg.From], msg.Kind, shown)
+				if info.Member {
+					line = fmt.Sprintf("Verified group agent (PID %s; host device %s; claimed owner name %q), %s: %s", authorPID, msg.From, names[msg.From], msg.Kind, shown)
+				} else {
+					line = who + ": " + shown
+				}
 			case msg.PID == info.PID && (msg.Kind == envelope.KindQuestion || msg.Kind == envelope.KindTask) && msg.Target != nil && msg.Target.Address == info.Host.Address && msg.Target.Fingerprint == info.Host.Fingerprint:
 				line = who + ", " + msg.Kind + " for you: " + shown
 			default:
-				line = "Verified group participant (claimed name " + fmt.Sprintf("%q", names[msg.From]) + "; device " + msg.From + "): " + shown
+				if info.Member {
+					line = "Verified group participant (claimed name " + fmt.Sprintf("%q", names[msg.From]) + "; device " + msg.From + "): " + shown
+				} else {
+					line = who + ": " + shown
+				}
 			}
 		case msg.Replica:
 			c.Replicas++

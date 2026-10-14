@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
+	"time"
+
 	"github.com/misunders2d/agentnet/internal/envelope"
 	"github.com/misunders2d/agentnet/internal/identity"
 	"github.com/misunders2d/agentnet/internal/lockfile"
 	"github.com/misunders2d/agentnet/internal/protocol"
-	"time"
 )
 
 // ownHumanPID is this device's exact accepted human participation in conv
@@ -53,7 +55,8 @@ func (a *Agent) sendHumanTurn(ctx context.Context, root protocol.ConvRoot, raw [
 		// Its local reply receiver binds the exact host copy (addConvOutbox);
 		// a cross-device receiver would route the request (ReceiverRoute),
 		// which a human-audience request never carries.
-		if binding != nil && (binding.receiver.Host != nil || binding.remote != nil || binding.setup != nil) {
+		if binding != nil && (binding.receiver.Host != nil || binding.remote != nil || binding.setup != nil) &&
+			slices.ContainsFunc(h.Proof, func(e protocol.ParticipationEvent) bool { return e.Role == protocol.RoleHuman }) {
 			return ConvSent{}, errors.New("human: with guests present, a reply receiver is this device's own only")
 		}
 	case output:
@@ -331,6 +334,9 @@ func (a *Agent) sendHumanTurn(ctx context.Context, root protocol.ConvRoot, raw [
 	sent := ConvSent{ID: local.ID, LID: in.LID, State: protocol.StateDelivered}
 	if len(copies) > 0 {
 		sent.ID = copies[0].env.ID
+	}
+	if request {
+		sent.ID = in.LID // the exact executable copy, independent of audience order
 	}
 	for _, c := range copies {
 		cp := ConvCopy{ID: c.env.ID, To: c.env.To, State: c.state}
