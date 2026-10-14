@@ -16,6 +16,8 @@ This record starts with v0.8.1; earlier releases remain on the
 - Attribute agent-authored requests to the asking agent and hide a local retry
   when its originating run has ended. Explicit handling keeps the request audit
   and clears only that request's archive blocker.
+- Show message previews without Markdown formatting markers and running times
+  in local time, while preserving explicitly named topics and stored content.
 - Show the exact own agent's reported model and reasoning in the picker,
   details and active agent chat, with timestamps and clear missing-report
   explanations. Native settings and permissions stay unchanged.

@@ -17,6 +17,7 @@ import {
   participationOf, phaseOf, placeOf, remoteNeedsHumanDetail, requestText, waitsElsewhere, type Asker, type Phase, type Req,
 } from "./Approvals.words";
 import { sendID } from "../optimistic.mjs";
+import { localRunningDetail } from "../runningDetail";
 import { AnswerSheet, ConfirmSheet, DeclineSheet } from "./Approvals.sheets";
 import { focusComposer } from "./Composer.focus";
 import { decidersWords } from "./Approvals.reports";
@@ -124,7 +125,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
   const named = mine.named;
   const notice = isThreadMsg(m) && m.kind === "message" && m.status === "review_notice";
   const conv = dm?.id || thread?.id || "";
-	const said = (isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? remoteNeedsHumanDetail(m, o) : "") || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "";
+	const said = localRunningDetail((isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? remoteNeedsHumanDetail(m, o) : "") || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "", phase === "running");
 	const proposal = m.proposal;
 
   const permissionPerson = thread?.permission_person;

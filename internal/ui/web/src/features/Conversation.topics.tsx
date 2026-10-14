@@ -170,7 +170,7 @@ export function TopicBar({ thread,dm }: { thread?: T.Thread;dm?:T.DMThread }) {
         const body = (
           <>
             <TopicMark t={t} compact onInk={lit} />
-            <span className="min-w-0 truncate">{firstLine(t.title, TOPICS.barTitle) || "Untitled"}</span>
+            <span className="min-w-0 truncate">{firstLine(t.title, TOPICS.barTitle, t.renamed) || "Untitled"}</span>
             {t.unread > 0 && <span aria-hidden="true" className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-danger px-1 text-[11px] font-bold text-white tnum">{t.unread}</span>}
           </>
         );

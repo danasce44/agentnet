@@ -74,7 +74,7 @@ export function PersonTopics({ dm, main, onMain }: { dm: T.DMThread; main: strin
  return <>
   <nav aria-label="Topics" data-part="topic-bar" className="flex min-w-0 items-center gap-2 border-b border-hairline bg-canvas px-4 py-2">
    <button type="button" aria-pressed={selectedMain} onClick={onMain} className={chip+(selectedMain?"bg-ink text-canvas":"bg-surface")}>Main</button>
-   {selectedTopic ? <TopicMenu topic={selectedTopic} onAll={()=>setOpen(true)} trigger={<Menu.Trigger className={chip+"flex-1 bg-ink text-canvas"} aria-label={topicLabel(selectedTopic)+", open topic, menu"}>{firstLine(selectedTopic.title,30)}</Menu.Trigger>}/> : current&&<button type="button" aria-current="true" onClick={()=>setOpen(true)} className={chip+"flex-1 bg-ink text-canvas"}>{firstLine(current.title,30)}</button>}
+   {selectedTopic ? <TopicMenu topic={selectedTopic} onAll={()=>setOpen(true)} trigger={<Menu.Trigger className={chip+"flex-1 bg-ink text-canvas"} aria-label={topicLabel(selectedTopic)+", open topic, menu"}>{firstLine(selectedTopic.title,30,selectedTopic.renamed)}</Menu.Trigger>}/> : current&&<button type="button" aria-current="true" onClick={()=>setOpen(true)} className={chip+"flex-1 bg-ink text-canvas"}>{firstLine(current.title,30)}</button>}
    <Button size="sm" variant="outline" onClick={()=>setOpen(true)} aria-label={"All topics"+(knownCount?" ("+entries.length+")":"")}>{wide?"All topics"+(knownCount?" ("+entries.length+")":""):"All"+(knownCount?" "+entries.length:"")}</Button>
    <Button size="sm" variant="ghost" aria-label="New topic" aria-pressed={!!draft?.newTopic} onClick={()=>store.setDraft(dm.id,{...store.draft(dm.id),topic:undefined,newTopic:!draft?.newTopic,replyTo:undefined})}>{wide?"New topic":"+"}</Button>
   </nav>

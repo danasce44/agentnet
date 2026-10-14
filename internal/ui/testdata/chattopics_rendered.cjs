@@ -9,12 +9,14 @@ assert(evidence, 'AGENTNET_SCREENSHOTS must be outside the repository');
 fs.mkdirSync(evidence, { recursive: true, mode: 0o700 });
 const boot = `
 const kind=new URL(location).searchParams.get('kind'),skin=new URL(location).searchParams.get('skin');
+const renamedMode=${!!process.env.P28_RENAMED_ONLY};
 const stopMode=${!!process.env.P11_STOP_ONLY},draftsMode=${!!process.env.P11_DRAFTS_ONLY},pendingMode=${!!process.env.P11_PENDING_ONLY},importMode=${!!process.env.P11_HISTORY_IMPORT_ONLY};
 const conv='c'.repeat(64),at='2026-10-05T10:00:00Z';
 const person=(label,address,key)=>({person:label.toLowerCase().padEnd(32,'a'),label,address,fingerprint:key,state:'pinned',devices:[{address,fingerprint:key}]});
-const me=person('Sergey','sergey/laptop','own-key'),peer=person('Vitalii','vitalii/desktop','peer-key');me.state='self';
+const me=person(renamedMode?'Atlas':'Sergey',renamedMode?'atlas/laptop':'sergey/laptop','own-key'),peer=person(renamedMode?'Briar':'Vitalii',renamedMode?'briar/desktop':'vitalii/desktop','peer-key');me.state='self';
 const topics=Array.from({length:4},(_,i)=>({id:String(i+1).repeat(32),...(kind==='agent'?{peer:peer.address}:{conv}),title:'Topic '+(i+1),last:'Topic '+(i+1)+' message',last_at:at,count:1,unread:0,review:0,running:0,waiting:false,pending:false,state:'active',quiet_since:at}));
-const message=(i)=>({id:topics[i].id,lid:topics[i].id,from:peer.address,dir:'in',body:'Topic '+(i+1)+' message',kind:'message',at,state:'stored',actions:[],...(kind==='agent'?{to:me.address,author:{label:'Vitalii',about:'Fixture author'}}:{topic:topics[i].id})});
+if(renamedMode){Object.assign(topics[0],{title:'**Literal name**',renamed:true});Object.assign(topics[1],{title:'**Automatic title**',renamed:false});Object.assign(topics[2],{title:String.fromCharCode(92)+'*literal'+String.fromCharCode(92)+'* _code_',renamed:true});}
+const message=(i)=>({id:topics[i].id,lid:topics[i].id,from:peer.address,dir:'in',body:'Topic '+(i+1)+' message',kind:'message',at,state:'stored',actions:[],...(kind==='agent'?{to:me.address,author:{label:peer.label,about:'Fixture author'}}:{topic:topics[i].id})});
 const main={id:'a'.repeat(32),lid:'a'.repeat(32),from:peer.address,dir:'in',body:'Quick main flow message',kind:'message',at,state:'stored',actions:[]};
 let thread=kind==='agent'?{id:topics[0].id,peer:peer.address,key:{pinned:'peer-key'},approved:false,task_grant:'',topic:topics[0],messages:[message(0)]}:{id:conv,kind:kind==='group'?'group':'dm',title:kind==='group'?'Team launch':'',peer:kind==='group'?{label:'Team launch',address:'',state:''}:peer,role:'member',members:[{...me,admin:true},peer],frozen:'',agents:[],guests:[],topics,messages:[main,...topics.map((_,i)=>message(i))]};
 // Pending: requests this person sent to the peer's agent. Neither has a current
@@ -49,7 +51,7 @@ const host={version:1,platform:'daemon',workspace:{id:'default',name:'P11 local 
  if(p.startsWith('/api/overview'))return structuredClone(overview);
  if(draftsMode&&p.startsWith('/api/dm?')&&url.searchParams.get('id')==='d'.repeat(64))return {...thread,id:'d'.repeat(64),messages:[],topics:[]};
  if(p.startsWith('/api/dm?'))return structuredClone(importMode&&url.searchParams.get('id')===destination.id?destination:thread);
- if(p.startsWith('/api/thread?')){if(pendingMode||stopMode)return structuredClone(thread);const t=topics.find(t=>t.id===url.searchParams.get('id'))||topics[0];return {id:t.id,peer:peer.address,key:{pinned:'peer-key'},approved:false,task_grant:'',topic:structuredClone(t),messages:[t.id==='f'.repeat(32)?window.freshMessage:{...message(Number(t.title.slice(-1))-1)}]};}
+ if(p.startsWith('/api/thread?')){if(pendingMode||stopMode)return structuredClone(thread);const t=topics.find(t=>t.id===url.searchParams.get('id'))||topics[0];return {id:t.id,peer:peer.address,key:{pinned:'peer-key'},approved:false,task_grant:'',topic:structuredClone(t),messages:[t.id==='f'.repeat(32)?window.freshMessage:{...message(topics.indexOf(t))}]};}
  if(p.startsWith('/api/topics?')){const state=url.searchParams.get('state'),q=(url.searchParams.get('q')||'').toLowerCase();const rows=topics.filter(t=>(!state||t.state===state)&&t.title.toLowerCase().includes(q));return {topics:structuredClone(rows),matched:rows.length};}
  if(importMode&&p==='/api/history/contribution/preview'){
   const operation=String(++fixture.previews+5).repeat(32),selected=new Set((body.files||[]).map(f=>f.id+':'+f.index));
@@ -122,6 +124,29 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, tag + ': page fits');
         await page.evaluate(() => document.fonts.ready); await shot('main');
 
+
+        if(process.env.P28_RENAMED_ONLY){
+          await all().click();const list=page.getByRole('dialog',{name:'All topics',exact:true});
+          const literal=list.getByRole('button',{name:/^\*\*Literal name\*\*/});await literal.waitFor();
+          const title=row=>row.locator('span.truncate').first();
+          const observed={list:await title(literal).innerText(),automatic:await title(list.getByRole('button',{name:/^\*\*Automatic title\*\*/})).innerText(),escaped:await title(list.getByRole('button',{name:/_code_/})).innerText()};
+          await shot('renamed-list');await literal.click();
+          const selected=page.locator('[data-part="topic-bar"]').getByRole('button',{name:/^\*\*Literal name\*\*/});await selected.waitFor();observed.chip=await selected.innerText();await shot('renamed-chip');
+          fs.writeFileSync(path.join(evidence,tag+'-renamed.json'),JSON.stringify(observed,null,2));
+          if(kind==='agent'){
+          if(width<500)await page.getByRole('button',{name:'Back to chats',exact:true}).click();
+          if(width<500)await page.getByRole('button',{name:'Search chats',exact:true}).click();await page.getByPlaceholder('Search people, agents, groups',{exact:true}).fill('Literal');
+          const results=page.getByRole('list',{name:'Matching topics',exact:true});await results.waitFor();
+          observed.search=await title(results.getByRole('button',{name:/^\*\*Literal name\*\*/})).innerText();await shot('renamed-search');
+          }
+          fs.writeFileSync(path.join(evidence,tag+'-renamed.json'),JSON.stringify(observed,null,2));
+          assert.equal(observed.list,'**Literal name**',tag+': renamed list title stays literal');
+          assert.equal(observed.chip,'**Literal name**',tag+': renamed chip stays literal');
+          if(kind==='agent')assert.equal(observed.search,'**Literal name**',tag+': renamed search title stays literal');
+          assert.equal(observed.automatic,'Automatic title',tag+': automatic title keeps Markdown projection');
+          assert.equal(observed.escaped,'\\*literal\\* _code_',tag+': literal escapes/code markers stay typed');
+          console.log(tag+' renamed titles PASS');combinations++;continue;
+        }
 
         if(process.env.P11_STOP_ONLY){
           const stop=page.getByRole('button',{name:'Stop',exact:true});await stop.waitFor();

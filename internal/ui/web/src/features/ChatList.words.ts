@@ -46,7 +46,8 @@ export function chatItems(o: T.Overview | null, names: Record<string, string>): 
     for (const i of group) {
       if (i.open.kind === "dm") i.note = started(i, exact);
       else {
-        const first = firstLine(threads.get(i.open.id)?.title, 80);
+        const topic = threads.get(i.open.id);
+        const first = firstLine(topic?.title, 80, topic?.renamed);
         if (first && first !== i.last) i.note = "“" + first + "”";
       }
     }

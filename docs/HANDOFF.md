@@ -23,7 +23,8 @@ Source progress: cache repair, exact model/reasoning reports, legacy lists and
 request cards are integrated with the rebuilt Comic bundle. Moved-topic sharing
 and truthful destination notices passed independent focused checks on the
 combined source, preserving model-reader and attachment admission guards.
-Steering and links remain under review. These are source checks; packaged
+Comic preview/time formatting and literal topic names also pass combined
+desktop/phone rendering. Steering and links remain under review. These are source checks; packaged
 Android recovery, all-skins/native/platform and release gates remain pending.
 The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
 `3599582f`; exact file bytes, limits and removal guards pass the four-case

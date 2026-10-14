@@ -65,7 +65,7 @@ export function TopicResults({ query, onCount }: { query: string; onCount: (n: n
               <AgentAvatar seed={t.peer} size={36} device={deviceKind(t.peer)} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{firstLine(t.title, TOPICS.listTitle) || "Untitled"}</span>
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{firstLine(t.title, TOPICS.listTitle, t.renamed) || "Untitled"}</span>
                   <time dateTime={t.lastAt} className="shrink-0 text-[12px] font-semibold text-muted tnum">{when(t.lastAt)}</time>
                 </span>
                 <span className="mt-0.5 flex items-center gap-2">

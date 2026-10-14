@@ -6,6 +6,7 @@
 // lists actions for it. Delivery says only what receipts prove.
 import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import { sendID } from "../optimistic.mjs";
+import { localRunningDetail } from "../runningDetail";
 import {
   IconArrowBackUp, IconBolt, IconMessageQuestion, IconCheck, IconChecks, IconClock, IconAlertTriangle, IconEye, IconCircleCheckFilled, IconCircle,
 } from "@tabler/icons-react";
@@ -23,7 +24,7 @@ import { MessageFiles } from "./Message.files";
 import { EmojiDialog, Reactions } from "./Message.reactions";
 import { ActionSheet, DeleteMessage, DetailsSheet, EditBox, Toolbar, inside, useTouchGestures, type Acts, type Can } from "./Message.actions";
 import {
-  agentLabel, agentOf, answerTo, eventKind, ev, excerpt, guestOf, isReply, isRequest, isThreadMsg, joinedBefore, lower, problem, requestLabel, requestState, shownText, whoWrote,
+  agentLabel, agentOf, answerTo, eventKind, ev, excerpt, guestOf, isReply, isRequest, isThreadMsg, joinedBefore, lower, problem, requestLabel, requestState, shownText, whoWrote, working,
   type AnyMsg, type Ctx, type Who,
 } from "./Message.model";
 import { RemindSheet, ReminderLine } from "./Reminders";
@@ -262,7 +263,8 @@ function Under({ m, ctx, all, who, status, answer, onDetails, onJump }: { m: Any
   const target = !isThreadMsg(m) ? agentOf(ctx, m.pid) : undefined;
   const duplicateName = target && (ctx.dm?.agents || []).some(a => a.pid !== target.pid && agentLabel(a, ctx) === agentLabel(target, ctx));
   const label = requestLabel(m, ctx) + (duplicateName ? " · " + deviceWords(target.host.address, ctx.overview) + " · " + (target.agent_id || target.pid).slice(0, 8) : "");
-  const detail = isThreadMsg(m) ? m.detail : m.job_detail || m.detail;
+  const rawDetail = isThreadMsg(m) ? m.detail : m.job_detail || m.detail;
+  const detail = localRunningDetail(rawDetail || "", working(m, all, ctx));
   if (label) {
     const st = requestState(m, all, ctx);
     const tone = st.tone === "ok" ? "text-ok-ink" : st.tone === "work" ? "text-agent-ink" : st.tone === "wait" ? "text-approval-ink" : st.tone === "bad" ? "text-danger" : "text-muted";

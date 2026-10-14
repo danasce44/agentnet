@@ -168,7 +168,7 @@ export function AllTopics({ open, onOpenChange, peer,conv, agent, current, flat 
                       className={"flex min-w-0 flex-1 flex-col gap-1 rounded-2xl border px-3 py-2.5 text-left transition-colors duration-200 "
                         + (t.id === current ? "border-outline bg-surface shadow-pop-sm" : "border-transparent hover:bg-sunken")}>
                       <span className="flex min-w-0 items-center gap-2">
-                        <span className={"min-w-0 flex-1 truncate text-[15.5px] " + (t.unread ? "font-extrabold" : "font-bold")}>{firstLine(t.title, TOPICS.listTitle) || "Untitled"}</span>
+                        <span className={"min-w-0 flex-1 truncate text-[15.5px] " + (t.unread ? "font-extrabold" : "font-bold")}>{firstLine(t.title, TOPICS.listTitle, t.renamed) || "Untitled"}</span>
                         <time dateTime={t.lastAt} className="shrink-0 text-[12px] font-semibold text-muted tnum">{when(t.lastAt)}</time>
                       </span>
                       <span className="flex min-w-0 items-center gap-2">

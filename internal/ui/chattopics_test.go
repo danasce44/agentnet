@@ -180,3 +180,11 @@ func TestTopicPendingRequestsComicRendered(t *testing.T) {
 	t.Setenv("AGENTNET_SCREENSHOTS", t.TempDir())
 	t.Log(browserCheck(t, "testdata/chattopics_rendered.cjs"))
 }
+
+// A typed topic name is literal, while automatic names remain message previews.
+func TestRenamedTopicTitlesComicRendered(t *testing.T) {
+	privateScreenshots(t)
+	t.Setenv("P11_SKINS", "comic")
+	t.Setenv("P28_RENAMED_ONLY", "1")
+	t.Log(browserCheck(t, "testdata/chattopics_rendered.cjs"))
+}

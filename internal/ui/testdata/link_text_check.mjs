@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rawLinkParts, shortLinkLabel } from '../skins/shared/link-text.mjs';
+import { rawLinkParts, shortLinkLabel, previewText, localRunningDetail } from '../skins/shared/link-text.mjs';
 const url='https://example.test/'+('long/'.repeat(25))+'?q=x%2Fy&u=%E2%9C%93#frag';
 for(const source of [url,'See '+url+'.','<'+url+'>','**'+url+'**','- '+url,'> '+url]) {
  const parts=rawLinkParts(source).filter(p=>typeof p!=='string');
@@ -13,3 +13,23 @@ assert.equal(shortLinkLabel(credentials,credentials),'misleading.test@example.te
 assert.equal(rawLinkParts(url+' and '+url).filter(p=>typeof p!=='string').length,2);
 assert.equal(rawLinkParts('`'+url+'` then '+url).filter(p=>typeof p!=='string').length,1);
 console.log('raw link parser vectors passed');
+
+for (const [source,expected] of [
+ ['**Stock:** Ready','Stock: Ready\n'],['# Heading\n\n- *One*\n- Two','Heading\n\nOne\nTwo\n'],
+ ['\\*literal\\* and `code_*`','*literal* and code_*\n'],['[Guide](https://example.test)','Guide\n'],
+ ['<script>alert(1)</script>','<script>alert(1)</script>'],['A &amp; B','A & B\n'],
+ ['```\na_* &amp;\n```','a_* &amp;\n'],['ordinary text','ordinary text'],
+]) assert.equal(previewText(source),expected,source);
+const source='**Stock:** Ready';previewText(source);assert.equal(source,'**Stock:** Ready','preview preserves original copy text');
+const clause='Running since 2026-10-11T09:02:32Z. Stop is available; nothing stops automatically unless you set a time limit.';
+const oldTZ=process.env.TZ;process.env.TZ='Europe/Kyiv';
+try {
+ const local=localRunningDetail(clause,true);
+ assert(!local.includes('2026-10-11T09:02:32Z'));assert.match(local,/12:02/);
+ assert.equal(localRunningDetail(clause,false),clause,'non-running text is untouched');
+ const prefix='Seems stuck: no harness output or progress for 5 minutes. ';
+ assert.equal(localRunningDetail(prefix+clause,true),prefix+local);
+ for(const text of [clause.replace('2026-10-11','2026-02-31'),clause.replace('09:02:32Z','99:02:32Z'),clause+' Other text.','User says '+clause]) assert.equal(localRunningDetail(text,true),text,'unknown/invalid detail stays literal');
+ assert.equal(clause,'Running since 2026-10-11T09:02:32Z. Stop is available; nothing stops automatically unless you set a time limit.');
+} finally {if(oldTZ===undefined)delete process.env.TZ;else process.env.TZ=oldTZ;}
+console.log('preview and local running-detail vectors passed');
