@@ -6,6 +6,11 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
+The prepared [v0.8.28 package](plans/V0_8_28.md) contains seven focused bug-fix
+items, stable chat/topic links (MEL-625) and three qualification tracks. Its Linear
+milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
+are recorded; implementation and new verification have not started.
+
 Do not tag or publish the next release until both are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.

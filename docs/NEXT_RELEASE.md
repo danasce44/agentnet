@@ -1,3 +1,17 @@
+# v0.8.28 — prepared release package
+
+The current planned work is [V0_8_28.md](plans/V0_8_28.md): WebKit crash and
+corrupted Android skin-cache blockers; moved-topic invitations, retained legacy
+list editing, truthful move notices, explicit request resolution and presentation
+fixes; stable chat/topic links; focused Android, Windows and native-permission
+qualification. The Linear milestone has the same scope. Implementation has not
+started; preserve existing verified behavior and batch focused fixes before one
+integrated release gate pass. Publication and rollout remain gated.
+
+The records below describe earlier releases and their evidence.
+
+---
+
 # v0.8.20 fixes and remaining verification
 
 ## October 11 group invitations, compact tags and passive diagnostics
