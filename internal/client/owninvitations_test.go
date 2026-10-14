@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestOwnInvitationVisibleOnLinkedDevice(t *testing.T) {
@@ -132,33 +131,34 @@ func testOwnInvitationUpdates(t *testing.T, w *world, phone *Agent, inv GroupInv
 	if n := count(t, again, "outbox WHERE sub='invitation-sync'"); n != 2 {
 		t.Fatal("restart duplicate", n)
 	}
-	var profile protocol.Profile
-	label, device, _ := protocol.SplitAddress(phone.Address)
-	if err = again.hub.do(tctx(t), "GET", "/v1/agents/"+label+"/"+device+"/profile", nil, &profile); err != nil {
-		t.Fatal(err)
-	}
-	publish := func(ts int64, caps []string) {
-		t.Helper()
-		slices.Sort(caps)
-		r := protocol.CapsRecord{Address: phone.Address, Session: profile.Sessions[0], TS: ts, Caps: caps}
-		r.Sign(phone.id.Sign)
-		if err := phone.hub.do(tctx(t), "PUT", "/v1/caps", r, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	publish(time.Now().Unix()+100, []string{protocol.CapEnv2, protocol.CapPerson, protocol.CapRoom})
+	// Supports requires every live session. Use the shared fixture publisher,
+	// which waits for startup and updates each listed session, not slot zero.
+	signCapsAfter(t, phone, []string{protocol.CapEnv2, protocol.CapPerson, protocol.CapRoom})
 	if handled, allowed, err := again.mayDeliverInvitationSync(latest); err != nil || !handled || allowed {
 		t.Fatalf("old reader allowed %v %v %v", handled, allowed, err)
 	}
+	var state, why string
+	if err := again.store.db.QueryRow(`SELECT state,coalesce(error,'') FROM outbox WHERE id=?`, latest.ID).Scan(&state, &why); err != nil || state != stateConvWaiting || !strings.HasPrefix(why, WaitPeerUpdate) {
+		t.Fatalf("old reader did not park the exact copy for its update: state=%s detail=%s error=%v", state, why, err)
+	}
 	own := slices.DeleteFunc(slices.Clone(ownCaps), func(c string) bool { return c == protocol.CapConvClear || c == protocol.CapOwnSyncV2 })
-	publish(time.Now().Unix()+200, append(own, protocol.CapOwnSyncV2))
+	signCapsAfter(t, phone, append(own, protocol.CapOwnSyncV2))
 	features, err := again.relayFeatures(tctx(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	again.releaseConv(tctx(t), features)
 	if handled, allowed, err := again.mayDeliverInvitationSync(latest); err != nil || !handled || !allowed {
-		t.Fatalf("upgraded reader stays held %v %v %v", handled, allowed, err)
+		again.store.db.QueryRow(`SELECT state,coalesce(error,'') FROM outbox WHERE id=?`, latest.ID).Scan(&state, &why)
+		key := phone.Self()
+		label, device, _ := protocol.SplitAddress(phone.Address)
+		var profile protocol.Profile
+		profileErr := again.hub.do(tctx(t), "GET", "/v1/agents/"+label+"/"+device+"/profile", nil, &profile)
+		t.Fatalf("upgraded reader stays held %v %v %v; copy=%s detail=%s sessions=%v os2=%v profileErr=%v", handled, allowed, err, state, why, profile.Sessions, profile.Supports(phone.Address, key.SignKey, protocol.CapOwnSyncV2), profileErr)
+	}
+	var kept []byte
+	if err := again.store.db.QueryRow(`SELECT state,envelope FROM outbox WHERE id=?`, latest.ID).Scan(&state, &kept); err != nil || state != stateQueued || string(kept) != string(raw) {
+		t.Fatalf("upgrade did not release the same exact queued copy: state=%s error=%v", state, err)
 	}
 	transport := again.hub.http.Transport
 	changed := false
