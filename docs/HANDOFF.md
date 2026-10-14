@@ -19,13 +19,14 @@ ACKs; its peer is signed synthetic. The separate group100.48s uses actual
 Codex/Claude/Pi, simultaneous owned processes, a signed child-task/result chain,
 late peer/file evidence and two ordered owner inputs in the original Codex
 attempt. No configuration/permission changes or replay; exact fixture processes
-are gone. The implementation helper is dismissed; only Android preparation remains.
+are gone. Both completed qualification helpers are dismissed; no owned helper pane remains.
 
 Android's successful v27 seed is retained, but a later passive observation finds
 all three named caches unreadable and its browser draft absent before intentional
 corruption. Native200 messages, queued ciphertext and managed files remain exact.
-Origin/backing-storage diagnosis is pending; no repair/cold-preservation or
-physical-phone pass. All-skins still fails three Zoom stored-message touch
+A passive85.678s observation confirms the same origin and usable owner-only
+paths/free storage; the browser/internal cause remains unproved. No repair/cold-
+preservation or physical-phone pass. All-skins still fails three Zoom stored-message touch
 assertions; automatic review refused its test-only page-global probe and an owner
 exception is pending. MEL587 has no causal fix. No tag/publication.
 
