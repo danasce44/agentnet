@@ -6,6 +6,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+## [0.8.28] — 2026-10-15
+
 - Group agents may delegate a task from an admitted question. The recipient's
   existing task consent and current identity, scope and cancellation checks
   still apply; native tools and permissions remain unchanged.
@@ -47,6 +49,13 @@ This record starts with v0.8.1; earlier releases remain on the
 - Run independent conversations for a registered agent in fresh native sessions,
   retaining exclusion for saved, selected or unverified shared sessions and
   exact cancellation and cleanup ownership.
+
+- Clean up detached scroll callbacks in standalone skins and refuse stale
+  Holonet message focus after navigation.
+
+Known issue: MEL-587 remains unfixed. The owner explicitly approved carrying
+the Linux WebKit renderer crash into the next release as urgent work; no
+crash fix, GPU workaround or renderer-kill behavior is claimed.
 
 ## [0.8.27] — 2026-10-14
 

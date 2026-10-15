@@ -4,85 +4,41 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Next release — qualification holds, October 15, 2026
+## v0.8.28 — qualified candidate, packaging pending
 
-v0.8.28 is unpublished. All12 client race selections and both UI partitions have
-passing evidence at their existing600s bounds, retaining unchanged partitions.
-Final6/9 pass565.161s/485.258s. Native Linux/macOS and Windows qualification,
-whole vet, mixed exactv0.8.27(57.701s) and real IndexedDB race(1.701s) pass.
-Platform and opt-in limits remain in [the release record](plans/V0_8_28.md).
+The required source, platform, compatibility, actual native-flow and collection
+checks have passing evidence, retaining unchanged partitions and recording skips
+separately. All12 client race selections and both UI partitions retain600s
+bounds; native Linux/macOS/Windows, whole vet, exactv0.8.27 mixed-version57.701s
+and actual IndexedDB race1.701s pass. Actual retained-DM Codex and
+Codex/Claude/Pi owner journeys pass174.412s with native setup unchanged.
 
-Actual owner-flow acceptance passes174.412s: retained-DM Codex73.92s consumes
-recovered initial/fresh verified refs and readonly files with two genuine ACKs;
-the separate Codex/Claude/Pi group100.48s covers overlapping work, a signed
-child-task/result chain, fresh peer/file evidence and ordered correction plus
-goal in the original Codex attempt. Native permissions and configuration stay
-unchanged. MEL-591/633 are In Review, not shipped.
+The final original Zoom touch journey passes28 measured taps and21 checks,
+including all400 genuine signed messages, exact stored IDs/quote parents and
+reload persistence. The Holonet-derived original1440/390 A/B/A contract also
+passes. Earlier full-run failures remain recorded; all other unchanged
+collection/overlay/gallery passes are retained. No single later full-suite pass
+is invented. The actual Holonet exception was stale focus after an awaited
+lookup; captured-host/generation/current-DM guards fix that path. Long history
+is initialized with the fixture-owned sender stopped, through one ordinary
+native client, before restarting its page. This is fixture preparation, not a
+production SQLite repair claim.
 
-Production source4727477b adds narrow recovery for an unreadable skin catalog
-across two existing modules. Focused component checks and the two affected
-Chromium/gallery cases pass10.927s. It refuses destructive catalog recreation
-when readable healthy metadata cannot be retained. The fresh original-key APK
-64f8ca6999478a254a066970da042b8285a4e842d901398242590315a4dc828c contains both
-corrected modules in both ABIs: build75.176s,37 unit passes, lint0 errors/6 warnings,
-package/signature/alignment verification pass. The earlier9e7 APK lacks this fix.
+Production source remains4727477b. Original-key APK64f8ca69 passes the actual
+chosen-cache/catalog repair and fresh-process persistence gate107.806s,
+preserving identity,200 message IDs/order/hashes,100 outbox rows including three
+queued ciphertexts, three encrypted files, origin and modes. The unrelated cache
+was already unreadable and the draft absent; neither is claimed recovered.
+Physical-phone sound/vibration acceptance is not claimed or requested again.
 
-Actual Android chosen-cache/catalog repair and fresh-process persistence now
-pass107.806s on that APK. Warm7.593s performs exactly one production gallery
-install; cold7.438s performs none and reads the same verified package, ready
-marker and catalog. Root independently matches original identity/database,
-200 message IDs/order/hashes,100 outbox rows including three queued ciphertexts,
-three encrypted files, origin and modes before/after both calls. The earlier
-saved-state failure came from normal Comic startup adding its two preference
-entries to an empty baseline; the fixture now requires that exact pair before
-and after, rejecting every other storage change. Original failed runs remain
-failed. The unrelated cache was already unreadable, and the draft already
-absent: neither is claimed recovered. No reset, re-seed, permission change or
-physical-phone action was used. Final host cleanup passes; the wrapper's raw
-exit1 from transient TCP TIME_WAIT remains recorded.
-
-Zoom's corrected public-CLI/DOM journey passes362.473s,28 measured taps and21
-checks, including exact stored IDs, quote parent and device-chat reload. The
-short31.582s diagnostic proves that reload briefly draws Everyone before
-restoring the retained chat; the fixture now waits for that restoration before
-using the existing public navigation. The three-file test-only patch is
-integrated in agentnet-skins;23 permanent regressions pass independently.
-The subsequent pinned full run passed102 cheap checks and all other skin
-journeys, but failed Zoom touch and the Holonet-derived scaffold contract.
-The actual scaffold stack showed an awaited message lookup focusing a detached
-DM. A narrow captured-host/generation/current-DM guard fixes that path; the
-original loaded1440/390 A/B/A contract now passes. Abort-managed scroll handlers
-also prevent callbacks after unmount in Classic, Holonet and Zoom.
-
-Zoom's latest failure is in fixture preparation: repeated CLI client opens hit
-SQLITE_BUSY before its browser journey. Receipt waits did not cure that failure.
-A fixture-only testdata sender now opens one ordinary native client and uses the
-same signed SendConv/SendMessage/CheckReplyTo methods. Its bounded20+20 probe
-passes exact public-CLI ID, author and predecessor-chain checks. The original
-400-message touch journey remains required; that small probe is not its pass.
-The ordinary collection runner has no180s whole-case bound; that earlier limit
-belonged to our wrapper. Retain unchanged full-run passes and rerun affected
-checks only.
-
-The owner explicitly allows v0.8.28 after the other required checks, carrying
-MEL-587 into the next release as urgent work. The crash has no causal fix; do not
-claim it resolved. Both historical cores
-now prove the exact WebKit/JSC build IDs. Matching official Ubuntu symbols,
-verified by SHA256/build ID/debuglink CRC, resolve the Skia fault to a TextStrike
-glyph-cache slot-array free during DirectMaskSubRun destruction. This is the
-detected bad free, not the first corrupting operation. ThinkPad's named Codex
-could not create its diagnostic directory under /tmp (read-only filesystem);
-the named background session has no writable roots. No permission change or
-repeated background diagnostic is authorized. Prepared evidence was delivered
-to the existing foreground ThinkPad task, without claiming analysis started.
-Earlier address-only follow-ups reached default Pi and supplied
-no substantiated native refusal; do not reuse that attribution.
-
-No tag/publication. One bounded skin-fixture helper remains for source review;
-all other owned helpers are dismissed. Emulator PIDs/groups are absent, ports
-are free, and shared ADB remains. The disconnected physical
-phone is not requested again or counted as a pass.
-
+The owner explicitly permits v0.8.28 after the other checks, carrying unresolved
+MEL-587 into the next release as urgent work. Matching historical WebKit/JSC IDs
+and official debug symbols identify a TextStrike glyph-cache slot-array free,
+not the earlier corrupting operation. No causal fix, GPU workaround, renderer
+kill, permission change or live replay is claimed. This decision is recorded on
+MEL-587. All completed owned helpers are dismissed and final fixture processes
+are absent. Tag-built asset verification and publication are next; nothing is
+reported published yet.
 
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
 items, stable chat/topic links (MEL-625) and four qualification tracks. Its Linear
