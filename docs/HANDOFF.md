@@ -4,94 +4,69 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## v0.8.28 — qualified candidate, packaging pending
+## Current release — v0.8.28, October 15, 2026
 
-The required source, platform, compatibility, actual native-flow and collection
-checks have passing evidence, retaining unchanged partitions and recording skips
-separately. All12 client race selections and both UI partitions retain600s
-bounds; native Linux/macOS/Windows, whole vet, exactv0.8.27 mixed-version57.701s
+[Download v0.8.28](https://github.com/misunders2d/agentnet/releases/tag/v0.8.28)
+or its [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.28/AgentNet-android.apk).
+Published **10:26:02 UTC**, immutable tag
+`f9c8b1c38c14a7a6d743b02f67f5bf59d57fd276`. All thirteen release assets
+(twelve packages/programs and SHA256SUMS) are downloaded and checksum verified.
+Exact-tag packaging workflow
+[38718962303](https://github.com/misunders2d/agentnet/actions/runs/38718962303)
+passes for Android, Linux, macOS and Windows. The public APK SHA256 is
+`1c5ee5a5c6669973a03558f8af30dedbd360885dd74686ac1d6a270e45706006`;
+original single signer, two ABIs, nondebuggable and 16KiB alignment are verified.
+The Linux program and extracted AppImage CLI report the exact clean tag.
+
+[Collection v2026.10.15](https://github.com/misunders2d/agentnet-skins/releases/tag/v2026.10.15),
+commit `e6f8607a651a4aa92ac257656e1b6a69125bf030`, publishes Classic, Holonet,
+Zoom and Pulp 1.3.0 plus Office 1.1.0 against the exact release pin. All 120
+remote package/preview files match the verified local catalog and consent digests.
+
+The authorized existing-relay rollout passes in59.149s. Only the Hub image
+changed to `agentnet-revived:v0.8.28-f9c8b1c3`, after verified full stopped-store
+backup `/opt/agentnet-revived/backups/pre-v0.8.28-xf53bb2i` (5512 entries).
+HTTPS and binary report v0.8.28; realm `4bd7c66953ccf5496fad8eadbab945bd`,
+47,756 messages,5505 blobs,13 agents,7 persons,19 chain rows and schema23
+remain exact. Configuration/data volume and the neighboring service are unchanged;
+Hub restarts0. No live identity/history/grants/requests were reset or replayed.
+
+All12 client race selections and both UI partitions retain600s bounds; native
+Linux/macOS/Windows, whole vet, exact published-v0.8.27 mixed-version57.701s
 and actual IndexedDB race1.701s pass. Actual retained-DM Codex and
 Codex/Claude/Pi owner journeys pass174.412s with native setup unchanged.
+Native-parent delegation coverage uses synthetic child responders; Antigravity
+sign-in and physical-phone/native OS acceptance are not claimed as passes.
 
-The final original Zoom touch journey passes28 measured taps and21 checks,
-including all400 genuine signed messages, exact stored IDs/quote parents and
-reload persistence. The Holonet-derived original1440/390 A/B/A contract also
-passes. Earlier full-run failures remain recorded; all other unchanged
-collection/overlay/gallery passes are retained. No single later full-suite pass
-is invented. The actual Holonet exception was stale focus after an awaited
-lookup; captured-host/generation/current-DM guards fix that path. Long history
-is initialized with the fixture-owned sender stopped, through one ordinary
-native client, before restarting its page. This is fixture preparation, not a
-production SQLite repair claim.
+Final original Zoom touch passes28 measured taps and21 checks, including400
+signed messages, exact stored IDs/quote parents and reload persistence. Original
+Holonet-derived1440/390 A/B/A also passes. Earlier full-run failures remain
+recorded; unchanged collection/overlay/gallery passes are retained, without
+inventing a later single full-suite pass. Holonet's stale post-lookup focus is
+fixed by captured-host/generation/current-DM guards. Long-history preparation
+stops only its owned fixture sender and uses ordinary native methods; this is
+not a production SQLite fix.
 
-Production source remains4727477b. Original-key APK64f8ca69 passes the actual
-chosen-cache/catalog repair and fresh-process persistence gate107.806s,
-preserving identity,200 message IDs/order/hashes,100 outbox rows including three
-queued ciphertexts, three encrypted files, origin and modes. The unrelated cache
-was already unreadable and the draft absent; neither is claimed recovered.
-Physical-phone sound/vibration acceptance is not claimed or requested again.
+Production source remains4727477b. Its original-key APK64f8ca69 passes scoped
+chosen-cache/catalog repair and fresh-process persistence107.806s, preserving
+identity,200 messages,100 outbox rows (three queued ciphertexts), three encrypted
+files, origin and modes. The unrelated cache was already unreadable and the
+draft absent; neither is claimed recovered. The tag-built public APK is separately
+verified, not claimed byte-identical to that runtime-qualified build. No physical
+phone acceptance is claimed or requested again.
 
-The owner explicitly permits v0.8.28 after the other checks, carrying unresolved
-MEL-587 into the next release as urgent work. Matching historical WebKit/JSC IDs
-and official debug symbols identify a TextStrike glyph-cache slot-array free,
-not the earlier corrupting operation. No causal fix, GPU workaround, renderer
-kill, permission change or live replay is claimed. This decision is recorded on
-MEL-587. All completed owned helpers are dismissed and final fixture processes
-are absent. Tag-built asset verification and publication are next; nothing is
-reported published yet.
+The owner explicitly allowed v0.8.28 after other required checks and carried
+[MEL-587](https://linear.app/mellanni/issue/MEL-587) forward as urgent next-release
+work. WebKit's corrupting operation remains unproven; matching symbols identify
+only the failing glyph-cache cleanup. No causal fix, GPU workaround or renderer
+kill is claimed. Preserve the evidence and the owner's disposition.
 
-The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
-items, stable chat/topic links (MEL-625) and four qualification tracks. Its Linear
-milestone is **v0.8.28 — reliability and clear navigation**. Scope and acceptance
-are recorded. The five assigned GPT-6.1-sol xhigh workers have returned their
-bounded source/evidence and are dismissed; their owned worktrees remain for
-verification and final cleanup. Codex reviews, integrates and qualifies the
-candidate. No full release qualification or rollout is claimed. MEL-626 adds
-truthful reported model/reasoning in agent selection and the active chat.
-The active goal explicitly requires lean code, least overhead and prevention of
-overthinking/overengineering; disputed designs have two evidence-backed rounds.
-MEL-628 adds independent conversations for the same agent using fresh native
-sessions, preserving actual same-session exclusion and cancellation isolation.
-
-Source progress: cache repair, exact model/reasoning reports, legacy lists and
-request cards are integrated with the rebuilt Comic bundle. Moved-topic sharing
-and truthful destination notices passed independent focused checks on the
-combined source, preserving model-reader and attachment admission guards.
-Comic preview/time formatting, literal topic names and portable link navigation
-also pass combined desktop/phone rendering. Steering and independent-session
-source is integrated with the combined Comic and focused checks. These are source checks; packaged
-Android recovery, all-skins/native/platform and release gates remain pending.
-The owner's added attachment fix, MEL-631 (`4214ef19`), is integrated in
-`3599582f`; exact file bytes, limits and removal guards pass the four-case
-focused signed/encrypted test (9.630s). Nothing is published by this integration.
-The question-ancestor delegation vetoes are removed; recipient task consent and
-the existing scope/identity/cancellation checks remain. Combined focused tests
-pass22.445s; this is source evidence, not actual native or release qualification.
-
-Current qualification adds genuine native-parent question-to-task journeys for
-Codex, Pi, Claude and OMP; their child responder is synthetic. Antigravity stopped
-for sign-in and is not a pass. The native exact-file test observed one genuine
-approval callback and completed in12.563s with setup unchanged. Its strict display
-and private rejection diagnostics now pass10 focused cases. Actual Codex steering
-subsequently passed81.477s through the existing exact native readiness approval,
-with concurrency, cancellation, steering and signed-result checks preserved.
-Earlier refusals remain recorded; native configuration and permissions are
-unchanged. Final mixed-version against exactv27 passes57.701s. Remaining
-platform, Android recovery and all-skin gates are recorded above.
-
-Do not tag or publish the next release until these are fixed and verified:
-
-- [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
-- [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. On October15 the owner explicitly allowed v0.8.28 after other required checks and carried this issue forward as urgent next-release work. Preserve the evidence; a successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
-
-MEL-591/633 actual-flow acceptance now passes the two native journeys above,
-with source/race/browser boundaries retained. Unprovable old unindexed incoming
-member turns remain selected-only. These issues have not been marked shipped;
-The affected all-skins gate still prevents release. MEL-587 is explicitly carried
-forward by the owner. The scoped Android
-repair pass and its explicit healthy-cache/draft limits are recorded above;
-MEL-620 has not been marked shipped. No physical-device or universal
-native-steering claim is made.
+The [v0.8.28 record](plans/V0_8_28.md) retains exact qualification and limitations.
+Both repositories were clean/pushed at release; eleven owned worktrees and thirteen
+task branches were removed. Completed v28 helper panes/processes are gone; private
+worker evidence and nonancestor commits are preserved in the root's ignored archive.
+Next-release work collects minor fixes/features from Linear, excludes Projects
+(reserved for v0.9.0), and must keep code lean with minimal overhead.
 
 ## Linear status audit — October 14, 2026
 
@@ -117,7 +92,7 @@ notification acceptance and the reported Windows journeys remain open. Agent
 organization has shipped; its full requested selection/report/link journey still
 needs closure evidence. Preserve existing implementations and qualified gates.
 
-## Current release — v0.8.27, October 14, 2026
+## Previous release — v0.8.27, October 14, 2026
 
 [Download v0.8.27](https://github.com/misunders2d/agentnet/releases/tag/v0.8.27)
 or its [signed Android APK](https://github.com/misunders2d/agentnet/releases/download/v0.8.27/AgentNet-android.apk).
