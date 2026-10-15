@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"time"
 
 	"github.com/misunders2d/agentnet/internal/client"
 )
@@ -81,7 +80,7 @@ func main() {
 		if last != "" {
 			must(a.CheckReplyTo(last, to))
 		}
-		sent, err := a.SendMessage(ctx, client.Outgoing{To: to, Body: fmt.Sprintf("Device history %03d", i), ReplyTo: last, Wait: 5 * time.Second})
+		sent, err := a.SendMessage(ctx, client.Outgoing{To: to, Body: fmt.Sprintf("Device history %03d", i), ReplyTo: last})
 		must(err)
 		require(regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(sent.ID), "invalid signed device ID")
 		if root == "" {

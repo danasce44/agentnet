@@ -8,6 +8,7 @@
 #   AGENTNET_COMPANY_WORLD   a new directory for the whole world (created)
 #   AGENTNET_COMPANY_GO      go toolchain (builds the TLS proxy)
 #   AGENTNET_COMPANY_SEED    1: seed an ordinary week of work (company_seed.sh)
+#   AGENTNET_COMPANY_HISTORY_COUNT optional fixture history per kind (1..200); requires SEED=1
 #   AGENTNET_COMPANY_RUN     optional command run once the world is up;
 #                            without it the world stays up until interrupted
 #
@@ -16,6 +17,9 @@
 set -eu
 umask 077
 : "${AGENTNET_COMPANY_BINARY:?}" "${AGENTNET_COMPANY_WORLD:?}" "${AGENTNET_COMPANY_GO:?}"
+if [ -n "${AGENTNET_COMPANY_HISTORY_COUNT:-}" ]; then
+	[[ "$AGENTNET_COMPANY_HISTORY_COUNT" =~ ^[1-9][0-9]{0,2}$ ]] && [ "$AGENTNET_COMPANY_HISTORY_COUNT" -le 200 ] && [ "${AGENTNET_COMPANY_SEED:-0}" = 1 ] || { echo 'history requires SEED=1 and count 1..200' >&2; exit 1; }
+fi
 W=$AGENTNET_COMPANY_WORLD
 A=$AGENTNET_COMPANY_BINARY
 export AGENTNET_NOTIFY=off
@@ -83,7 +87,7 @@ for who in vitalii bohdan anna; do
 	"$A" --home "$W/$who" join --agent desk "$("$A" --home "$W/sergey" admin invite --raw "$who")" >> "$W/join.log"
 done
 start(){ "$A" --home "$W/$1" daemon --ui 127.0.0.1:0 > "$W/$1.log" 2>&1 & owned+=($!); }
-for who in sergey vitalii bohdan anna; do start "$who"; done
+for who in sergey vitalii bohdan anna; do start "$who"; if [ "$who" = sergey ]; then sender_pid=$!; fi; done
 sleep 1
 for who in sergey vitalii bohdan anna; do "$A" --home "$W/$who" person create "${who^}" >> "$W/person.log"; done
 # Sergey's phone joins as one more device of Sergey.
@@ -117,6 +121,31 @@ PY
 printf '%s\n' "${owned[@]}" > "$W/owned-pids"
 if [ "${AGENTNET_COMPANY_SEED:-0}" = 1 ]; then
 	"$(dirname "$0")/company_seed.sh" "$W" "$A"
+fi
+# Bulk history is initialized at rest: only this world's owned sender stops.
+if [ -n "${AGENTNET_COMPANY_HISTORY_COUNT:-}" ]; then
+	"$AGENTNET_COMPANY_GO" -C "$(cd "$(dirname "$0")/../../.." && pwd)" build -o "$W/skin-history-seed" internal/ui/testdata/skin_history_seed.go
+	printf 'agentnet synthetic company history fixture\n' > "$W/skin-history-fixture"
+	kill "$sender_pid"
+	wait "$sender_pid" || true
+	for i in "${!owned[@]}"; do
+		if [ "${owned[$i]}" = "$sender_pid" ]; then unset 'owned[i]'; fi
+	done
+	printf '%s\n' "${owned[@]}" > "$W/owned-pids"
+	"$W/skin-history-seed" --world "$W" --count "$AGENTNET_COMPANY_HISTORY_COUNT"
+	start sergey
+	sleep 1
+	printf '%s\n' "${owned[@]}" > "$W/owned-pids"
+	python3 - "$W" "$A" <<'PYURL'
+import json, subprocess, sys
+w, a = sys.argv[1:]
+p = f"{w}/urls.json"
+with open(p) as f:
+    urls = json.load(f)
+urls["sergey"]["page"] = subprocess.run([a, "--home", f"{w}/sergey", "ui"], check=True, capture_output=True, text=True).stdout.strip().removeprefix("Open: ")
+with open(p, "w") as f:
+    json.dump(urls, f, indent=1)
+PYURL
 fi
 if [ -n "${AGENTNET_COMPANY_RUN:-}" ]; then
 	sh -c "$AGENTNET_COMPANY_RUN"

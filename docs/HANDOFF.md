@@ -64,7 +64,9 @@ The ordinary collection runner has no180s whole-case bound; that earlier limit
 belonged to our wrapper. Retain unchanged full-run passes and rerun affected
 checks only.
 
-MEL-587 remains an owner release hold, with no causal fix. Both historical cores
+The owner explicitly allows v0.8.28 after the other required checks, carrying
+MEL-587 into the next release as urgent work. The crash has no causal fix; do not
+claim it resolved. Both historical cores
 now prove the exact WebKit/JSC build IDs. Matching official Ubuntu symbols,
 verified by SHA256/build ID/debuglink CRC, resolve the Skia fault to a TextStrike
 glyph-cache slot-array free during DirectMaskSubRun destruction. This is the
@@ -124,12 +126,13 @@ platform, Android recovery and all-skin gates are recorded above.
 Do not tag or publish the next release until these are fixed and verified:
 
 - [MEL-620](https://linear.app/mellanni/issue/MEL-620/android-corrupted-skin-cache-prevents-gallery-updates): repair gallery install/update on a corrupted existing skin-cache profile while preserving identity, chats, files, drafts, queued sends and healthy skins. A fresh-profile pass is not recovery evidence; no blanket app-storage reset or re-enrollment.
-- [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. ThinkPad is adding further evidence; incorporate it into the diagnosis and verify the actual affected packaged app. A successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
+- [MEL-587](https://linear.app/mellanni/issue/MEL-587/linux-appimage-webkitwebprocess-aborts-whenever-agentnet-is-closed): WebKit crashes remain unresolved. On October15 the owner explicitly allowed v0.8.28 after other required checks and carried this issue forward as urgent next-release work. Preserve the evidence; a successful isolated quit is not a causal fix. Do not suppress crash notifications or kill renderers to claim success.
 
 MEL-591/633 actual-flow acceptance now passes the two native journeys above,
 with source/race/browser boundaries retained. Unprovable old unindexed incoming
 member turns remain selected-only. These issues have not been marked shipped;
-MEL-587 and the affected all-skins gate still prevent release. The scoped Android
+The affected all-skins gate still prevents release. MEL-587 is explicitly carried
+forward by the owner. The scoped Android
 repair pass and its explicit healthy-cache/draft limits are recorded above;
 MEL-620 has not been marked shipped. No physical-device or universal
 native-steering claim is made.
