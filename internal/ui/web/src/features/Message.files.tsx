@@ -176,14 +176,14 @@ function Picture({ m, f }: { m: AnyMsg; f: FileItem }) {
     return () => { alive = false; io.disconnect(); };
   }, [key]);
   if (failed) return <FileChip m={m} f={f} />;
-  // The box keeps its size from the first frame (4:3, the picture cropped to
-  // fill it): nothing below it moves when the picture arrives.
+  // Keep a placeholder while loading; decoded images retain their whole
+  // aspect ratio, bounded by the conversation and viewport.
   return (
     <>
       <button ref={box} type="button" onClick={() => url && setBig(true)} aria-label={"Open picture " + f.name}
-        className="relative block overflow-hidden rounded-xl border border-outline/30 bg-sunken" style={{ width: "min(240px, 100%)", aspectRatio: "4 / 3" }}>
-        {url && <img src={url} alt={f.name} onLoad={() => setShown(true)} decoding="async"
-          className={"absolute inset-0 block h-full w-full object-cover transition-opacity duration-200 motion-reduce:transition-none " + (shown ? "opacity-100" : "opacity-0")} />}
+        className="relative flex max-w-full items-center justify-center overflow-hidden rounded-xl border border-outline/30 bg-sunken" style={url ? { width: "fit-content" } : { width: "min(360px, 100%)", aspectRatio: "4 / 3" }}>
+        {url && <img src={url} alt={f.name} onLoad={() => setShown(true)} onError={() => setFailed(true)} decoding="async"
+          className={"block h-auto w-auto max-h-[min(60dvh,480px)] max-w-full object-contain transition-opacity duration-200 motion-reduce:transition-none " + (shown ? "opacity-100" : "opacity-0")} />}
         {!shown && <span className="absolute inset-0 grid place-items-center text-muted"><IconPhoto size={28} stroke={1.6} className="animate-pulse motion-reduce:animate-none" /></span>}
       </button>
       {big && <ImageViewer src={url} name={f.name} onClose={() => setBig(false)}

@@ -97,7 +97,7 @@ export function ReactPopover({ m, ctx, trigger, wide, onDone }: { m: AnyMsg; ctx
       <Popover.Trigger render={trigger} />
       <Popover.Portal container={portal}>
         <Popover.Positioner side="top" align={wide ? "center" : "start"} sideOffset={6} collisionPadding={12} className="z-50">
-          <Popover.Popup className="rounded-full outline-none transition-[opacity,scale] duration-200 ease-out-soft data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-opacity">
+          <Popover.Popup className="max-w-[calc(100vw-24px)] rounded-full outline-none transition-[opacity,scale] duration-200 ease-out-soft data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 motion-reduce:transition-opacity">
             <Popover.Title className="sr-only">React to this message</Popover.Title>
             {more ? <EmojiPicker onPick={pick} onClose={() => setOpen(false)} />
               : <span className="block rounded-full shadow-pop"><QuickReactions onPick={pick} onMore={() => setMore(true)} chosen={mine} /></span>}

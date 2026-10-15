@@ -24,6 +24,8 @@ import { decidersWords } from "./Approvals.reports";
 import { Command, Details } from "./Settings.parts";
 import { ResolveOwnRequest } from "./RequestResolution";
 import { RequestFrame } from "../skin/RequestFrame";
+import { Markdown } from "./Markdown";
+import { requestResultText } from "../requestResult";
 
 export function ApprovalCard({ message, dm, thread, compact, content }: { message: Req; dm?: T.DMThread | null; thread?: T.Thread | null; compact?: boolean; content?: ReactNode }) {
   const store = useApp();
@@ -50,6 +52,14 @@ export function ApprovalCard({ message, dm, thread, compact, content }: { messag
     }
     return card;
   }
+  const outcome = message.dir === "in" ? message.state : message.exec?.state;
+  const result = isThreadMsg(message) ? message.detail : message.job_detail || message.detail;
+  if (outcome === "resolved" && result) return (
+    <details data-request-result className="w-full rounded-xl border border-outline/20 bg-surface">
+      <summary className="min-h-11 cursor-pointer px-3 py-2.5 text-[14px] font-semibold">{myAgent(message, names, o, dm).name} · Request closed · Original result</summary>
+      <div className="border-t border-outline/20 p-4"><p className="mb-2 text-[13px] font-semibold">{firstLine(requestText(message), 140)}</p><Markdown text={requestResultText(result)} /></div>
+    </details>
+  );
   if (waitsElsewhere(message)) return <WaitingLine m={message} o={o} />;
   return null;
 }
@@ -125,7 +135,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
   const named = mine.named;
   const notice = isThreadMsg(m) && m.kind === "message" && m.status === "review_notice";
   const conv = dm?.id || thread?.id || "";
-	const said = localRunningDetail((isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? remoteNeedsHumanDetail(m, o) : "") || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "", phase === "running");
+	const said = requestResultText(localRunningDetail((isThreadMsg(m) ? m.detail : m.job_detail) || (phase === "needs_human" ? remoteNeedsHumanDetail(m, o) : "") || (phase === "needs_human" ? (o?.needs_you || []).find(c => c.conv === conv && c.id === m.id)?.why : "") || "", phase === "running"));
 	const proposal = m.proposal;
 
   const permissionPerson = thread?.permission_person;
@@ -201,7 +211,7 @@ function OwnerCard({ m, dm, thread, o, names, phase }: Props) {
         {phase === "needs_human" || (phase === "stopped" && said) ? (
           <div data-agent-needs-you={phase === "needs_human" || undefined} role="region" aria-label="Your agent says" tabIndex={-1} className="mx-4 mt-3 rounded-xl bg-agent px-3.5 py-2.5 text-agent-ink">
             <p className="text-[13px] font-bold">{phase === "needs_human" ? "Your agent couldn’t finish — it needs your attention" : capital(agent) + " says"}</p>
-            <p className="pt-0.5 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">{said || "It needs a person to decide. The reason is not available on this device yet."}</p>
+            <Markdown className="pt-0.5 text-ink" text={said || "It needs a person to decide. The reason is not available on this device yet."} />
           </div>
         ) : null}
 

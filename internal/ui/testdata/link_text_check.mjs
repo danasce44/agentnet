@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rawLinkParts, shortLinkLabel, previewText, localRunningDetail } from '../skins/shared/link-text.mjs';
+import { rawLinkParts, shortLinkLabel, previewText, localRunningDetail, requestResultText } from '../skins/shared/link-text.mjs';
 const url='https://example.test/'+('long/'.repeat(25))+'?q=x%2Fy&u=%E2%9C%93#frag';
 for(const source of [url,'See '+url+'.','<'+url+'>','**'+url+'**','- '+url,'> '+url]) {
  const parts=rawLinkParts(source).filter(p=>typeof p!=='string');
@@ -12,6 +12,10 @@ const credentials=url.replace('example.test','misleading.test@example.test');
 assert.equal(shortLinkLabel(credentials,credentials),'misleading.test@example.test/…');
 assert.equal(rawLinkParts(url+' and '+url).filter(p=>typeof p!=='string').length,2);
 assert.equal(rawLinkParts('`'+url+'` then '+url).filter(p=>typeof p!=='string').length,1);
+// Markdown tables must compact raw URLs too; explicit labels and code stay literal.
+const table='| Link | Code |\n|---|---|\n| '+url+' | `'+url+'` |';
+const tableLinks=rawLinkParts(table).filter(p=>typeof p!=='string');
+assert.equal(tableLinks.length,1);assert.equal(tableLinks[0].href,url);assert.equal(tableLinks[0].label,'example.test/…');
 console.log('raw link parser vectors passed');
 
 for (const [source,expected] of [
@@ -33,3 +37,26 @@ try {
  assert.equal(clause,'Running since 2026-10-11T09:02:32Z. Stop is available; nothing stops automatically unless you set a time limit.');
 } finally {if(oldTZ===undefined)delete process.env.TZ;else process.env.TZ=oldTZ;}
 console.log('preview and local running-detail vectors passed');
+
+// Display projections use the native trailer grammar and never alter stored bytes.
+for(const [source,expected] of [
+ ['Need a choice\nemotion: curious','Need a choice'],
+ ['Need a choice\nreaction: -👍\ntopic: done\nemotion: waiting','Need a choice'],
+ ['Need a choice\ntopic: done\nreaction: 🇺🇦','Need a choice'],
+ ['Need a choice\n REACTION : 👩🏽‍💻 \r\n EMOTION : calm \r\n','Need a choice'],
+ ['Need a choice\nemotion: \u0085curious\u0085','Need a choice'],
+ ['Need a choice\nemotion: \uFEFFcurious','Need a choice\nemotion: \uFEFFcurious'],
+ ['emotion: curious','emotion: curious'],
+ ['Need a choice\nemotion: Calm','Need a choice\nemotion: Calm'],
+ ['Need a choice\nemotion: too long and invalid','Need a choice\nemotion: too long and invalid'],
+ ['Need a choice\nreaction: 👍👍','Need a choice\nreaction: 👍👍'],
+ ['Need a choice\nreaction: $','Need a choice\nreaction: $'],
+ ['Need a choice\nreaction: 👍\nMore literal prose','Need a choice\nreaction: 👍\nMore literal prose'],
+ ['Need a choice\n\x60emotion: curious\x60','Need a choice\n\x60emotion: curious\x60'],
+ ['Need a choice\n\n    emotion: curious','Need a choice\n\n    emotion: curious'],
+ ['Need a choice\n\n~~~\nemotion: curious\n~~~','Need a choice\n\n~~~\nemotion: curious\n~~~'],
+ ['Need a choice\n\n~~~\nemotion: curious','Need a choice\n\n~~~\nemotion: curious'],
+ ['Need a choice\n> emotion: curious','Need a choice\n> emotion: curious'],
+ ['Need a choice\n[emotion: curious](https://example.test)','Need a choice\n[emotion: curious](https://example.test)'],
+]) { const original=source;assert.equal(requestResultText(source),expected,source);assert.equal(source,original); }
+console.log('request result trailer projection vectors passed');

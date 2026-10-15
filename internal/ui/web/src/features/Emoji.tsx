@@ -277,19 +277,19 @@ const quick = ["👍", "❤️", "😂", "🎉", "🙏", "👀"];
  *  `chosen` are the ones this person already added (pressed). */
 export function QuickReactions({ onPick, onMore, chosen = [] }: { onPick: (emoji: string) => void; onMore: () => void; chosen?: string[] }) {
   return (
-    <div role="group" aria-label="React" className="inline-flex items-center gap-0.5 rounded-full bg-surface p-1 stroke">
+    <div role="group" aria-label="React" className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-2xl bg-surface p-1 stroke">
       {reactionChoices(quick).map((e) => {
         const on = chosen.includes(e);
         return (
           <button key={e} type="button" onClick={() => onPick(e)} aria-pressed={on} aria-label={"React " + e}
-            className={"grid size-11 place-items-center rounded-full transition-transform duration-[180ms] hover:-translate-y-0.5 hover:bg-sunken motion-reduce:hover:translate-y-0 "
+            className={"grid size-11 shrink-0 place-items-center rounded-full transition-colors duration-[180ms] hover:bg-sunken "
               + (on ? "bg-agent [box-shadow:inset_0_0_0_1.5px_var(--an-agent-ink)]" : "")}>
             <span className="text-[22px] leading-none">{e}</span>
           </button>
         );
       })}
       <span aria-hidden="true" className="mx-0.5 h-6 w-px bg-hairline" />
-      <button type="button" onClick={onMore} aria-label="More reactions" title="More reactions" className="grid size-11 place-items-center rounded-full hover:bg-sunken">
+      <button type="button" onClick={onMore} aria-label="More reactions" title="More reactions" className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-sunken">
         <IconMoodPlus size={22} stroke={1.8} className="text-text-2" />
       </button>
     </div>

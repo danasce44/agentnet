@@ -9,6 +9,15 @@ This record starts with v0.8.1; earlier releases remain on the
 - Synchronize reads of sent questions and self-agent replies across the owner's
   devices when their exact thread is opened. Unseen threads stay unread;
   reading does not restart or change the result of a request.
+- Keep a closed request's complete result in a compact, expandable card with
+  its agent and original request. Render safe Markdown and hide recognized
+  internal trailers without changing the stored result.
+- Keep reaction highlights inside their rounded toolbar, including custom
+  skin shapes and narrow screens, with visible keyboard focus.
+- Compact long raw links inside Markdown tables while preserving their exact
+  destinations, explicit labels and code.
+- Show whole portrait and landscape attachment previews at a bounded size,
+  with a smaller secondary save control and unchanged original-file actions.
 
 ## [0.8.28] — 2026-10-15
 

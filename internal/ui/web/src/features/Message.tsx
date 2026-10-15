@@ -7,6 +7,8 @@
 import { memo, useMemo, useRef, useState, type ReactNode } from "react";
 import { sendID } from "../optimistic.mjs";
 import { localRunningDetail } from "../runningDetail";
+import { previewText } from "../linkText";
+import { requestResultText } from "../requestResult";
 import {
   IconArrowBackUp, IconBolt, IconMessageQuestion, IconCheck, IconChecks, IconClock, IconAlertTriangle, IconEye, IconCircleCheckFilled, IconCircle,
 } from "@tabler/icons-react";
@@ -195,7 +197,7 @@ function Bubble({ m, ctx, all, first = true, last = true, status, compact, group
         {assign !== null && <AssignMessage open={assign} onOpenChange={setAssign} m={m} ctx={ctx} />}
         {followup !== null && <FollowupMessage open={followup} onOpenChange={setFollowup} m={m} ctx={ctx} />}
       </div>
-      {!readOnly && !isThreadMsg(m) && needsHumanDetail && m.exec?.state === "needs_human" && !(m.actions || []).length && <section data-agent-needs-you tabIndex={-1} aria-label="Your agent says" className="mx-3 mt-2 rounded-xl bg-agent px-3.5 py-2.5 text-agent-ink sm:mx-4"><p className="font-bold">Your agent couldn’t finish — it needs your attention</p><p className="pt-1 whitespace-pre-wrap text-ink [overflow-wrap:anywhere]">{needsHumanDetail}</p><p className="pt-2 text-[13px]">Open it on {deviceWords(m.target?.address || "", ctx.overview)}.</p></section>}
+      {!readOnly && !isThreadMsg(m) && needsHumanDetail && m.exec?.state === "needs_human" && !(m.actions || []).length && <section data-agent-needs-you tabIndex={-1} aria-label="Your agent says" className="mx-3 mt-2 rounded-xl bg-agent px-3.5 py-2.5 text-agent-ink sm:mx-4"><p className="font-bold">Your agent couldn’t finish — it needs your attention</p><Markdown className="pt-1 text-ink" text={requestResultText(needsHumanDetail)} /><p className="pt-2 text-[13px]">Open it on {deviceWords(m.target?.address || "", ctx.overview)}.</p></section>}
       {/* The approval card is a system card across the timeline, never part of the bubble. */}
       {!readOnly && (isRequest(m) || (m.actions || []).length > 0) && (
         <div className="mx-auto mt-2.5 w-full max-w-[600px] px-3 empty:hidden sm:px-4">
@@ -275,7 +277,7 @@ function Under({ m, ctx, all, who, status, answer, onDetails, onJump }: { m: Any
           <span>{label}</span>
           {st.text && <><span aria-hidden="true" className="text-muted">·</span><span className={tone}>{st.text}</span></>}
         </button>
-        {detail && !(m.actions || []).length && <span className="mt-0.5 text-muted [overflow-wrap:anywhere]">{detail}</span>}
+        {detail && !(m.actions || []).length && <span className="mt-0.5 text-muted [overflow-wrap:anywhere]">{firstLine(previewText(requestResultText(detail)), 140)}</span>}
         {answer && onJump && <button type="button" className="min-h-11 underline" onClick={() => onJump(answer.id)}>View reply</button>}
       </div>
     );

@@ -24,6 +24,11 @@ const { chromium } = require(process.env.AGENTNET_PLAYWRIGHT);
       for (const [name, index, width, height] of [['wide.png', 2, 2400, 1600], ['tall.png', 5, 1000, 2000]]) {
         const thumb = p.getByRole('button', { name: 'Open picture ' + name, exact: true });
         await thumb.locator('img').waitFor();
+        await thumb.locator('img').evaluate(im => im.decode());
+        const preview = await thumb.locator('img').evaluate(im => ({ width: im.clientWidth, height: im.clientHeight, natural: im.naturalWidth / im.naturalHeight }));
+        assert(preview.width > 0 && preview.height > 0, 'preview remains visible');
+        assert(Math.abs(preview.width / preview.height - preview.natural) < .02, 'portrait and landscape previews retain whole original ratio');
+        assert(preview.height <= (phone ? 844 : 900) * .6 + 1, 'media preview remains bounded by viewport');
         await thumb.click();
         const dialog = p.getByRole('dialog', { name, exact: true }), image = dialog.getByRole('img', { name, exact: true });
         await dialog.waitFor();

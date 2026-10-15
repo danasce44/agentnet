@@ -57,7 +57,7 @@ export function SaveToDrive({ m, index }: { m: AnyMsg; index: number }) {
   if (!dm?.peer.person) return null;
   const conv = dm.id;
   return <>
-    <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Save to project space</Button>
+    <button type="button" className="min-h-11 rounded-lg px-2 text-left text-[13px] text-text-2 underline hover:bg-sunken" onClick={() => setOpen(true)}>Save to project space</button>
     <Confirm open={open} onOpenChange={setOpen} title="Save to Google Drive?" ok="Save to Google Drive" danger={false}
       onOk={() => store.run(async () => {
         const provider = store.host.drive;

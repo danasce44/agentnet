@@ -1,5 +1,6 @@
 import { Lexer, type Token, type Tokens } from "marked";
 export { localRunningDetail } from "./runningDetail";
+export { requestResultText } from "./requestResult";
 
 const entities: Record<string,string> = {amp:"&",lt:"<",gt:">",quot:'"',apos:"'",nbsp:" "};
 export const markdownText = (s: string): string => s.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,6});/gi, (all, ref: string) => {
@@ -66,6 +67,10 @@ export function rawLinkParts(text: string): LinkPart[] {
       } else if (!["code", "codespan", "html", "image"].includes(t.type)) {
         if (t.tokens) scan(t.raw, t.tokens, offset + at);
         else if (t.type === "list") scan(t.raw, (t as Tokens.List).items, offset + at);
+        else if (t.type === "table") {
+          const table = t as Tokens.Table;
+          scan(t.raw, [table.header, ...table.rows].flatMap(row => row.flatMap(cell => cell.tokens)), offset + at);
+        }
       }
     }
   }
