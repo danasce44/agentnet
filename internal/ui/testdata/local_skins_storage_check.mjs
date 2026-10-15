@@ -244,4 +244,124 @@ async function seed() {
   assert.deepEqual(w.deleted, [incomplete]);
   assert(w.store.has('agentnet-skin-package-v1-unrelated')); assert(w.store.has('other-application'));
 }
-console.log('local skin storage check PASS: exact-cache repair, verified bytes, rollback, bounded failures, healthy packages');
+// The legacy ready marker cannot reconstruct a healthy skin's catalog entry.
+// Catalog repair is permitted only by explicit verified reinstall when every
+// unrelated owned snapshot has an unreadable ready marker (UnknownError).
+async function unavailableCatalog() {
+  const w=await seed();
+  for(const name of [cat,prefix+w.healthy.digest,prefix+w.damaged.digest])w.store.get(name).damaged=true;
+  return w;
+}
+async function currentGallery(files) {
+  const {item}=await local.prepare(files), published={};
+  for(const f of files)published[f.name]=new Uint8Array(await f.arrayBuffer());
+  const skin={id:item.package_id,name:item.name,version:'1.0.0',api:1,digest:item.digest,
+    files:Object.entries(published).map(([path,bytes])=>({path,size:bytes.length,sha256:sha(bytes)}))};
+  return gallery({fetcher:async url=>{
+    if(url===LATEST)return Response.json({tag_name:'v1.0.0'});
+    if(url===RAW+'v1.0.0/published/catalog.json')return Response.json({catalog:1,skins:[skin]});
+    return new Response(published[url.slice((RAW+'v1.0.0/published/'+item.package_id+'/').length)]);
+  }});
+}
+{ // Exact all-unavailable baseline: gallery discovery is read-only; reinstall recovers one digest.
+  const w=await unavailableCatalog(), g=await currentGallery(pkg('damaged'));
+  const oldCatalog=await snapshot(w.store,cat), writes=[...w.store.values()].map(c=>c.writes);
+  assert.equal((await g.list()).skins[0].state,'install');
+  assert.deepEqual(w.deleted,[]);assert.deepEqual([...w.store.values()].map(c=>c.writes),writes);
+  assert.deepEqual(await snapshot(w.store,cat),oldCatalog);
+  assert.equal(await g.install('damaged'),w.damaged.id);
+  assert.equal((await g.list()).skins[0].state,'installed');
+  assert.deepEqual(w.deleted,[prefix+w.damaged.digest,cat]);
+  assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+  assert.equal(w.store.get(prefix+w.healthy.digest).damaged,true,'unrelated unavailable bytes retained, not installed');
+  assert.deepEqual(await local.catalog(),[w.damaged]);
+  const c=w.store.get(prefix+w.damaged.digest), count=c.writes;
+  assert.equal(await g.install('damaged'),w.damaged.id);assert.equal(c.writes,count);
+  console.log('all-unavailable catalog explicit verified reinstall and duplicate PASS');
+}
+{ // A new digest has no authority to delete either unreadable old package.
+  const w=await unavailableCatalog(), before=await snapshot(w.store,prefix+w.damaged.digest), files=pkg('damaged',2);
+  const next=(await local.prepare(files)).item, g=await currentGallery(files);
+  assert.equal(await g.install('damaged'),w.damaged.id);assert.notEqual(next.digest,w.damaged.digest);
+  assert.deepEqual(w.deleted,[cat]);assert.deepEqual(await local.catalog(),[next]);
+  assert.deepEqual(await snapshot(w.store,prefix+w.damaged.digest),before);
+  assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+}
+{ // A readable unrelated ready marker makes destructive catalog recovery unsound.
+  const w=await seed(), before=await snapshot(w.store,cat), chosen=await snapshot(w.store,prefix+w.damaged.digest), g=await currentGallery(pkg('damaged'));
+  const writes=[...w.store.values()].map(c=>c.writes), created=w.created.length;
+  w.store.get(cat).damaged=true;
+  assert.equal((await g.list()).skins[0].state,'install','discovery offers explicit recovery without asserting installation');
+  await assert.rejects(local.catalog(),/storage/i);
+  await assert.rejects(g.install('damaged'),/storage/i);
+  assert.deepEqual(w.deleted,[]);assert.deepEqual(await snapshot(w.store,cat),before);
+  assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+  assert.deepEqual(await snapshot(w.store,prefix+w.damaged.digest),chosen);
+  assert.deepEqual([...w.store.values()].map(c=>c.writes),writes);assert.equal(w.created.length,created);
+}
+{ // Missing/invalid unrelated ready metadata and generic errors are not permission to reset.
+  for(const kind of ['missing','malformed','InvalidStateError','readable-flagged']){
+    const w=await unavailableCatalog(), c=w.store.get(prefix+w.healthy.digest);c.damaged=false;
+    if(kind==='missing')c.responses.delete(ready);
+    else if(kind==='malformed')c.responses.set(ready,new Response('{'));
+    else if(kind==='readable-flagged')c.responses.set(ready,Response.json({id:w.healthy.id,size:w.healthy.size,unavailable:true}));
+    else c.match=async()=>{throw new DOMException('unavailable',kind);};
+    const before=await snapshot(w.store,cat), packages=await Promise.all([w.healthy,w.damaged].map(x=>snapshot(w.store,prefix+x.digest)));
+    await assert.rejects(local.install(pkg('damaged')),/storage/i);
+    assert.deepEqual(w.deleted,[]);assert.deepEqual(await snapshot(w.store,cat),before);
+    assert.deepEqual(await Promise.all([w.healthy,w.damaged].map(x=>snapshot(w.store,prefix+x.digest))),packages);
+  }
+}
+{ // A named catalog open failure cannot stand in for a catalog read failure.
+  const w=await unavailableCatalog(), g=await currentGallery(pkg('damaged'));
+  caches.openError=new DOMException('unavailable','UnknownError');
+  await assert.rejects(g.list(),/storage/i);await assert.rejects(g.install('damaged'),/storage/i);
+  assert.deepEqual(w.deleted,[]);
+}
+{ // Only UnknownError from catalog reads permits discovery's narrow fallback.
+  const w=await seed(), g=await currentGallery(pkg('damaged'));
+  w.store.get(cat).match=async()=>{throw new DOMException('unavailable','InvalidStateError');};
+  await assert.rejects(g.list(),/storage/i);assert.deepEqual(w.deleted,[]);
+}
+{ // Failed exact catalog deletion preserves it; one explicit retry reuses verified files.
+  for(const refusal of ['throw','false']){
+  const w=await unavailableCatalog(), before=await snapshot(w.store,cat), original=caches.delete.bind(caches);
+  caches.delete=async name=>{if(name===cat){if(refusal==='false')return false;throw new DOMException('unavailable','InvalidStateError');}return original(name);};
+  await assert.rejects(local.install(pkg('damaged')),/storage/i);
+  assert.deepEqual(await snapshot(w.store,cat),before);
+  assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+  const c=w.store.get(prefix+w.damaged.digest), writes=c.writes;
+  caches.delete=original;assert.deepEqual(await local.install(pkg('damaged')),w.damaged);
+  assert.equal(c.writes,writes);assert.deepEqual(w.deleted,[prefix+w.damaged.digest,cat]);
+  }
+}
+{ // Failed new catalog write leaves durable chosen bytes for one explicit retry.
+  const w=await unavailableCatalog();caches.failName=cat;caches.writeError=new DOMException('unavailable','InvalidStateError');
+  await assert.rejects(local.install(pkg('damaged')),/storage/i);
+  const c=w.store.get(prefix+w.damaged.digest), writes=c.writes;
+  assert.equal(w.store.get(cat).responses.size,0);assert.deepEqual(await local.catalog(),[]);
+  assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+  w.store.get(cat).writeError=null;caches.failName='';
+  assert.deepEqual(await local.install(pkg('damaged')),w.damaged);assert.equal(c.writes,writes);
+  assert.deepEqual(w.deleted,[prefix+w.damaged.digest,cat]);assert.deepEqual(await local.catalog(),[w.damaged]);
+}
+{ // Recovery still charges unavailable unrelated packages before deleting anything.
+  const w=await unavailableCatalog();
+  for(let i=0;i<3;i++)(await caches.open(prefix+String(i+1).repeat(64))).damaged=true;
+  await assert.rejects(local.install(pkg('damaged')),/64 MiB limit/);
+  assert.deepEqual(w.deleted,[]);assert.deepEqual(await snapshot(w.store,prefix+w.healthy.digest),w.before);
+}
+{ // Metadata-only chosen repair never deletes intact files on a failed ready write.
+  for(const marker of ['missing','malformed']){
+    const w=await unavailableCatalog(), c=w.store.get(prefix+w.damaged.digest);c.damaged=false;
+    if(marker==='missing')c.responses.delete(ready);else c.responses.set(ready,new Response('{'));
+    const before=await snapshot(w.store,prefix+w.damaged.digest), metadata=await snapshot(w.store,cat);
+    c.writeError=new DOMException('unavailable','InvalidStateError');
+    await assert.rejects(local.install(pkg('damaged')),/storage/i);
+    assert.deepEqual(w.deleted,[]);assert.deepEqual(await snapshot(w.store,prefix+w.damaged.digest),before);
+    assert.deepEqual(await snapshot(w.store,cat),metadata);
+    c.writeError=null;assert.deepEqual(await local.install(pkg('damaged')),w.damaged);
+    assert.deepEqual(w.deleted,[cat]);assert.equal(w.store.get(prefix+w.damaged.digest),c);
+  }
+}
+console.log('local skin storage check PASS: exact-cache repair, verified bytes, rollback, bounded failures, healthy packages, narrow catalog repair');

@@ -12,6 +12,8 @@ This record starts with v0.8.1; earlier releases remain on the
 
 - Repair selected damaged local skin packages through the existing cache manager,
   preserving app identity, chat data, drafts, queued sends and healthy packages.
+  Keep gallery reinstall reachable when its local catalog is unreadable;
+  catalog recovery refuses to discard readable unrelated skin metadata.
 - Let managers add people to retained legacy lists while preserving their signed
   identity and membership rules; list selection rejects changes during refresh.
 - Invite an agent with exactly reviewed messages moved into a topic, including

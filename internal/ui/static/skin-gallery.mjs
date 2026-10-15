@@ -104,7 +104,13 @@ export function gallery({ running = () => '', changed = async () => {}, fetcher 
     /** The latest published release's skins, with what this browser holds. */
     async list({ fresh = false } = {}) {
       if (!supported()) fail('This browser cannot store skins.');
-      const { release, skins } = await load(fresh), local = await stored();
+      const { release, skins } = await load(fresh);let local;
+      try { local = await stored(); } catch (e) {
+        // Discovery never repairs storage. An unreadable local catalog cannot
+        // prove installation; the explicit verified store still checks safety.
+        if (e.cause !== 'skin-catalog-unavailable') throw e;
+        local = [];
+      }
       return Object.freeze({ release, skins: Object.freeze(skins.map((s) => {
         const held = local.find((x) => x.package_id === s.id);
         const state = !compatible(s) ? 'incompatible' : !held ? 'install' : held.digest === s.digest ? 'installed' : 'update';

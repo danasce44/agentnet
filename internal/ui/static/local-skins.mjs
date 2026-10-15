@@ -18,7 +18,7 @@ const pathOK = s => typeof s==='string' && s.length>0 && !/[\\:%?#\x00-\x1f]/.te
 const url = id => new URL('/local-skin-catalog/'+encodeURIComponent(id),location.origin).href;
 const readyURL = () => new URL('/local-skins/ready',location.origin);
 const packageName = name => name.startsWith(prefix) && /^[0-9a-f]{64}$/.test(name.slice(prefix.length));
-const storageFailed = () => new Error('Skin storage could not be read, repaired or written. Reopen AgentNet and try installing this skin again.');
+const storageFailed = cause => new Error('Skin storage could not be read, repaired or written. Reopen AgentNet and try installing this skin again.',{cause});
 const maxSnapshot = 16*1024*1024+16384;
 async function snapshotReady(name) {
   if(!await caches.has(name))return null;
@@ -39,8 +39,9 @@ async function snapshotReady(name) {
 }
 export const supported = () => !!globalThis.caches && !!navigator.serviceWorker && !!navigator.locks && !!crypto.subtle;
 async function readCatalog() {
+  let opened=false;
   try {
-    const cache=await caches.open(catalogName), out=[];
+    const cache=await caches.open(catalogName), out=[];opened=true;
     for(const key of await cache.keys()) {
       const response=await cache.match(key);let item;
       try { item=await response.json(); } catch (_) { continue; }
@@ -48,7 +49,7 @@ async function readCatalog() {
       out.push(item);
     }
     return out;
-  }catch(_){throw storageFailed();}
+  }catch(e){throw storageFailed(opened&&e.name==='UnknownError'?'skin-catalog-unavailable':undefined);}
 }
 export async function catalog() {
   if (!supported()) return [];
@@ -65,7 +66,7 @@ export async function catalog() {
       }catch(e){if(e.name!=='UnknownError')throw e;}
     }
     return out;
-  }catch(_){throw storageFailed();}
+  }catch(e){if(e.cause==='skin-catalog-unavailable')throw e;throw storageFailed();}
 }
 export async function prepare(files) {
   files=[...files];
@@ -100,16 +101,28 @@ export async function install(files) {
   const prepared=await prepare(files); // declared local File bytes only
   return navigator.locks.request('agentnet-local-skins',async()=>{
     try {
-    const {item,assets}=prepared, list=await readCatalog();
+    const {item,assets}=prepared;let list,repairCatalog=false;
+    try{list=await readCatalog();}catch(e){
+      if(e.cause!=='skin-catalog-unavailable')throw e;
+      list=[];repairCatalog=true;
+    }
     if(!list.some(x=>x.id===item.id)&&list.length>=32)fail('Remove a skin before importing another (limit 32).');
-    const name=prefix+item.digest, names=(await caches.keys()).filter(packageName);let total=0, existing=null, existingSize=0;
-    for(const stored of names){const meta=await snapshotReady(stored);
+    const name=prefix+item.digest, names=(await caches.keys()).filter(packageName), checked=repairCatalog?new Map():null;let total=0, existing=null, existingSize=0;
+    // Old ready metadata has no manifest. Never erase a catalog that might
+    // still describe a usable unrelated package. This preflight is read-only.
+    if(checked)for(const stored of names){const meta=await snapshotReady(stored);
+      if(stored!==name&&(!meta?.unavailable||meta.id))throw storageFailed();
+      checked.set(stored,meta);
+    }
+    for(const stored of names){const meta=checked?checked.get(stored):await snapshotReady(stored);
       const listed=list.find(x=>prefix+x.digest===stored);
       if(!meta||meta.unavailable||meta.invalid){
         // Verified new bytes may replace the chosen package's unreadable old
         // snapshot. Unrelated damaged snapshots stay charged and removable;
         // Missing/malformed ready metadata alone does not discard usable files.
-        if(stored===name&&(meta?.invalid||(!meta&&listed?.id===item.id))){existing={invalid:true};existingSize=maxSnapshot;total+=maxSnapshot;continue;}
+        if(stored===name&&(meta?.invalid||(!meta&&(repairCatalog||listed?.id===item.id)))){existing={invalid:true};existingSize=maxSnapshot;total+=maxSnapshot;continue;}
+        // Defer this exact repair until the conservative quota check passes.
+        if(repairCatalog&&stored===name){existing={unavailable:true};existingSize=maxSnapshot;total+=maxSnapshot;continue;}
         if(stored===name||((!meta||meta.unavailable)&&listed?.id===item.id)||(!meta&&!listed)){await caches.delete(stored);continue;}
         total+=maxSnapshot;continue;
       }
@@ -131,6 +144,9 @@ export async function install(files) {
         await cache.put(readyURL(),Response.json({id:item.id,size:item.size}));
       }catch(e){await caches.delete(name).catch(()=>{});throw storageFailed();}
     }
+    // Nothing was usable through this catalog; only the explicit verified
+    // incoming digest can be republished. Unrelated unavailable bytes remain.
+    if(repairCatalog&&!await caches.delete(catalogName))throw storageFailed();
     await (await caches.open(catalogName)).put(url(item.id),Response.json(item));
     return item;
     }catch(e){if(e instanceof DOMException||e instanceof TypeError)throw storageFailed();throw e;}

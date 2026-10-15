@@ -6,7 +6,11 @@ section at release; keep detailed verification and remaining work here.
 
 ## Next release — blocking owner requirements, October 14, 2026
 
-Qualification source9c05129e has unchanged production/Comic from9e7dc6e5.
+Native qualification source9c05129e has unchanged production/Comic from9e7dc6e5.
+The subsequent two-module catalog recovery change has passing focused Node
+checks; affected existing browser journeys pass10.927s. The new catalog path's
+Android qualification remains pending. The earlier
+original-key APK8bbcf474 does not contain this new change.
 All12 required client race selections now have passing evidence at600s, preserving
 unchanged partitions and the focused T5 correction. Final6/9 pass565.161s/485.258s;
 both UI partitions pass. Native Linux/macOS succeed; the corrected Windows
@@ -19,9 +23,9 @@ ACKs; its peer is signed synthetic. The separate group100.48s uses actual
 Codex/Claude/Pi, simultaneous owned processes, a signed child-task/result chain,
 late peer/file evidence and two ordered owner inputs in the original Codex
 attempt. No configuration/permission changes or replay; exact fixture processes
-are gone. Both completed native qualification helpers are dismissed. Two new
-bounded helpers are preparing an unreadable-catalog repair proposal and a
-Zoom qualification test using public CLI and rendered UI only; root reviews both.
+are gone. Both completed native qualification helpers and the catalog helper
+are dismissed. The reviewed catalog patch is applied; the remaining helper is
+preparing a Zoom qualification test using public CLI and rendered UI only.
 
 Android's successful v27 seed is retained, but a later passive observation finds
 all three named caches unreadable and its browser draft absent before intentional
