@@ -6,6 +6,10 @@ This record starts with v0.8.1; earlier releases remain on the
 
 ## Unreleased
 
+- Synchronize reads of sent questions and self-agent replies across the owner's
+  devices when their exact thread is opened. Unseen threads stay unread;
+  reading does not restart or change the result of a request.
+
 ## [0.8.28] — 2026-10-15
 
 - Group agents may delegate a task from an admitted question. The recipient's

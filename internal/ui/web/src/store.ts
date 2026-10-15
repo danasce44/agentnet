@@ -473,20 +473,24 @@ export class Store {
   // Reading one topic does not read the other topics returned by the same
   // conversation endpoint. Match Conversation's visible-message selection.
   private reading = new Set<string>();
+  private readAcknowledged = { id: "", ids: new Set<string>() };
   private markOpenRead() {
     const o = this.state.open;
     if (!this.alive || !o || this.state.tab === "settings" || o.kind === "dm" && o.focus && o.focusSeq !== this.topicFocusSeq) return;
     if (this.host.platform === "android" && (this.mobileHidden() || !document.hasFocus())) return;
     const v = this.state.views[o.id];
     if (!v) return;
+    if (this.readAcknowledged.id !== o.id) this.readAcknowledged = { id: o.id, ids: new Set<string>() };
+    const acknowledged = this.readAcknowledged.ids;
     const draft = this.state.drafts[o.id];
     const messages = o.kind === "dm"
       ? ((v as T.DMThread).messages || []).filter(m => draft?.newTopic ? !m.topic : (m.topic || "") === (draft?.topic || ""))
       : v.messages;
-    const ids = (messages || []).filter(m => m.unread && !this.reading.has(m.id)).map(m => m.id);
+    const ids = (messages || []).filter(m => (m.unread || o.kind === "thread" && m.dir === "out") && !this.reading.has(m.id) && !acknowledged.has(m.id)).map(m => m.id);
     if (!ids.length) return;
     ids.forEach(id => this.reading.add(id));
     void this.api.markRead(ids).then(() => {
+      ids.forEach(id => acknowledged.add(id));
       // Fetch the committed read state, including topic and chat counts.
       // A failed acknowledgement leaves the unread state intact for retry.
       if (this.alive) void this.refetch();

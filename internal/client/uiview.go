@@ -540,9 +540,12 @@ func (a *Agent) PeerKeyOf(address string) (PeerKey, error) {
 	return k, nil
 }
 
-// MarkRead marks received messages as read.
+// MarkRead acknowledges exact visible messages, including locally signed device sends.
 func (a *Agent) MarkRead(ids []string) error {
 	if err := a.store.markRead(ids); err != nil {
+		return err
+	}
+	if err := a.markVisibleSentRead(ids); err != nil {
 		return err
 	}
 	notifyDaemon(a.home)

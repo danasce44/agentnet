@@ -239,3 +239,123 @@ func TestReadSyncBoundedBatchRecovery(t *testing.T) {
 		t.Fatalf("batch lost exact references %d", refs)
 	}
 }
+
+func TestReadSyncVisibleOwnSentQuestion(t *testing.T) {
+	w, linux, _, _ := historyCatchupFixture(t, 0)
+	zen := w.alice
+	storeSend := func(from, to *Agent, in envelope.Inner) envelope.Envelope {
+		t.Helper()
+		env := sealTo(t, from, to, in)
+		opened, err := envelope.Open(env, to.id, to.Address, from.Self())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = from.store.addOutbox(env, opened, "", nil, boundOutgoing{fingerprint: to.Self().Fingerprint()}); err != nil {
+			t.Fatal(err)
+		}
+		if err = to.verifyAndStore(tctx(t), env); err != nil {
+			t.Fatal(err)
+		}
+		return env
+	}
+	q := storeSend(linux, zen, envelope.Inner{Kind: envelope.KindQuestion, Body: "what's your cpu?"})
+	answer := storeSend(zen, linux, envelope.Inner{Kind: envelope.KindAnswer, Body: "Intel Core i7-1165G7", ReplyTo: q.ID})
+	sibling := storeSend(linux, zen, envelope.Inner{Kind: envelope.KindQuestion, Body: "unseen sibling topic"})
+	if _, err := zen.store.db.Exec(`UPDATE inbox SET state='answered',attempts=1 WHERE id=?`, q.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		a          *Agent
+		qdir, adir string
+	}{{linux, "out", "in"}, {zen, "in", "out"}} {
+		c, err := tc.a.Conversation(q.ID, 0, 0)
+		if err != nil || len(c.Messages) != 2 {
+			t.Fatalf("thread: %+v %v", c, err)
+		}
+		if c.Messages[0].Dir != tc.qdir || c.Messages[1].Dir != tc.adir {
+			t.Fatalf("directions: %+v", c.Messages)
+		}
+	}
+	// Exact visible IDs from the human's Linux topic, including its sent question.
+	if err := linux.MarkRead([]string{q.ID, answer.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := linux.syncReadMarks(); err != nil {
+		t.Fatal(err)
+	}
+	deliverDeviceHistory(t, linux, zen, envelope.SubReadSync)
+	var read bool
+	if err := zen.store.db.QueryRow(`SELECT read_at IS NOT NULL FROM inbox WHERE id=?`, q.ID).Scan(&read); err != nil || !read {
+		t.Fatalf("visible own sent question stays unread on recipient: read=%v err=%v", read, err)
+	}
+	if err := zen.store.db.QueryRow(`SELECT read_at IS NOT NULL FROM inbox WHERE id=?`, sibling.ID).Scan(&read); err != nil || read {
+		t.Fatalf("unseen sibling read=%v err=%v", read, err)
+	}
+
+	// Idempotency and the duplicate self-answer inbox/outbox form use the same ledger.
+	if err := linux.MarkRead([]string{q.ID, answer.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := linux.store.db.QueryRow(`SELECT count(*) FROM read_marks WHERE fingerprint=? AND lid=?`, linux.Self().Fingerprint(), q.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("duplicate outgoing read: %d %v", n, err)
+	}
+	selfQ := storeSend(zen, zen, envelope.Inner{Kind: envelope.KindQuestion, Body: "self question"})
+	selfA := storeSend(zen, zen, envelope.Inner{Kind: envelope.KindAnswer, Body: "self answer", ReplyTo: selfQ.ID})
+	if err := zen.MarkRead([]string{selfA.ID, selfA.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := zen.store.db.QueryRow(`SELECT count(*) FROM read_marks WHERE fingerprint=? AND lid=?`, zen.Self().Fingerprint(), selfA.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("duplicate self answer: %d %v", n, err)
+	}
+	// A foreign signed envelope in an outbox never acquires the current key.
+	foreign := sealTo(t, w.bob, zen, envelope.Inner{Kind: envelope.KindQuestion, Body: "foreign signer"})
+	opened, err := envelope.Open(foreign, zen.id, zen.Address, w.bob.Self())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.store.addOutbox(foreign, opened, "", nil, boundOutgoing{fingerprint: zen.Self().Fingerprint()}); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.MarkRead([]string{foreign.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.store.db.QueryRow(`SELECT count(*) FROM read_marks WHERE lid=?`, foreign.ID).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("foreign signer granted mark: %d %v", n, err)
+	}
+	// A current agent-host-only role or frozen owner cannot originate sent marks.
+	owner, _, err := linux.store.selfPerson(linux.Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalRecord, _ := json.Marshal(owner.roster)
+	owner.roster.HumanKeys = []string{zen.Self().Fingerprint()}
+	hostRecord, _ := json.Marshal(owner.roster)
+	gated := storeSend(linux, zen, envelope.Inner{Kind: envelope.KindQuestion, Body: "unviewed gated outgoing"})
+	if _, err = linux.store.db.Exec(`UPDATE persons SET record=? WHERE state='self'`, hostRecord); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.MarkRead([]string{gated.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.store.db.QueryRow(`SELECT count(*) FROM read_marks WHERE lid=?`, gated.ID).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("agent host granted mark: %d %v", n, err)
+	}
+	if _, err = linux.store.db.Exec(`UPDATE persons SET record=?,state=? WHERE state='self'`, originalRecord, personConflict); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.MarkRead([]string{gated.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = linux.store.db.QueryRow(`SELECT count(*) FROM read_marks WHERE lid=?`, gated.ID).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("frozen owner granted mark: %d %v", n, err)
+	}
+	if _, err = linux.store.db.Exec(`UPDATE persons SET state='self' WHERE person=?`, owner.info.Person); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var attempts int
+	if err := zen.store.db.QueryRow(`SELECT state,attempts FROM inbox WHERE id=?`, q.ID).Scan(&state, &attempts); err != nil || state != "answered" || attempts != 1 {
+		t.Fatalf("read changed execution: %s %d %v", state, attempts, err)
+	}
+}

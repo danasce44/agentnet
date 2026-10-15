@@ -275,3 +275,39 @@ func (a *Agent) mayDeliverReadSync(env envelope.Envelope) (bool, bool, error) {
 	}
 	return true, true, nil
 }
+
+// markVisibleSentRead records an explicit read of locally signed device messages.
+// The same original may be incoming on another current own-human device.
+func (a *Agent) markVisibleSentRead(ids []string) error {
+	tx, err := a.store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	me, ok, err := scanPersonIn(tx, "state = ?", personSelf)
+	if err != nil {
+		return err
+	}
+	fp := a.Self().Fingerprint()
+	if !ok || !me.has(a.Address, fp) || !me.roster.Human(fp) {
+		return nil
+	}
+	for _, id := range ids {
+		var raw, recipient string
+		err = tx.QueryRow(`SELECT envelope,recipient FROM outbox o WHERE id=? AND conv IS NULL AND ref_id IS NULL AND coalesce(sub,'')='' AND NOT EXISTS(SELECT 1 FROM inbox i WHERE i.id=o.id) AND NOT (`+privateReceiverSetupOutbox+`) AND NOT EXISTS(SELECT 1 FROM device_history_rows h WHERE h.storage='out' AND h.id=o.id AND (h.author_fp!=? OR h.direction!='out' OR h.recipient!=o.recipient OR h.recipient_fp!=coalesce(o.recipient_fp,'')))`, id, fp).Scan(&raw, &recipient)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		var env envelope.Envelope
+		if json.Unmarshal([]byte(raw), &env) != nil || env.ID != id || env.From != a.Address || env.To != recipient || env.V == envelope.Version3 || env.VerifySig(a.Self().SignKey) != nil {
+			continue
+		}
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO read_marks(owner,conv,fingerprint,lid) VALUES(?,'',?,?)`, me.info.Person, fp, id); err != nil {
+			return err
+		}
+	}
+	return a.store.done(tx.Commit())
+}

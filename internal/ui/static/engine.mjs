@@ -11365,12 +11365,23 @@ export class Engine {
       })) };
   }
 
+  async sentReadRef(m,own) {
+    if(!m || m.conv || m.sub || m.control || m.ref || m.aside || m.history || m.replica || m.device_history || m.fp&&m.fp!==this.fp || m.receiver_route&&m.receiver_route.op!=="request")return null;
+    if(own?.state!=="self" || !own.devices.some(d=>d.address===this.address&&d.fingerprint===this.fp) || !(own.human_keys||[]).includes(this.fp))return null;
+    try {
+      const env=wire.parseEnvelope(m.envelope);
+      if(env.id!==m.id || env.from!==this.address || env.to!==m.to || env.v===wire.Version3)return null;
+      await wire.verifyEnvelope(env,this.pub.sign_key);
+      return this.readRef({...m,fp:this.fp});
+    } catch { return null; }
+  }
+
   async markRead(ids) {
     const ops=[],checks=[],own=await this.groupRead(checks,"kv","person");
     for(const id of ids||[]) {
-      const m=await this.groupRead(checks,"inbox",id);if(!m)continue;
-      if(!m.read)ops.push({s:"inbox",k:id,v:{...m,read:true}});
-      const ref=this.readRef(m);
+      const m=await this.groupRead(checks,"inbox",id);
+      if(m&&!m.read)ops.push({s:"inbox",k:id,v:{...m,read:true}});
+      const ref=m?this.readRef(m):await this.sentReadRef(await this.groupRead(checks,"outbox",id),own);
       if(own?.state==="self" && ref) {
         const k=this.readMarkKey(own.person,ref);
         if(!await this.groupRead(checks,"kv",k))ops.push({s:"kv",k,v:{owner:own.person,ref}});

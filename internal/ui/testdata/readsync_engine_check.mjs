@@ -73,4 +73,43 @@ await a.store.write([{s:'pins',k:p.address,v:{...(await a.store.get('pins',p.add
 await assert.rejects(()=>wire.seal({v:2,id:wire.newID(),from:a.address,to:p.address,ts:1,kind:'message',conv,sub:wire.SubReadSync,replica:true,body},a.keys,p.pub),/quiet rootless/);checks++;
 await p.store.write([{s:'kv',k:'person',v:{...p.me,state:'conflict'}}]);await assert.rejects(()=>p.readSyncAuthority(record,a.address,a.fp,p.address,p.fp),/current own-human/);checks++;
 check(!wire.capsReads({caps:[wire.CapRoom]},wire.CapReadSync),'rm1 does not imply rd1');
+
+// Reading a sent own-device question must acknowledge its exact incoming copy.
+// Restore the pins/owner deliberately changed by the admission checks above.
+await a.store.write([{s:'pins',k:p.address,v:{...(await a.store.get('pins',p.address)),pending:null}}]);
+await p.store.write([{s:'kv',k:'person',v:p.me}]);
+{
+const qid=wire.newID(),aid=wire.newID(),sid=wire.newID();
+const qenv=await wire.seal({v:1,id:qid,from:a.address,to:p.address,ts:1,kind:'question',body:"what's your cpu?"},a.keys,p.pub);
+const sentQuestion={id:qid,to:p.address,kind:'question',body:"what's your cpu?",envelope:qenv,at:10,state:'delivered'};
+const receivedQuestion={...sentQuestion,from:a.address,fp:a.fp,read:false,state:'answered',attempts:1};
+const receivedAnswer={id:aid,from:p.address,fp:p.fp,kind:'answer',reply_to:qid,body:'Intel Core i7-1165G7',at:11,read:false};
+await a.store.write([{s:'outbox',k:qid,v:sentQuestion},{s:'inbox',k:aid,v:receivedAnswer}]);
+await p.store.write([{s:'inbox',k:qid,v:receivedQuestion},{s:'inbox',k:sid,v:{...receivedQuestion,id:sid,body:'unseen sibling',state:'awaiting',attempts:0}}]);
+await a.markRead([qid,aid]);await a.syncReadMarks();
+for(const r of (await a.store.all('outbox')).filter(r=>r.sub===wire.SubReadSync))await receive(r.envelope,p);
+check((await p.store.get('inbox',qid)).read,'visible own sent question read converges to original recipient');
+check(!(await p.store.get('inbox',sid)).read,'unseen sibling remains unread');
+check((await p.store.get('inbox',qid)).state==='answered'&&(await p.store.get('inbox',qid)).attempts===1,'reading preserves execution');
+
+
+
+const own=await a.store.get('kv','person');
+assert.equal(await a.sentReadRef({...sentQuestion,envelope:''},own),null,'missing signed provenance excluded');
+assert.equal(await a.sentReadRef({...sentQuestion,device_history:{author_fp:p.fp}},own),null,'device-history replica excluded');
+assert.equal(await a.sentReadRef({...sentQuestion,fp:p.fp},own),null,'mismatched stored author excluded');
+assert.equal(await a.sentReadRef(sentQuestion,{...own,human_keys:[p.fp]}),null,'agent host cannot create outgoing marks');
+assert.equal(await a.sentReadRef(sentQuestion,{...own,state:'conflict'}),null,'frozen owner cannot create outgoing marks');
+const alien=await wire.seal({v:1,id:qid,from:b.address,to:p.address,ts:1,kind:'question',body:'foreign'},b.keys,p.pub);
+assert.equal(await a.sentReadRef({...sentQuestion,envelope:alien},own),null,'foreign signed outbox cannot acquire local author');
+const num=(await a.store.all('kv')).filter(v=>v?.owner===own.person&&v.ref?.lid===qid).length;
+await a.markRead([qid,qid]);await a.readSyncRun;
+assert.equal((await a.store.all('kv')).filter(v=>v?.owner===own.person&&v.ref?.lid===qid).length,num,'outgoing exact mark idempotent');
+const selfID=wire.newID(),selfenv=await wire.seal({v:1,id:selfID,from:a.address,to:a.address,ts:1,kind:'answer',body:'self reply'},a.keys,a.pub);
+await a.store.write([{s:'inbox',k:selfID,v:{id:selfID,from:a.address,fp:a.fp,kind:'answer',body:'self reply',read:false}},{s:'outbox',k:selfID,v:{id:selfID,to:a.address,kind:'answer',envelope:selfenv}}]);
+await a.markRead([selfID,selfID]);await a.readSyncRun;
+assert((await a.store.get('inbox',selfID)).read,'same-ID self answer inbox marked');
+assert.equal((await a.store.all('kv')).filter(v=>v?.owner===own.person&&v.ref?.lid===selfID).length,1,'same-ID self answer mark unique');
+checks+=9;
+}
 console.log('read sync browser checks',checks);

@@ -215,7 +215,7 @@ Host-internal). Google Drive is outside AgentNet end-to-end encryption.
 | `revoke_tasks` | `id`: person id or device address | End that task permission. | no |
 | `archive_held` | `id` | Hide one held-envelope notice here. Nothing is accepted. | yes |
 | `archive_held_batch` | `held:[{id, reason, detail_code}]` | Hide several notices. | yes |
-| `read` | `ids:[id]` | Mark messages read. | yes |
+| `read` | `ids:[id]` | Acknowledge the exact displayed messages. For device threads, include visible outgoing IDs too: verified original sends can have incoming copies on another own device. Submit only the open topic's IDs, deduplicate successful acknowledgments while it stays open, and retain failed acknowledgments for retry. Reading never accepts or reruns work. | yes |
 
 The browser refuses the other verbs with "Nothing runs in this browser:
 accept, approve and grants are made on a computer with AgentNet." Android
