@@ -27,29 +27,42 @@ when readable healthy metadata cannot be retained. The fresh original-key APK
 corrected modules in both ABIs: build75.176s,37 unit passes, lint0 errors/6 warnings,
 package/signature/alignment verification pass. The earlier9e7 APK lacks this fix.
 
-Android qualification remains incomplete. The87.782s current-v28 passive check
-independently matches native identity/database,200 rendered message IDs/order/
-hashes, three queued ciphertexts, three encrypted files, origin and local
-storage to the retained baseline. Chosen, unrelated and catalog caches still
-return UnknownError. The browser draft was already absent before intentional
-injection or upgrade; it is not claimed recovered. An earlier96.738s catalog
-observer failed its saved-state comparison before any gallery install; its
-compared operands were not returned, and the later match does not explain or
-pass that earlier failure. No actual repair/cold-preservation pass. Missing
-installed package directories on emulator cold boots required ordinary signed
-same-version code restoration; their cause remains unproved. No reset, re-seed,
-permission change or physical-phone action was used.
+Actual Android chosen-cache/catalog repair and fresh-process persistence now
+pass107.806s on that APK. Warm7.593s performs exactly one production gallery
+install; cold7.438s performs none and reads the same verified package, ready
+marker and catalog. Root independently matches original identity/database,
+200 message IDs/order/hashes,100 outbox rows including three queued ciphertexts,
+three encrypted files, origin and modes before/after both calls. The earlier
+saved-state failure came from normal Comic startup adding its two preference
+entries to an empty baseline; the fixture now requires that exact pair before
+and after, rejecting every other storage change. Original failed runs remain
+failed. The unrelated cache was already unreadable, and the draft already
+absent: neither is claimed recovered. No reset, re-seed, permission change or
+physical-phone action was used. Final host cleanup passes; the wrapper's raw
+exit1 from transient TCP TIME_WAIT remains recorded.
 
-The all-skins gate retains three Zoom stored-message/quote/thread failures.
-Automatic review rejected its test-only page-global probe; an owner exception
-is pending. The public-CLI alternative exhausted its180s case budget during
-history setup without reaching taps or assertions, and is not integrated.
-MEL-587 has no causal WebKit fix: current-package Quit/update probes are negative
-baselines, while the exact historical library/symbol question remains in custody.
-These holds prevent tag/publication. Linear MEL-587/620 remain In Progress.
-All owned helpers are dismissed; their emulator PIDs/groups are absent and ports
-are free. Shared ADB remains. Source/evidence and original failures are retained.
-The disconnected physical phone is not requested again or counted as a pass.
+Zoom's corrected public-CLI/DOM journey passes362.473s,28 measured taps and21
+checks, including exact stored IDs, quote parent and device-chat reload. The
+short31.582s diagnostic proves that reload briefly draws Everyone before
+restoring the retained chat; the fixture now waits for that restoration before
+using the existing public navigation. The three-file test-only patch is
+integrated in agentnet-skins;23 permanent regressions pass independently.
+The required final pinned all-skins run remains pending. The ordinary collection
+runner has no180s whole-case bound; that earlier limit belonged to our wrapper.
+
+MEL-587 remains an owner release hold, with no causal fix. Both historical cores
+now prove the exact WebKit/JSC build IDs. Matching official Ubuntu symbols,
+verified by SHA256/build ID/debuglink CRC, resolve the Skia fault to a TextStrike
+glyph-cache slot-array free during DirectMaskSubRun destruction. This is the
+detected bad free, not the first corrupting operation. ThinkPad's named Codex
+could not create its diagnostic directory under /tmp (read-only filesystem);
+the existing native writable-root policy is being clarified without changing
+permissions. Earlier address-only follow-ups reached default Pi and supplied
+no substantiated native refusal; do not reuse that attribution.
+
+No tag/publication. All owned local helpers are dismissed, emulator PIDs/groups
+are absent, ports are free, and shared ADB remains. The disconnected physical
+phone is not requested again or counted as a pass.
 
 
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
