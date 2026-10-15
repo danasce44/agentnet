@@ -47,8 +47,22 @@ short31.582s diagnostic proves that reload briefly draws Everyone before
 restoring the retained chat; the fixture now waits for that restoration before
 using the existing public navigation. The three-file test-only patch is
 integrated in agentnet-skins;23 permanent regressions pass independently.
-The required final pinned all-skins run remains pending. The ordinary collection
-runner has no180s whole-case bound; that earlier limit belonged to our wrapper.
+The subsequent pinned full run passed102 cheap checks and all other skin
+journeys, but failed Zoom touch and the Holonet-derived scaffold contract.
+The actual scaffold stack showed an awaited message lookup focusing a detached
+DM. A narrow captured-host/generation/current-DM guard fixes that path; the
+original loaded1440/390 A/B/A contract now passes. Abort-managed scroll handlers
+also prevent callbacks after unmount in Classic, Holonet and Zoom.
+
+Zoom's latest failure is in fixture preparation: repeated CLI client opens hit
+SQLITE_BUSY before its browser journey. Receipt waits did not cure that failure.
+A fixture-only testdata sender now opens one ordinary native client and uses the
+same signed SendConv/SendMessage/CheckReplyTo methods. Its bounded20+20 probe
+passes exact public-CLI ID, author and predecessor-chain checks. The original
+400-message touch journey remains required; that small probe is not its pass.
+The ordinary collection runner has no180s whole-case bound; that earlier limit
+belonged to our wrapper. Retain unchanged full-run passes and rerun affected
+checks only.
 
 MEL-587 remains an owner release hold, with no causal fix. Both historical cores
 now prove the exact WebKit/JSC build IDs. Matching official Ubuntu symbols,
@@ -56,12 +70,15 @@ verified by SHA256/build ID/debuglink CRC, resolve the Skia fault to a TextStrik
 glyph-cache slot-array free during DirectMaskSubRun destruction. This is the
 detected bad free, not the first corrupting operation. ThinkPad's named Codex
 could not create its diagnostic directory under /tmp (read-only filesystem);
-the existing native writable-root policy is being clarified without changing
-permissions. Earlier address-only follow-ups reached default Pi and supplied
+the named background session has no writable roots. No permission change or
+repeated background diagnostic is authorized. Prepared evidence was delivered
+to the existing foreground ThinkPad task, without claiming analysis started.
+Earlier address-only follow-ups reached default Pi and supplied
 no substantiated native refusal; do not reuse that attribution.
 
-No tag/publication. All owned local helpers are dismissed, emulator PIDs/groups
-are absent, ports are free, and shared ADB remains. The disconnected physical
+No tag/publication. One bounded skin-fixture helper remains for source review;
+all other owned helpers are dismissed. Emulator PIDs/groups are absent, ports
+are free, and shared ADB remains. The disconnected physical
 phone is not requested again or counted as a pass.
 
 
@@ -112,8 +129,10 @@ Do not tag or publish the next release until these are fixed and verified:
 MEL-591/633 actual-flow acceptance now passes the two native journeys above,
 with source/race/browser boundaries retained. Unprovable old unindexed incoming
 member turns remain selected-only. These issues have not been marked shipped;
-remaining owner holds MEL-587/620 and the failed all-skins gate still prevent
-release. No physical-device or universal native-steering claim is made.
+MEL-587 and the affected all-skins gate still prevent release. The scoped Android
+repair pass and its explicit healthy-cache/draft limits are recorded above;
+MEL-620 has not been marked shipped. No physical-device or universal
+native-steering claim is made.
 
 ## Linear status audit — October 14, 2026
 
