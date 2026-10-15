@@ -19,16 +19,25 @@ ACKs; its peer is signed synthetic. The separate group100.48s uses actual
 Codex/Claude/Pi, simultaneous owned processes, a signed child-task/result chain,
 late peer/file evidence and two ordered owner inputs in the original Codex
 attempt. No configuration/permission changes or replay; exact fixture processes
-are gone. Both completed qualification helpers are dismissed; no owned helper pane remains.
+are gone. Both completed native qualification helpers are dismissed. Two new
+bounded helpers are preparing an unreadable-catalog repair proposal and a
+Zoom qualification test using public CLI and rendered UI only; root reviews both.
 
 Android's successful v27 seed is retained, but a later passive observation finds
 all three named caches unreadable and its browser draft absent before intentional
 corruption. Native200 messages, queued ciphertext and managed files remain exact.
 A passive85.678s observation confirms the same origin and usable owner-only
-paths/free storage; the browser/internal cause remains unproved. No repair/cold-
+paths/free storage. The recorded WebView124.0.6367.219 source rejects the observed
+empty cache index markers; how they became empty remains unproved. Catalog
+UnknownError also blocks verified reinstall before named-package recovery.
+Legacy ready metadata cannot reconstruct a lost healthy catalog, so that case
+must refuse destructive recovery. No repair/cold-
 preservation or physical-phone pass. All-skins still fails three Zoom stored-message touch
 assertions; automatic review refused its test-only page-global probe and an owner
-exception is pending. MEL587 has no causal fix. No tag/publication.
+exception is pending. A public-CLI-only cost fixture passes11.352s, with ten sends
+taking0.517s; its replacement test is not yet executed. MEL587 has no causal fix.
+Linear MEL591/633 are In Review with the native acceptance evidence, while
+MEL620 remains In Progress. No tag/publication.
 
 
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
