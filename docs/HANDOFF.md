@@ -4,44 +4,52 @@ Keep notable user-facing changes in [CHANGELOG.md](../CHANGELOG.md) under
 Unreleased as they are implemented. Move shipped entries into a dated version
 section at release; keep detailed verification and remaining work here.
 
-## Next release — blocking owner requirements, October 14, 2026
+## Next release — qualification holds, October 15, 2026
 
-Native qualification source9c05129e has unchanged production/Comic from9e7dc6e5.
-The subsequent two-module catalog recovery change has passing focused Node
-checks; affected existing browser journeys pass10.927s. The new catalog path's
-Android qualification remains pending. The earlier
-original-key APK8bbcf474 does not contain this new change.
-All12 required client race selections now have passing evidence at600s, preserving
-unchanged partitions and the focused T5 correction. Final6/9 pass565.161s/485.258s;
-both UI partitions pass. Native Linux/macOS succeed; the corrected Windows
-four-case gate and vet pass76.471s. Mixed exactv0.8.27 passes57.701s and real
-IndexedDB race1.701s. Original-key APK8bbcf474 builds and verifies successfully.
+v0.8.28 is unpublished. All12 client race selections and both UI partitions have
+passing evidence at their existing600s bounds, retaining unchanged partitions.
+Final6/9 pass565.161s/485.258s. Native Linux/macOS and Windows qualification,
+whole vet, mixed exactv0.8.27(57.701s) and real IndexedDB race(1.701s) pass.
+Platform and opt-in limits remain in [the release record](plans/V0_8_28.md).
 
-Actual owner-flow qualification now passes174.412s: retained-DM Codex73.92s
-consumes recovered initial/fresh verified refs and readonly file with two genuine
-ACKs; its peer is signed synthetic. The separate group100.48s uses actual
-Codex/Claude/Pi, simultaneous owned processes, a signed child-task/result chain,
-late peer/file evidence and two ordered owner inputs in the original Codex
-attempt. No configuration/permission changes or replay; exact fixture processes
-are gone. Both completed native qualification helpers and the catalog helper
-are dismissed. The reviewed catalog patch is applied; the remaining helper is
-preparing a Zoom qualification test using public CLI and rendered UI only.
+Actual owner-flow acceptance passes174.412s: retained-DM Codex73.92s consumes
+recovered initial/fresh verified refs and readonly files with two genuine ACKs;
+the separate Codex/Claude/Pi group100.48s covers overlapping work, a signed
+child-task/result chain, fresh peer/file evidence and ordered correction plus
+goal in the original Codex attempt. Native permissions and configuration stay
+unchanged. MEL-591/633 are In Review, not shipped.
 
-Android's successful v27 seed is retained, but a later passive observation finds
-all three named caches unreadable and its browser draft absent before intentional
-corruption. Native200 messages, queued ciphertext and managed files remain exact.
-A passive85.678s observation confirms the same origin and usable owner-only
-paths/free storage. The recorded WebView124.0.6367.219 source rejects the observed
-empty cache index markers; how they became empty remains unproved. Catalog
-UnknownError also blocks verified reinstall before named-package recovery.
-Legacy ready metadata cannot reconstruct a lost healthy catalog, so that case
-must refuse destructive recovery. No repair/cold-
-preservation or physical-phone pass. All-skins still fails three Zoom stored-message touch
-assertions; automatic review refused its test-only page-global probe and an owner
-exception is pending. A public-CLI-only cost fixture passes11.352s, with ten sends
-taking0.517s; its replacement test is not yet executed. MEL587 has no causal fix.
-Linear MEL591/633 are In Review with the native acceptance evidence, while
-MEL620 remains In Progress. No tag/publication.
+Production source4727477b adds narrow recovery for an unreadable skin catalog
+across two existing modules. Focused component checks and the two affected
+Chromium/gallery cases pass10.927s. It refuses destructive catalog recreation
+when readable healthy metadata cannot be retained. The fresh original-key APK
+64f8ca6999478a254a066970da042b8285a4e842d901398242590315a4dc828c contains both
+corrected modules in both ABIs: build75.176s,37 unit passes, lint0 errors/6 warnings,
+package/signature/alignment verification pass. The earlier9e7 APK lacks this fix.
+
+Android qualification remains incomplete. The87.782s current-v28 passive check
+independently matches native identity/database,200 rendered message IDs/order/
+hashes, three queued ciphertexts, three encrypted files, origin and local
+storage to the retained baseline. Chosen, unrelated and catalog caches still
+return UnknownError. The browser draft was already absent before intentional
+injection or upgrade; it is not claimed recovered. An earlier96.738s catalog
+observer failed its saved-state comparison before any gallery install; its
+compared operands were not returned, and the later match does not explain or
+pass that earlier failure. No actual repair/cold-preservation pass. Missing
+installed package directories on emulator cold boots required ordinary signed
+same-version code restoration; their cause remains unproved. No reset, re-seed,
+permission change or physical-phone action was used.
+
+The all-skins gate retains three Zoom stored-message/quote/thread failures.
+Automatic review rejected its test-only page-global probe; an owner exception
+is pending. The public-CLI alternative exhausted its180s case budget during
+history setup without reaching taps or assertions, and is not integrated.
+MEL-587 has no causal WebKit fix: current-package Quit/update probes are negative
+baselines, while the exact historical library/symbol question remains in custody.
+These holds prevent tag/publication. Linear MEL-587/620 remain In Progress.
+All owned helpers are dismissed; their emulator PIDs/groups are absent and ports
+are free. Shared ADB remains. Source/evidence and original failures are retained.
+The disconnected physical phone is not requested again or counted as a pass.
 
 
 The [v0.8.28 package](plans/V0_8_28.md) contains twelve focused bug-fix
